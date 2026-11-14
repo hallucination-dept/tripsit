@@ -21,7 +21,7 @@ function connectionStringForNodePostgres(connectionString: string | undefined) {
 	return databaseUrl.toString();
 }
 
-const database = new Pool({ connectionString: connectionStringForNodePostgres(DATABASE_URL) });
+export const database = new Pool({ connectionString: connectionStringForNodePostgres(DATABASE_URL) });
 
 export const missingAuthEnvironment = [
 	'DATABASE_URL',

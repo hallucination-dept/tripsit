@@ -4,6 +4,17 @@
 	type Token = { token: string; probability_percent: number };
 
 	const session = authClient.useSession();
+	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
+		repository: string; issueNumber: number; baseSha: string;
+		supplied: { title: string; body: string }; inferred: string[]; ownerConfirmed: string[];
+	} };
+	let repository = $state('');
+	let issueNumber = $state(1);
+	let issueItems = $state<IssueItem[]>([]);
+	let selectedIssue = $state<IssueItem | null>(null);
+	let intakeOwner = $state('');
+	let issueBusy = $state(false);
+	let issueError = $state('');
 	let code = $state('');
 	let tokens = $state<Token[]>([]);
 	let review = $state('');
@@ -15,6 +26,31 @@
 	let password = $state('');
 	let authError = $state('');
 	let isAuthenticating = $state(false);
+
+	async function issueRequest(action: 'create' | 'list' | 'detail', id?: string) {
+		const owner = $session.data?.user.id;
+		if (!owner) return;
+		issueBusy = true;
+		issueError = '';
+		try {
+			const response = await fetch(`/api/work-items${action === 'detail' ? `/${id}` : ''}`, {
+				...(action === 'create' ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository, issueNumber }) } : {}),
+				signal: AbortSignal.timeout(30_000)
+			});
+			const data = await response.json();
+			if ($session.data?.user.id !== owner) return;
+			intakeOwner = owner;
+			if (!response.ok) throw new Error(data.message ?? 'Issue intake failed.');
+			if (action === 'list') issueItems = data.items;
+			else selectedIssue = data.item;
+		} catch (error) {
+			if ($session.data?.user.id === owner) {
+				issueError = error instanceof Error ? error.message : 'Issue intake failed.';
+				selectedIssue = null;
+				issueItems = [];
+			}
+		} finally { issueBusy = false; }
+	}
 
 	function opacity(probability: number) {
 		return Math.max(0.1, Math.min(0.9, probability / 100));
@@ -83,6 +119,34 @@
 			<span>Signed in as <strong>{$session.data.user.name || $session.data.user.email}</strong></span>
 			<button class="quiet" onclick={() => authClient.signOut()}>Sign out</button>
 		</div>
+
+		<section aria-labelledby="issue-heading">
+			<h2 id="issue-heading">Select a GitHub issue</h2>
+			<p>Use your existing GitHub sign-in. Repository access and a TripSit GitHub App installation are required. Private issue storage is awaiting verification.</p>
+			<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
+				<label for="repository">Repository (owner/name)</label>
+				<input id="repository" bind:value={repository} required maxlength="201" placeholder="owner/repository" />
+				<label for="issue-number">Issue number</label>
+				<input id="issue-number" type="number" bind:value={issueNumber} min="1" step="1" required />
+				<button type="submit" disabled={issueBusy}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+			</form>
+			<button type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button>
+			{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
+			{#if intakeOwner === $session.data.user.id}
+				<ul>{#each issueItems as item (item.id)}<li><button type="button" disabled={issueBusy} onclick={() => issueRequest('detail', item.id)}>{item.snapshot.repository} #{item.snapshot.issueNumber}</button></li>{/each}</ul>
+				{#if selectedIssue}
+					<div aria-live="polite">
+						<h3>{selectedIssue.snapshot.supplied.title}</h3>
+						<p>{selectedIssue.snapshot.repository} #{selectedIssue.snapshot.issueNumber}</p>
+						<p>Frozen base: <code>{selectedIssue.snapshot.baseSha}</code></p>
+						<h4>Supplied issue text (unconfirmed)</h4>
+						<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
+						<p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p>
+						<p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Scheduled deletion is not yet verified.</p>
+					</div>
+				{/if}
+			{/if}
+		</section>
 
 		<form onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
 			<label for="code">Code to review</label>
@@ -155,6 +219,7 @@
 	.text-button { width: 100%; margin-top: 18px; text-align: center; }
 	.section-heading { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
 	h2 { margin: 0; font-size: 1.2rem; } .section-heading p, .legend { color: #96aacc; font-size: .86rem; }
+	.issue-body { white-space: pre-wrap; overflow-wrap: anywhere; }
 	.review { margin-top: 16px; white-space: pre-wrap; line-height: 1.7; }
 	.token { border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
 	.low, .high { display: inline-block; width: 12px; height: 12px; margin: 0 6px 0 12px; border-radius: 3px; background: #38bdf8; vertical-align: -1px; }

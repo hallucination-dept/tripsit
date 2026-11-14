@@ -73,14 +73,17 @@ export function createGitHub(options: Options) {
   }
 
   return {
-    authorize: async (repository: string, repositoryId: number, signal: AbortSignal) => { await authorize(repository, signal, repositoryId); },
+    authorize: async (repository: string, repositoryId: number, signal: AbortSignal) => {
+      const current = await authorize(repository, signal, repositoryId);
+      if (current.private) throw new IntakeError(503, 'Private issue storage awaits verified isolation and retention controls.');
+    },
     snapshot: async (repository: string, number: number, signal: AbortSignal): Promise<IssueSnapshot> => {
       const repo = await authorize(repository, signal);
       const issue = await request(`/repos/${repo.repository}/issues/${number}`, repo.token, signal);
       if ('pull_request' in issue || id(issue.number) !== number) throw new IntakeError(400, 'Select a GitHub issue rather than a pull request.');
       const commit = await request(`/repos/${repo.repository}/commits/${encodeURIComponent(repo.branch)}`, repo.token, signal);
       const baseSha = text(commit.sha, 64);
-      if (!/^[a-f0-9]{40,64}$/.test(baseSha)) throw new IntakeError(502, 'GitHub did not return a commit identity.');
+      if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(baseSha)) throw new IntakeError(502, 'GitHub did not return a commit identity.');
       return { repositoryId: repo.repositoryId, repository: repo.repository, private: repo.private,
         issueNumber: number, issueId: id(issue.id), baseSha,
         supplied: { title: text(issue.title, 4096), body: issue.body === null ? '' : text(issue.body, 128 * 1024), provenance: 'supplied' },

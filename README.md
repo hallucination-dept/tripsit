@@ -115,3 +115,43 @@ Once the public Aiven URL is known:
 Aiven Runtime builds the selected Git commit, but Git pushes do not themselves
 trigger redeployments. Use **Redeploy** in the Aiven Runtime UI for later
 commits, or add a separate CI deployment step with an Aiven API token.
+
+## GitHub issue intake (development slice)
+
+The existing Better Auth GitHub OAuth sign-in is reused. Issue intake separately
+requires `GITHUB_APP_ID` and a PEM `GITHUB_APP_PRIVATE_KEY`, server-side only, for a
+GitHub App installed on the selected repository with Contents/Issues read access.
+The logged-in user's OAuth token must independently access the repository; the
+app installation does not grant that user access. Missing configuration disables
+intake without changing the existing code review flow. No merge/publish operation
+is added by this slice.
+
+For an explicitly disposable **local** PostgreSQL database named
+`tripsit_e01s01_test`, set `TRIPSIT_TEST_DATABASE_URL` and run from `frontend/`:
+
+```bash
+node --experimental-strip-types scripts/work-items.ts migrate
+node --experimental-strip-types --test tests/e01s01.test.ts
+node --experimental-strip-types --test tests/e01s01-db.test.ts
+node --experimental-strip-types scripts/work-items.ts purge
+npm run check && npm run build
+```
+
+The app-owned SQL is `frontend/migrations/001_work_items.sql`; it does not alter
+Better Auth tables. The development script refuses non-local or differently named
+databases and never falls back to `DATABASE_URL`. Applying a production migration
+or configuring a production purge schedule requires explicit authorization.
+
+The signed-in page accepts `owner/repository` and an issue number. It snapshots
+supplied issue text and an immutable base SHA; it does not infer or confirm
+acceptance criteria. Reads recheck owner and repository access. The latest 20
+retained snapshots can be reloaded. Seven-day expiry blocks reads, and the purge
+command physically removes raw snapshots and their repository/issue references,
+retaining source-free digest/status metadata.
+
+**Incomplete live gates:** private snapshot creation/read remains refused. Real
+GitHub integration, authenticated browser UAT, and a periodic purge invocation
+have not been certified. A manual purge test is not a verified retention schedule.
+Run `python3 specs/experiments/live_gates.py e01s01 --require-configured` to report
+fail-closed admission status; this command must not be described as passing while
+those controls remain unverified. No credential or environment file belongs in Git.
