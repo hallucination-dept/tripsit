@@ -1,12 +1,12 @@
 """Modal-hosted OpenAI-compatible API for Gemma 4 31B with token probabilities."""
 
-import math
 import os
 import subprocess
 import time
 
 import httpx
 import modal
+from model_output import add_token_probabilities
 
 
 MODEL_ID = os.environ.get("MODEL_ID", "google/gemma-4-31B-it")
@@ -22,6 +22,7 @@ image = (
     # to launch its own Python function process, then we start vLLM ourselves.
     .entrypoint([])
     .pip_install("fastapi", "httpx")
+    .add_local_python_source("model_output")
 )
 
 
@@ -138,20 +139,7 @@ class GemmaAPI:
                     media_type="application/json",
                 )
 
-            result = upstream.json()
-            for choice in result.get("choices", []):
-                logprobs = choice.pop("logprobs", None) or {}
-                token_items = logprobs.get("content") or []
-                choice["token_probabilities"] = [
-                    {
-                        "token": item.get("token"),
-                        "probability_percent": math.exp(item["logprob"]) * 100,
-                    }
-                    for item in token_items
-                    if item.get("logprob") is not None
-                ]
-
-            return JSONResponse(result)
+            return JSONResponse(add_token_probabilities(upstream.json()))
 
         # Forward standard OpenAI-compatible completion fields (including
         # token logprobs), adding token_probabilities to each choice.
