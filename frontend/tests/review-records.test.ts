@@ -13,6 +13,8 @@ test('review artifacts preserve exact text and reject altered or stale identitie
   const result = { status: 'unavailable' as const, reason: 'Reviewer unavailable: 雪\r\n' };
   const created = await records.append('owner', identity, result);
   assert.deepEqual((await records.list('owner', identity))[0], created);
+  const historical = await records.list('owner', { ...identity, policyVersion: 'baseline-2', snapshotDigest: 'd'.repeat(64) });
+  assert.deepEqual(historical[0].identity, identity);
   assert.deepEqual(created.result, result);
   await assert.rejects(() => records.list('other', identity), { status: 404 });
   const stored = saved as { body: string };
