@@ -8,7 +8,7 @@ const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => ent
   ? Object.fromEntries(Object.keys(entry).sort(compare).map(key => [key, entry[key]])) : entry);
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 
-export function assessmentView(owner: string, assessment: Assessment, reviewerConfigured: boolean) {
+export function assessmentView(owner: string, assessment: Assessment, reviewerConfigured: boolean, verificationConfigured = false) {
   if (!owner || assessment.identity.ownerId !== owner || assessment.reviews.some(review => review.identity.ownerId !== owner)) {
     throw new IntakeError(404, 'Assessment is unavailable.');
   }
@@ -28,6 +28,11 @@ export function assessmentView(owner: string, assessment: Assessment, reviewerCo
     ...impact.gaps.map(gap => `${gap.kind}:${digest(gap)}`),
     ...impact.impact.gaps.map(gap => `${gap.kind}:${gap.reference}`)
   ])].sort(compare);
+  const verifications = assessment.verifications ?? [];
+  if (verifications.some(record => record.identity.ownerId !== owner)) throw new IntakeError(404, 'Assessment is unavailable.');
+  const latest = [...verifications].reverse().find(record => Object.entries(identity).every(([key, value]) => record.identity[key as keyof PacketIdentity] === value));
+  const definitions = latest?.result.checks.map(check => bound(check, check, latest.identity)) ?? [];
+  const executions = verifications.flatMap(record => record.result.executions.map(execution => bound(execution, execution, record.identity)));
   const packet = buildPacket(owner, {
     identity,
     policy: bound({ requirements: assessment.policy.requirements }, assessment.policy, { ...identity, policyVersion: assessment.policy.version }),
@@ -35,8 +40,8 @@ export function assessmentView(owner: string, assessment: Assessment, reviewerCo
     impact: bound({ summary: `${impact.impact.affected.length} affected nodes across ${impact.graph.nodes.length} supplied graph nodes. Semantic relationships and executable checks remain unverified.`,
       unknown: true, nodeIds: impact.graph.nodes.map(node => node.id).sort(compare), gaps: gapReferences }, impact, impactIdentity),
     tokenMapping: bound({ mapping: 'unavailable', observedTokens: assessment.generation.observedTokens, reason: assessment.generation.mapping.reason }, assessment.generation),
-    reviews: proposals, checks: [], executions: [], reuse: [], pr: { id: null, isNew: true }
+    reviews: proposals, checks: definitions, executions, reuse: [], pr: { id: null, isNew: true }
   });
   const currentReviews = reviews.filter(review => Object.entries(identity).every(([key, value]) => review.identity[key as keyof PacketIdentity] === value));
-  return { identity, impact, packet, reviews: currentReviews, reviewerConfigured };
+  return { identity, impact, packet, reviews: currentReviews, reviewerConfigured, verificationConfigured, dispatchPlan: latest?.result.dispatchPlan ?? null };
 }

@@ -189,15 +189,15 @@ available, and expire with their parent snapshot. The existing snapshot purge ca
 their raw-data deletion. Candidate generation is limited to three requests per owner
 per 15 minutes and one active request per server process.
 
-Candidate code is not executed, committed or published by this increment. Exact
+Candidate generation itself does not execute, commit or publish code. Exact
 output-to-code token mapping remains unavailable. Applying migration 002 to a
 configured production database requires explicit authorization; the runtime refuses
 generation before its storage tables exist.
 
-Candidate inspection now shows bounded JavaScript/TypeScript static import impact,
-source references, coverage gaps and a revision-bound review packet. Static imports
-do not establish semantic call resolution or behavioral correctness. Other languages
-and omitted source context remain explicit gaps.
+Candidate inspection shows bounded JavaScript/TypeScript static imports and validated
+lexical calls, exact source references, per-language coverage and a revision-bound
+review packet. Dynamic dispatch, unsupported languages and omitted source context
+remain explicit gaps; these relationships do not establish behavioral correctness.
 
 Independent review is manual and public-source only. Configure all four server-only
 values to enable it: `REVIEWER_API_URL` (base URL), `REVIEWER_API_KEY`, `REVIEWER_MODEL`
@@ -215,5 +215,40 @@ node --experimental-strip-types scripts/workspace-presentation.mjs
 
 These checks mock all protected API data and cover desktop/mobile layouts, escaped
 model text, explicit review and the unavailable-provider state. They do not establish
-real authenticated UAT. Controlled execution, human decisions and PR publication
-remain separate unfinished stages.
+real authenticated UAT. Human decisions and PR publication remain separate stages.
+
+Controlled verification is implemented behind an explicit admission gate. It is
+unavailable until the separate `modal_runner.py` service is deployed and its actual
+nine-control isolation probe passes. Deployment creates infrastructure and requires
+explicit approval. There is no local execution fallback. The runner supports bounded
+Python, JavaScript and Node-supported TypeScript callable checks; unsupported imports
+or language constructs are inconclusive. Results establish only the exercised JSON
+input/output properties, never whole-program correctness.
+
+Set server-only `RUNNER_API_URL`, `RUNNER_API_KEY` and `TRUSTED_CHECKS_JSON`. The last
+value is a JSON array of exact repository/base-pinned manifests, for example:
+
+```json
+[{"repositoryId":123,"baseSha":"REPLACE_WITH_FROZEN_40_CHARACTER_SHA","checks":[{"id":"caller-regression","language":"python","path":"caller.py","export":"call","cases":[{"args":[2],"expected":4}],"requirementIds":["issue-intent"],"mandatory":true,"impact":"high","timeoutMs":1000}]}]
+```
+
+These definitions and expected values come from trusted server configuration, never
+model proposals or browser requests. Before source dispatch the app checks authenticated
+`GET /admission`. An authorized operator runs `POST /admission` with `{}` to execute
+the real isolation probes; admission expires after ten minutes and is bound to the
+runner code, configuration and immutable built image. Only public frozen source is
+admitted. Use the candidate's **Run trusted checks** button to run mandatory checks
+outside the optional budget and up to three optional checks. Recorded results include
+source/check/oracle/environment digests, stale-evidence handling, and an explicit
+last-dispatched plan distinct from the next suggested plan. Up to four execution
+histories share the candidate snapshot's expiry/purge cascade; no migration is needed.
+
+Verify the configured independent reviewer using a synthetic public fixture:
+
+```bash
+python3 specs/experiments/live_gates.py e02s02 --require-configured
+```
+
+This is a provider contract gate; it does not certify authenticated UAT or private
+admission. Reviewer token probabilities are ignored.
+

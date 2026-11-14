@@ -24,10 +24,11 @@
     <div><p class="eyebrow">Candidate inspection</p><h2>Impact, review &amp; evidence</h2></div>
     <span class="tag">Human inspection required</span>
   </header>
-  <p class="notice">No controlled execution or publication is available here. Model proposals and static analysis do not establish correctness or acceptance.</p>
+  <p class="notice">Trusted checks run only in an admitted disposable environment. Model proposals, static analysis and passing checks do not establish overall correctness or authorize a merge.</p>
   <p class="status" role="status" aria-live="polite">
     {#if !owner || !itemId || !candidateId || !baseSha || !candidateDigest}Select a candidate to inspect its frozen revision.
     {:else if !matches || inspection.loading}Loading candidate assessment…
+    {:else if inspection.verifying}Running trusted checks in the admitted disposable runner…
     {:else if inspection.reviewing}Requesting independent proposals and refreshing the packet…
     {:else if view}Assessment loaded for the selected candidate.{/if}
   </p>
@@ -38,7 +39,8 @@
       {#if view}<span class="count">{view.impact.impact.affected.length} affected nodes</span>{/if}
     </header>
     {#if view}
-      <p class="muted">JavaScript and TypeScript static file imports only. Semantic calls, other languages and runtime behavior remain outside this analysis.</p>
+      <p class="muted">JavaScript and TypeScript static imports and validated lexical calls. Dynamic dispatch and unsupported languages remain explicit gaps.</p>
+      {#if view.impact.coverage.languages}<details><summary>Language coverage</summary><ul class="items compact">{#each view.impact.coverage.languages as coverage}<li><strong>{coverage.language}</strong><p class="meta">Extraction: {coverage.extraction} · Resolution: {coverage.resolution} · Checks: {coverage.executableChecks}</p></li>{/each}</ul></details>{/if}
       <p class="meta">{view.impact.coverage.complete ? 'Supplied repository context loaded' : 'Partial repository context'} · TypeScript {view.impact.coverage.typescriptVersion} · execution not run</p>
       {#if view.impact.impact.affected.length}
         <div class="scroll">
@@ -75,7 +77,7 @@
 
   <section class="panel" aria-label="Independent review">
     <header class="panel-heading"><div><p class="eyebrow">02 · Independent review</p><h3>Claims &amp; counterexamples</h3></div>
-      <button type="button" onclick={() => void controller.review()} disabled={!view?.reviewerConfigured || !matches || inspection.loading || inspection.reviewing}>
+      <button type="button" onclick={() => void controller.review()} disabled={!view?.reviewerConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>
         {matches && inspection.reviewing ? 'Reviewing…' : 'Request independent review'}
       </button>
     </header>
@@ -114,10 +116,14 @@
   </section>
 
   <section class="panel" aria-label="Review packet">
-    <header class="panel-heading"><div><p class="eyebrow">03 · Evidence packet</p><h3>Requirements &amp; remaining gaps</h3></div><span class="tag">Inspection required</span></header>
+    <header class="panel-heading"><div><p class="eyebrow">03 · Evidence packet</p><h3>Requirements &amp; remaining gaps</h3></div><button type="button" onclick={() => void controller.verify()} disabled={!view?.verificationConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>{matches && inspection.verifying ? 'Running checks…' : 'Run trusted checks'}</button></header>
     {#if view}
       <p class="muted">{view.packet.impact.summary}</p>
       <p class="notice">{view.packet.tokenSignal.reason} · {view.packet.tokenSignal.observedTokens} observed tokens. Token observations are not correctness evidence.</p>
+      {#if !view.verificationConfigured}<p class="empty">Controlled verification requires an admitted runner and trusted checks pinned to this repository and base revision.</p>{/if}
+      {#if view.packet.executions.length}<div class="executions"><h4>Recorded check executions</h4><ul class="items">{#each view.packet.executions as execution}<li><div class="row"><strong>{execution.checkId}</strong><span class="tag" class:contradicts={execution.result === 'failed'}>{label(execution.result)} · {label(execution.evidenceStatus)}</span></div><p class="meta">{label(execution.status)} · {execution.executedTests} exercised cases · exit {execution.exitCode ?? 'unavailable'}</p><details><summary>Requirement and source trace</summary><p class="meta">Execution: {execution.id}<br />Runner: {execution.runnerId}</p>{#each view.packet.checkDefinitions.filter(check => check.id === execution.checkId && ['definitionDigest', 'oracleDigest', 'environmentDigest', 'dependencyDigest'].every(key => check[key as keyof typeof check] === execution[key as keyof typeof execution])) as check}<p class="meta">Requirements: {check.requirementIds.join(', ')}<br />Nodes: {check.nodeIds.join(', ') || 'No resolved node'}</p>{#each view.impact.graph.nodes.filter(node => check.nodeIds.includes(node.id)) as node}<p class="meta">{node.source?.path} · {node.source?.revision} bytes {node.source?.start}–{node.source?.end}<br /><code>{node.source?.blobSha}</code></p>{/each}{/each}<p class="meta">Recorded check: {execution.definitionDigest}<br />Recorded oracle: {execution.oracleDigest}<br />Recorded environment: {execution.environmentDigest}<br />Recorded dependencies: {execution.dependencyDigest}</p></details></li>{/each}</ul></div>{/if}
+      {#if view.dispatchPlan}<details><summary>Last dispatched plan</summary><p class="meta">Mandatory: {view.dispatchPlan.mandatory.map(check => check.id).join(', ') || 'None'}<br />Optional: {view.dispatchPlan.selected.map(check => check.id).join(', ') || 'None'}<br />Omitted: {view.dispatchPlan.omitted.map(check => check.id).join(', ') || 'None'}</p></details>{/if}
+      {#if view.packet.evidenceReuse.length}<details><summary>Evidence reuse assessment</summary><ul class="items compact">{#each view.packet.evidenceReuse as reuse}<li><strong>{reuse.executionId} · {reuse.status}</strong><p>{reuse.reason}</p></li>{/each}</ul></details>{/if}
       {#if !view.packet.executions.length}<p class="empty">Verification unavailable: no controlled check execution is recorded. Suggested checks have not been run.</p>{/if}
       {#if view.packet.requirementCoverage.length}<ul class="items">
         {#each view.packet.requirementCoverage as requirement}<li>
@@ -131,7 +137,7 @@
         </li>{/each}
       </ul>{:else}<p class="empty">Requirement coverage is unavailable.</p>{/if}
       {#if view.packet.conflicts.length}<div class="conflicts"><h4>Conflicting evidence remains open</h4><ul>{#each view.packet.conflicts as conflict}<li><strong>{conflict.requirementId}</strong><p class="meta">Claims: {conflict.claimIds.join(', ')}<br />Executions: {conflict.executionIds.join(', ') || 'None recorded'}</p></li>{/each}</ul></div>{/if}
-      <details><summary>Verification plan · {view.packet.checkPlan.mandatory.length} mandatory, {view.packet.checkPlan.selected.length} optional, {view.packet.checkPlan.omitted.length} omitted</summary>
+      <details><summary>Next verification plan · {view.packet.checkPlan.mandatory.length} mandatory, {view.packet.checkPlan.selected.length} optional, {view.packet.checkPlan.omitted.length} omitted</summary>
         <p class="meta">Optional cap: {view.packet.checkPlan.budget.optionalChecks} checks · {view.packet.checkPlan.budget.perCheckMs / 1000}s per check · {view.packet.checkPlan.budget.totalMs / 1000}s total. Mandatory checks are outside this budget.</p>
         <ul class="items compact">{#each [...view.packet.checkPlan.mandatory, ...view.packet.checkPlan.selected, ...view.packet.checkPlan.omitted] as check}<li><strong>{check.id}</strong><p class="meta">{check.reasons.map(label).join(' · ')}</p></li>{/each}</ul>
       </details>

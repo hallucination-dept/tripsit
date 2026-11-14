@@ -8,7 +8,8 @@ export async function GET({ request, locals, params }) {
     if ([params.id, params.candidateId].some(id => !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(id))) throw new IntakeError(404, 'Assessment is unavailable.');
     if ([...new URL(request.url).searchParams].length) throw new IntakeError(400, 'Assessment overrides are unavailable.');
     const owner = locals.user!.id;
-    const { service, reviewerConfigured } = await assessmentRuntime(request.headers, owner, signal);
-    return assessmentView(owner, await service.load(owner, params.id, params.candidateId, signal), reviewerConfigured);
+    const { service, reviewerConfigured, verificationAvailable } = await assessmentRuntime(request.headers, owner, signal);
+    const assessment = await service.load(owner, params.id, params.candidateId, signal);
+    return assessmentView(owner, assessment, reviewerConfigured, verificationAvailable?.(assessment) ?? false);
   }, 90_000);
 }

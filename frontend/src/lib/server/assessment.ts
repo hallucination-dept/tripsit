@@ -7,9 +7,13 @@ import { buildImpact, type ImpactFile } from './impact-extractor.ts';
 import { snapshotPolicy } from './snapshot-policy.ts';
 import type { ReviewIdentity, StoredReview } from './review-records.ts';
 import type { ReviewerInput, ReviewerResult } from './reviewer.ts';
+import type { VerificationContext, VerificationEvidence } from './verification.ts';
+import type { StoredVerification } from './verification-records.ts';
 
 export type Assessment = {
   identity: ReviewIdentity;
+  repositoryId: number;
+  verifications?: StoredVerification[];
   generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number };
   policy: ReturnType<typeof snapshotPolicy>['policy'];
   impact: ReturnType<typeof buildImpact>;
@@ -28,6 +32,8 @@ export type AssessmentDependencies = {
     append(owner: string, identity: ReviewIdentity, result: ReviewerResult): Promise<StoredReview>;
   };
   reviewer: { review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> };
+  verification?: { run(input: VerificationContext, signal: AbortSignal): Promise<VerificationEvidence> };
+  verificationRecords?: { list(owner: string, identity: ReviewIdentity): Promise<StoredVerification[]>; append(owner: string, identity: ReviewIdentity, result: VerificationEvidence): Promise<StoredVerification> };
 };
 class AssessmentError extends IntakeError {}
 const encoder = new TextEncoder();
@@ -44,10 +50,10 @@ function pathValid(value: unknown): value is string {
 function gitBlob(bytes: Uint8Array) { return createHash('sha1').update(`blob ${bytes.byteLength}\0`).update(bytes).digest('hex'); }
 
 export function createAssessment(dependencies: AssessmentDependencies) {
-  async function bounded<T>(owner: string, itemId: string, candidateId: string, signal: AbortSignal, action: (active: AbortSignal) => Promise<T>): Promise<T> {
+  async function bounded<T>(owner: string, itemId: string, candidateId: string, signal: AbortSignal, action: (active: AbortSignal) => Promise<T>, timeoutMs = 90_000): Promise<T> {
     if (!owner) fail(401);
     if (!uuid(itemId) || !uuid(candidateId)) fail(404);
-    const active = AbortSignal.any([signal, AbortSignal.timeout(90_000)]);
+    const active = AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]);
     try { return await whileActive(() => action(active), active); }
     catch (error) {
       if (error instanceof AssessmentError) throw error;
@@ -134,13 +140,27 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     impact.gaps.push(...gaps);
     impact.gaps.sort((a, b) => compare(a.kind, b.kind) || compare(a.path, b.path) || compare(a.revision ?? '', b.revision ?? ''));
     const reviews = await whileActive(() => dependencies.reviews.list(owner, initial.identity), signal);
+    const verifications = dependencies.verificationRecords ? await whileActive(() => dependencies.verificationRecords!.list(owner, initial.identity), signal) : [];
     await fresh(owner, itemId, candidateId, initial.stamp, signal);
-    return { stamp: initial.stamp, issue: { title: initial.item.snapshot.supplied.title, body: initial.item.snapshot.supplied.body }, assessment: { identity: initial.identity, generation: initial.generation, policy: initial.policy, impact, reviews,
+    return { stamp: initial.stamp, issue: { title: initial.item.snapshot.supplied.title, body: initial.item.snapshot.supplied.body }, assessment: { identity: initial.identity, repositoryId: initial.item.snapshot.repositoryId, verifications, generation: initial.generation, policy: initial.policy, impact, reviews,
       files: files.map(file => ({ path: file.path, original: file.base?.content ?? null, replacement: file.candidate!.content })) } };
   }
   return {
     async load(owner: string, itemId: string, candidateId: string, signal: AbortSignal): Promise<Assessment> {
       return bounded(owner, itemId, candidateId, signal, async active => (await load(owner, itemId, candidateId, active)).assessment);
+    },
+    async verify(owner: string, itemId: string, candidateId: string, signal: AbortSignal): Promise<StoredVerification> {
+      return bounded(owner, itemId, candidateId, signal, async active => {
+        if (!dependencies.verification || !dependencies.verificationRecords) fail(503);
+        const { assessment, stamp } = await load(owner, itemId, candidateId, active);
+        if ((assessment.verifications?.length ?? 0) >= 4) fail(429);
+        await fresh(owner, itemId, candidateId, stamp, active);
+        const result = await whileActive(() => dependencies.verification!.run(verificationContext(assessment), active), active);
+        await fresh(owner, itemId, candidateId, stamp, active);
+        const stored = await whileActive(() => dependencies.verificationRecords!.append(owner, assessment.identity, result), active);
+        await fresh(owner, itemId, candidateId, stamp, active);
+        return stored;
+      }, 1_200_000);
     },
     async review(owner: string, itemId: string, candidateId: string, signal: AbortSignal): Promise<StoredReview> {
       return bounded(owner, itemId, candidateId, signal, async active => {
@@ -161,4 +181,15 @@ export function createAssessment(dependencies: AssessmentDependencies) {
       });
     }
   };
+}
+
+export function verificationContext(assessment: Assessment): VerificationContext {
+  const current = assessment.reviews.filter(review => Object.entries(assessment.identity).every(([key, value]) => review.identity[key as keyof ReviewIdentity] === value));
+  const claims = current.flatMap(review => review.result.status === 'completed' ? review.result.claims : []);
+  return { identity: assessment.identity, repositoryId: assessment.repositoryId, files: assessment.files,
+    nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })),
+    requirements: assessment.policy.requirements, comparison: { model: assessment.generation.model, settingsDigest: assessment.generation.settingsDigest, revision: assessment.identity.candidateDigest },
+    impactUnknown: true, disagreements: assessment.policy.requirements.filter(requirement =>
+      claims.some(claim => claim.requirementIds.includes(requirement.id) && claim.stance === 'supports')
+      && claims.some(claim => claim.requirementIds.includes(requirement.id) && claim.stance === 'contradicts')).map(requirement => requirement.id) };
 }
