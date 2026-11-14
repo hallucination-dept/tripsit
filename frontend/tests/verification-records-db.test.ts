@@ -21,7 +21,12 @@ test('real PostgreSQL scopes execution evidence, atomically caps count and bytes
       let now = new Date('2026-01-01T00:00:00Z');
       const records = createRecords(client, () => now);
       const candidates = createCandidateRecords(client, () => now);
-      const verifications = createVerificationRecords(client, () => now);
+      const verificationDatabase = { async query(sql: string, values?: unknown[]) {
+        const connection = await pool.connect();
+        try { await connection.query(`SET search_path TO ${schema}`); return await connection.query(sql, values); }
+        finally { connection.release(); }
+      } };
+      const verifications = createVerificationRecords(verificationDatabase, () => now);
       const item = await records.create('owner', { repository: 'test/source', repositoryId: 1, private: false, issueId: 1, issueNumber: 1, baseSha: 'a'.repeat(40), supplied: { title: 'Review fixture', body: '', provenance: 'supplied' }, inferred: [], ownerConfirmed: [] });
       const rawOutput = new TextEncoder().encode('{}');
       const content = new TextEncoder().encode('export const snow = "雪";\r\n');
@@ -39,11 +44,15 @@ test('real PostgreSQL scopes execution evidence, atomically caps count and bytes
       await assert.rejects(() => verifications.list('other', { ...identity, ownerId: 'other' }), { status: 404 });
       await assert.rejects(() => verifications.append('other', { ...identity, ownerId: 'other' }, result), { status: 404 });
       await assert.rejects(() => verifications.append('owner', { ...identity, candidateDigest: 'd'.repeat(64) }, result), { status: 404 });
+      await client.query("UPDATE tripsit_snapshots SET payload=jsonb_set(payload,'{private}','true'::jsonb) WHERE work_item_id=$1", [item.id]);
+      await assert.rejects(() => verifications.list('owner', identity), { status: 404 });
+      await assert.rejects(() => verifications.append('owner', identity, result), { status: 404 });
+      await client.query("UPDATE tripsit_snapshots SET payload=jsonb_set(payload,'{private}','false'::jsonb) WHERE work_item_id=$1", [item.id]);
       const attempts = await Promise.allSettled(Array.from({ length: 5 }, () => verifications.append('owner', identity, result)));
       assert.equal(attempts.filter(row => row.status === 'fulfilled').length, 3);
       assert.equal((await verifications.list('owner', identity)).length, 4);
       await assert.rejects(() => verifications.append('owner', identity, result), { status: 404 });
-      await client.query("UPDATE tripsit_candidate_payloads SET payload=jsonb_set(payload,'{verifications}','[]'::jsonb) || jsonb_build_object('padding', repeat('x',4190000)) WHERE candidate_id=$1", [candidate.id]);
+      await client.query("UPDATE tripsit_candidate_payloads SET payload=jsonb_set(payload,'{verifications}','[]'::jsonb) || jsonb_build_object('padding', repeat('x',4193000)) WHERE candidate_id=$1", [candidate.id]);
       await assert.rejects(() => verifications.append('owner', identity, result), { status: 404 });
       await client.query("UPDATE tripsit_candidate_payloads SET payload=payload-'padding' WHERE candidate_id=$1", [candidate.id]);
       const saved = await verifications.append('owner', identity, result);

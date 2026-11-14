@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createHash } from 'node:crypto';
+import { prioritizeChecks } from '../src/lib/server/priorities.ts';
 import { createVerificationRecords } from '../src/lib/server/verification-records.ts';
 
 const identity = { ownerId: 'owner', itemId: '11111111-1111-4111-8111-111111111111', candidateId: '22222222-2222-4222-8222-222222222222', baseSha: 'a'.repeat(40), candidateDigest: 'b'.repeat(64), snapshotDigest: 'c'.repeat(64), policyVersion: 'baseline-1' };
@@ -26,7 +27,9 @@ function fixture() {
 
 test('immutable verification envelopes preserve original policy/snapshot and reject corruption or cross-owner identity', async () => {
   const { records, artifacts } = fixture();
-  const created = await records.append('owner', identity, result);
+  const dispatchPlan = prioritizeChecks(result.checks.map(check => ({ ...check, missingEvidence: true, reviewerDisagreement: false })), { model: 'fixture', settingsDigest: '9'.repeat(64), revision: identity.candidateDigest });
+  const created = await records.append('owner', identity, { ...result, dispatchPlan });
+  assert.deepEqual(created.result.dispatchPlan, dispatchPlan);
   assert.deepEqual(await records.list('owner', identity), [created]);
   assert.deepEqual((await records.list('owner', { ...identity, snapshotDigest: '9'.repeat(64), policyVersion: 'next' }))[0].identity, identity);
   created.result.executions[0].runnerId = 'caller-mutated';
