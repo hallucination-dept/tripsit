@@ -507,3 +507,14 @@ user_authorization_override:
   retained_behavior: Authentication, GitHub user/install access, exact revision binding, bounded inputs/timeouts and expiry remain ordinary correctness/security behavior.
   retention: Keep practical recurring deletion as nonblocking maintenance, never an additional private-intake prerequisite.
   source: Explicit latest user instruction supersedes prior agent-authored private admission and consent gates.
+product_flow_correction:
+  instruction: No deployment; use existing Gemma proxy inference and only returned text. First implement fix/feature from issue, then review changes and give advice.
+  supersedes: New runner, check-execution, manual admission and deployment work introduced in this completion wave.
+  plan:
+  - Remove this wave's runner and execution runtime/UI/storage additions; retain isolated commits for future reference.
+  - Keep authorized private repository snapshot/context/generation/review and normal authentication/revision validation.
+  - Generation consumes only message text as bounded file replacements; ignore provider probability and other response metadata.
+  - Reviewer returns readable advice from message text with no required structured claim schema or probability interpretation.
+  - Keep static impact and honest optional evidence gaps; no claim of executed checks or completed original runner-dependent acceptance.
+  verification: Native issue/private generation/review regressions, actual Gemma text-only provider probe, frontend check/build and browser issue-to-candidate-to-advice flow.
+
