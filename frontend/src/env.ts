@@ -12,6 +12,8 @@ export const variables = defineEnvVars({
 	BETTER_AUTH_URL: { schema: (value) => value },
 	GITHUB_CLIENT_ID: { schema: (value) => value },
 	GITHUB_CLIENT_SECRET: { schema: (value) => value },
+	GITHUB_APP_CLIENT_ID: { schema: (value) => value },
+	GITHUB_APP_CLIENT_SECRET: { schema: (value) => value },
 	GITHUB_APP_ID: { schema: (value) => value },
 	GITHUB_APP_PRIVATE_KEY: { schema: (value) => value }
 });

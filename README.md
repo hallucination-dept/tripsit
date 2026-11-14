@@ -19,7 +19,7 @@ these values there:
 - `MODAL_API_URL` and `MODAL_PROXY_TOKEN` for the deployed Gemma API.
 - `DATABASE_URL` for the managed PostgreSQL database.
 - `BETTER_AUTH_URL`, which is `http://localhost:5173` during local development.
-- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from a GitHub OAuth App.
+- `GITHUB_APP_CLIENT_ID` and `GITHUB_APP_CLIENT_SECRET` from a GitHub App.
 
 Register this GitHub OAuth callback URL locally:
 
@@ -80,8 +80,8 @@ Open `http://localhost:8080` to test it.
 | `DATABASE_URL` | Connected-service value | PostgreSQL connection URL supplied by the Aiven integration |
 | `BETTER_AUTH_SECRET` | Secret | A long random secret, e.g. `npx auth@latest secret` |
 | `MODAL_PROXY_TOKEN` | Secret | Modal web/proxy token |
-| `GITHUB_CLIENT_ID` | Variable | GitHub OAuth App client ID |
-| `GITHUB_CLIENT_SECRET` | Secret | GitHub OAuth App client secret |
+| `GITHUB_APP_CLIENT_ID` | Variable | GitHub App client ID |
+| `GITHUB_APP_CLIENT_SECRET` | Secret | GitHub App client secret |
 
 The Aiven PostgreSQL integration can inject its connection string directly as
 `DATABASE_URL`; do not commit that URL to the repository. If PostgreSQL is not
@@ -94,7 +94,7 @@ For an Aiven URL using `sslmode=require`, the app enables
 Once the public Aiven URL is known:
 
 1. Set both `BETTER_AUTH_URL` and `ORIGIN` to that URL in Aiven Runtime.
-2. In the GitHub OAuth App settings, add this exact callback URL:
+2. In the GitHub App settings, add this exact callback URL:
 
    ```text
    https://YOUR-AIVEN-DOMAIN/api/auth/callback/github
@@ -103,7 +103,7 @@ Once the public Aiven URL is known:
 3. Run the Better Auth migration once against the production database. From a
    machine that can reach the database, use the production values for
    `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
-   `GITHUB_CLIENT_ID`, and `GITHUB_CLIENT_SECRET`, then run:
+   `GITHUB_APP_CLIENT_ID`, and `GITHUB_APP_CLIENT_SECRET`, then run:
 
    ```bash
    cd frontend
@@ -118,7 +118,9 @@ commits, or add a separate CI deployment step with an Aiven API token.
 
 ## GitHub issue intake (development slice)
 
-The existing Better Auth GitHub OAuth sign-in is reused. Issue intake separately
+Better Auth GitHub sign-in uses `GITHUB_APP_CLIENT_ID` and
+`GITHUB_APP_CLIENT_SECRET`; the legacy `GITHUB_CLIENT_*` pair is not used for login.
+Issue intake separately
 requires `GITHUB_APP_ID` and a PEM `GITHUB_APP_PRIVATE_KEY`, server-side only, for a
 GitHub App installed on the selected repository with Contents/Issues read access.
 The logged-in user's OAuth token must independently access the repository; the
