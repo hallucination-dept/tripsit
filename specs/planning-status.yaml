@@ -8,7 +8,7 @@ discover:
   transition_confirmation: authorized
   next_phase: elaborate
 elaborate:
-  status: in_progress
+  status: complete
   prior_art: specs/tech-architecture/PRIOR_ART_LATEST.md
   design_drafts:
     - specs/tech-architecture/REVIEW_RECORDS_LATEST.md
@@ -17,3 +17,12 @@ elaborate:
     - specs/tech-architecture/REVIEW_WORKFLOW_LATEST.md
   feasibility: partial_synthetic_local_checks
   feasibility_evidence: specs/tech-architecture/FEASIBILITY_LATEST.md
+  architecture_decision: specs/adr/0003-hackathon-integration-and-deferred-live-gates.md
+  design_review: specs/tech-architecture/ELABORATE_REVIEW_LATEST.md
+  quality_gate: dual_pass_100_percent_round_2
+  transition_confirmation: authorized
+  next_phase: plan
+plan:
+  status: not_started
+  entry_authorized: true
+  next_skill: plan-release

@@ -24,15 +24,15 @@ Evaluation compares graph-only, uncertainty-only, and combined prioritization un
 
 ## Decisions for Elaborate
 
-- Select concrete GitHub evaluation repositories, common languages, and independently established expected outcomes. Universal language coverage is not promised.
-- Establish access permissions and whether the initial pilot supports private repositories.
-- Select the independent reviewer through an OpenAI-compatible API. Hosted models are a proposed option; Gemma retains the internal-signal role.
+- Users select any repository accessible through their GitHub login, including private repositories where permissions permit. Common languages include JavaScript/Node.js, Python, C++, C#, and Rust; the list is illustrative. Evaluation fixtures do not restrict repository selection.
+- Establish operation-specific repository permissions and independently expected evaluation outcomes. Publish measured language coverage and unresolved analysis boundaries; authentication does not itself grant repository access.
+- Use a configurable OpenAI-compatible API for the independent reviewer; provider/model selection is deferred by user decision. Gemma retains the internal-signal role.
 - Choose graph extraction, safe execution boundaries, evidence integrity, and treatment of unsupported dependencies.
 - Define uncertainty aggregation, prioritization rules, baseline budgets, and reproducible evaluation cases.
 
 ## Resource assumptions
 
-The team has two people at a hackathon. No deadline or spending limit was supplied. These omissions do not block problem discovery; planning must report estimates, and any paid infrastructure change still requires authorization.
+The team has two people at a hackathon, targeting roughly 24 hours of agent build work with the already supplied stack and resources. No separate resource inventory, budget, or exact deadline is required to finish Elaborate. Provider/model selection for the OpenAI-compatible reviewer is explicitly deferred. Paid production infrastructure changes still require explicit authorization.
 
 ## Phase evidence and checkpoint
 

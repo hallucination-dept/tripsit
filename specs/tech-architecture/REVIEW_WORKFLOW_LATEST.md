@@ -4,7 +4,7 @@ Status: proposed design. Provider integration, sandbox configuration, and evalua
 
 ## Point 4: independent reviewer
 
-Use one separately selected model through a configured OpenAI-compatible endpoint. The initial protocol uses chat requests and server-side validation; provider-specific advanced features are optional. Do not require the reviewer to expose probabilities or activations. Record endpoint/provider identity, model identifier, prompt version, settings, and available model revision metadata.
+Use a separately prompted reviewer through a configurable OpenAI-compatible endpoint. Provider/model selection is explicitly deferred by the user and does not block Elaborate. The initial protocol uses chat requests and server-side validation; provider-specific advanced features are optional. Do not require the reviewer to expose probabilities or activations. Record endpoint/provider identity, model identifier, prompt version, settings, and available model revision metadata.
 
 The first pass receives the frozen task snapshot with expectation provenance, base/candidate diff, relevant repository context, graph paths and gaps, and repository policy supplied by the trusted coordinator. It does not receive the coding agent's justification or generation confidence. Retrieved repository content is source-tagged untrusted data, including comments, documentation, and tool output.
 
@@ -58,7 +58,7 @@ Only the authenticated authorized owner can accept, request revision, or escalat
 
 Record random spot-check selections and results, including low-risk accepted changes, plus escaped defects and affected areas. An escape increases scrutiny for the relevant area/failure class. Pilot records show an inspection-required state and regression follow-up; automatic trust recovery or an area correctness score is deferred.
 
-## Feasibility gates before implementation planning is locked
+## Implementation gates scheduled during Plan
 
 - Exact token-to-code reconstruction and revision mapping, including Unicode and multi-file output.
 - Supported graph extraction with explicit unresolved calls and shared-resource boundaries.
@@ -69,6 +69,6 @@ Record random spot-check selections and results, including low-risk accepted cha
 
 ## Remaining choices
 
-Concrete evaluation repositories, reviewer endpoint/model, sandbox configuration, publication authentication, retention, and numerical budgets remain open. Resolve through focused experiments and estimates. Credentials are required only when a selected live experiment is ready; do not record their values in specs.
+ADR 0003 selects publication authentication, retention, execution boundaries, and configurable reviewer integration. It supersedes earlier open-choice statements in this document. Evaluation fixtures and concrete tool configuration remain implementation tasks; the ADR deferred-validation register defines when each gate must pass. None is represented as passed merely because Plan can begin. Choose fixtures without restricting user repository selection. Reviewer endpoint/model selection is deferred until configuration. The user targets roughly 24 hours of agent build work using already supplied resources; do not require a separate resource inventory or numerical spending budget to finish this stage. Execution limits and equal-budget evaluation controls remain technical design responsibilities. Credentials are required only when a selected live experiment is ready; do not record their values in specs.
 
-All six Elaborate topics now have draft designs. No feasibility gate has passed, no fresh reviewer quality gate has run, and Elaborate is not complete.
+All six Elaborate topics have designs consolidated by ADR 0003. Synthetic feasibility evidence is limited to the saved local self-check; live implementation gates remain unpassed. The current architecture review result and phase status are recorded in ELABORATE_REVIEW_LATEST.md and specs/state.yaml.

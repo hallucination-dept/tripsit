@@ -1,8 +1,10 @@
 # Elaborate: consolidated architecture and unresolved gates
 
-Status: in progress. This document consolidates design choices; it is not an implementation plan or completed quality gate.
+Status: Elaborate complete; dual independent design review passed (20/20 each). User authorized the Plan transition; implementation planning starts in the next session. ADR 0003 selects the architecture and supersedes the historical open items below where explicitly resolved. This is not an implementation plan or a live verification claim.
 
 ## Intended flow
+
+Repository selection is user-driven: any repository accessible through the user's GitHub login, including private repositories where permissions allow. Support targets common languages such as JavaScript/Node.js, Python, C++, C#, and Rust, without a fixed language allowlist. Evaluation repositories measure coverage; they do not constrain user selection. Analysis and verification limitations must remain explicit per language and repository.
 
 1. An authenticated owner selects a GitHub issue and repository. Snapshot reported behavior, supplied expectations, and optional confirmed criteria; label model-inferred hypotheses.
 2. The coordinator freezes the base revision. Gemma proposes bounded edits, retaining generation observations and output provenance.
@@ -41,12 +43,12 @@ Failures and cancellation attach to the stage where they occurred. Resume must v
 - Open: candidate-controlled test reports and exit codes are not independent oracles. Check provenance and the trusted result interpretation must be demonstrated.
 - Open: GitHub API permissions for writing content and PRs may also permit undesirable operations. Credential isolation, repository branch rules, and the actual merge guard need validation; a prompt saying "never merge" is insufficient.
 - Open: automatic reopening of scrutiny after an escape needs a precise area/failure-class mapping. Start with explicit recorded inspection requirements rather than an uncalibrated reputation score.
-- Open: provider keys, live costs, private-source retention, and concrete sandbox settings have not been established. No live action is authorized by this document.
+- Resolved for planning by ADR 0003: retention proposal, execution boundary, publication authentication, and deferred reviewer configuration. Provider keys and actual sandbox settings remain live integration prerequisites; no live action is authorized by this document.
 
 ## What finishes Elaborate
 
-Agree on supported initial graph behavior and bounded uncertainty use; resolve or explicitly defer feasibility limitations with consequences visible in scope. Produce concrete execution/GitHub enforcement proposals and reproducible evidence for critical assumptions. Obtain a fresh design review under the orchestrate quality gate, recording real findings rather than inventing a score. Then seek the required phase-transition confirmation before Plan.
+ADR 0003 defines graph fallback behavior, bounded uncertainty use, execution/GitHub enforcement, and explicit deferred validation with timing and failure consequences. The saved synthetic self-check is reproducible but does not validate live integrations. Complete the fresh dual-review design gate in ELABORATE_REVIEW_LATEST.md, then seek phase-transition confirmation before Plan. Plan must include the deferred gates as prerequisites to dependent implementation use.
 
-Provider/model selection and existing sandbox availability were requested earlier. Until supplied, continue with local design and synthetic evidence; do not assume credentials or permission to provision paid infrastructure.
+User decisions: target roughly 24 hours of agent build work using the already supplied stack and resources; no additional resource inventory, budget, or exact deadline is required. Configure the reviewer through an OpenAI-compatible API and defer provider/model selection until later. These are not outstanding user-input blockers. Continue local design and synthetic evidence; validate the selected endpoint when configured and the execution boundary before running untrusted code. Do not assume credentials or permission to change production infrastructure.
 
 References: REVIEW_RECORDS_LATEST.md, CHANGE_GRAPH_LATEST.md, UNCERTAINTY_LATEST.md, REVIEW_WORKFLOW_LATEST.md, PRIOR_ART_LATEST.md, FEASIBILITY_LATEST.md, and specs/adr/0001–0002.

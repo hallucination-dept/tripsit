@@ -1,4 +1,10 @@
-# Initial local feasibility evidence
+# Local feasibility evidence
+
+## Current reproducible check
+
+Run `python3 specs/experiments/elaborate_selfcheck.py`. It passed on 2026-11-14: synthetic UTF-8 reconstruction and line-ending identity, Python import alias resolution, deleted-symbol reachability through a base graph, cycle termination, visible traversal-budget exhaustion, and unresolved dynamic calls. The graph traversal fixtures are hand-authored; they do not demonstrate automated graph extraction for deletions or general semantic resolution. No live service, sandbox, or other-language coverage is certified. ADR 0003 defines the deferred live implementation gates.
+
+## Historical inline experiment
 
 Executed on 2026-11-14 using Python 3 standard-library assertions through an inline command. Synthetic fixtures only; no repository code executed, packages installed, live APIs called, or infrastructure changed. The command was exploratory and is preserved in the session tool history, not as a shipping test suite.
 

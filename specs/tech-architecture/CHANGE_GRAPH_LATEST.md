@@ -28,7 +28,7 @@ Cycles require visited-node tracking. Traversal has explicit node/time/context b
 
 Use parser/compiler-derived relationships where supported. Tree-sitter is a candidate for common-language syntax; semantic tooling can resolve symbols more precisely for particular languages. No parser choice is locked before feasibility experiments.
 
-Proposed first validation cases use Python and TypeScript. Other languages may receive file/import-level analysis or an explicit unsupported result. Never imply symbol-level support merely because a grammar can parse the file.
+Repository intake is not restricted to a demonstration repository or a language allowlist. Target common languages including JavaScript/Node.js, Python, C++, C#, and Rust, as well as mixed-language repositories. Validate extraction and verification coverage separately for each language. Existing Python experiments are evidence for that narrow experiment only, not a decision to limit product support. Where symbol resolution or executable verification is unavailable, retain the workflow and expose the specific coverage gap; do not label verification complete. Never imply symbol-level support merely because a grammar can parse the file.
 
 Dynamic dispatch, reflection, dependency injection, events, SQL, framework routing, generated code, and external consumers may escape static resolution. Record potential effects and unresolved boundaries. Runtime traces can add observed paths, but absence from a trace does not establish absence of a dependency.
 

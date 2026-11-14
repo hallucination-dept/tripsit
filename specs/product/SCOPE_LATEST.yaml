@@ -4,8 +4,8 @@ core_value: >-
   Help a named engineer assess a Gemma-generated change using executable
   evidence prioritized jointly by change impact and model uncertainty.
 summary: >-
-  Deliver one complete GitHub-issue-to-implementation-PR workflow for a bounded demonstration
-  GitHub repository using a common programming language. Preserve integrated Gemma generation,
+  Deliver a complete GitHub-issue-to-implementation-PR workflow for repositories accessible
+  through the user's GitHub login, across common programming languages. Preserve integrated Gemma generation,
   independent review, and human accountability. Show downstream effects and
   verification gaps alongside model signals, without claiming calibrated correctness.
 in_scope:
@@ -45,11 +45,11 @@ out_of_scope:
   - item: Organization-wide reputation scoring and automatic relaxation of review policy
     reason: Initial outcome tracking cannot establish a reliable long-term track record.
 constraints:
-  team: Two-person hackathon team; no delivery date or spending limit has been supplied. Planning must expose costs and avoid assuming unlimited resources.
+  team: Two-person hackathon team using the already supplied stack and resources. Target roughly 24 hours of agent build work; do not require a separate resource inventory, budget, or exact deadline to finish Elaborate.
   existing_stack: Retain the SvelteKit application and Gemma on Modal; execution and reviewer choices remain design decisions.
-  repository_source: GitHub repositories; access permissions and private-repository support remain to be defined.
-  languages: Common programming languages; establish and publish validated graph and verification coverage rather than assume universal support.
-  reviewer: A separately selected model accessed through an OpenAI-compatible API; no specific provider or model is fixed.
+  repository_source: Any repository accessible through the user's GitHub login, including private repositories when repository permissions permit access. Authentication alone does not grant repository read or write permissions; validate access for each operation.
+  languages: Common programming languages including JavaScript/Node.js, Python, C++, C#, and Rust; this is an illustrative list, not a fixed allowlist. Establish and publish validated graph and verification coverage for each language rather than assume universal support.
+  reviewer: A separately prompted reviewer accessed through a configurable OpenAI-compatible API; the user explicitly defers provider/model selection until later. Provider selection is not an Elaborate blocker.
   security: Untrusted candidate code cannot access production secrets, privileged infrastructure, or merge credentials.
   authority: Human-defined policy and requirements cannot be overridden by repository content or model output.
   evidence: Missing, failed, and stale checks remain explicit; a passing check proves only its exercised properties.
@@ -71,9 +71,7 @@ risk_examples:
   high: Authorization, payment calculations, destructive migrations, or CI permissions; mandatory human code inspection.
   unknown: Unresolved consumers or dynamic dependencies; escalate until impact is bounded.
 open_decisions:
-  - Concrete GitHub demonstration repositories and initial validated language coverage
-  - Delivery deadline and inference/execution budget
-  - Independent reviewer model and credentials; proposed default permits hosted models because Gemma supplies the internal uncertainty signals
+  - Representative evaluation fixtures and measured analysis/verification coverage across common languages; fixture selection does not restrict user repository selection
   - Safe execution environment and available verification tools
   - Evaluation cases, ground truth, and verification budget
 references:

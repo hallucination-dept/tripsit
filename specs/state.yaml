@@ -3,14 +3,19 @@ project: TripSit
 active_flow: orchestrate_project
 project_cycle:
   mode: standard
-  current_phase: 2
-  completed_phases: [1]
+  current_phase: 3
+  completed_phases: [1, 2]
   transition:
-    to_phase: 2
+    to_phase: 3
     status: authorized
 handoff:
-  next_skill: elaborate-spec
-  summary: "Added public engineering baseline and explicit intent/functional/non-functional requirements in tech-architecture/QUALITY_BASELINE_LATEST.md; updated record contract and scope with e01s04 (12 stories). References: applicable OWASP ASVS 5.0.0, final NIST SSDF 1.1, WCAG 2.2, and prompt-injection guidance. No compliance claim. Elaborate remains open for control selection, feasibility, enforcement, and fresh review."
+  next_skill: plan-release
+  summary: "Elaborate complete: ADR 0003 consolidates architecture and deferred implementation gates; saved synthetic self-check passed. Dual independent design review round 2 passed 20/20 each (100%), no must-fix or should-fix findings. Evidence: tech-architecture/ELABORATE_REVIEW_LATEST.md. User authorized entry to Plan and requested commit/push for a clean-session handoff. Next run plan-release, then plan-work; schedule fail-closed live gates. No application, infrastructure, live language coverage or calibration is certified."
 integration:
   hands_free: "Open a PR and obtain human approval before merging."
   interactive: "No blanket human-approval requirement; follow explicit user authorization."
+
+user_constraints:
+  build_window: "Roughly 24 hours of agent build work for the hackathon; exact timeframe is not a gate."
+  resources: "Use the already supplied stack and resources; do not require an additional resource inventory or budget to finish Elaborate."
+  reviewer: "Configurable OpenAI-compatible API; provider/model selection explicitly deferred until later, not an Elaborate blocker."
