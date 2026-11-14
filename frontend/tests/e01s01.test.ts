@@ -73,3 +73,28 @@ test('abort and redirect responses never expose upstream errors or credentials',
   await assert.rejects(()=>fixture().github.snapshot('team/repo',2,aborted), IntakeError);
   await assert.rejects(()=>fixture({'/user':new Response('secret',{status:302,headers:{location:'https://evil.invalid'}})}).github.snapshot('team/repo',2,new AbortController().signal), (e: IntakeError)=>!e.message.includes('secret'));
 });
+
+import { createIntake } from '../src/lib/server/work-items.ts';
+
+test('owner filtering precedes GitHub and private storage requires verified admission',async()=>{
+ let writes=0, auths=0;
+ const publicSnapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
+ const stored={id:'item',snapshot:publicSnapshot,createdAt:'now',expiresAt:'later'};
+ const store={create:async()=>{writes++;return stored;},get:async(owner:string)=>owner==='owner'?stored:null,list:async()=>[stored]};
+ const github={snapshot:async()=>({...publicSnapshot,private:true}),authorize:async()=>{auths++;}};
+ const service=createIntake({store,github,privateAdmission:async()=>false});
+ await assert.rejects(()=>service.create('owner',{repository:'team/repo',issueNumber:2},new AbortController().signal),(e:IntakeError)=>e.status===503);
+ assert.equal(writes,0);
+ await assert.rejects(()=>service.get('other','item',new AbortController().signal),(e:IntakeError)=>e.status===404);
+ assert.equal(auths,0);
+ await assert.rejects(()=>service.create('',{},new AbortController().signal),(e:IntakeError)=>e.status===401);
+ await service.get('owner','item',new AbortController().signal);
+ assert.equal(auths,1);
+ github.authorize=async()=>{throw new IntakeError(403,'revoked');};
+ await assert.rejects(()=>service.get('owner','item',new AbortController().signal),(e:IntakeError)=>e.status===403);
+});
+
+test('JSON body reading is cancelled by its deadline',async()=>{
+ const response=new Response(new ReadableStream({start(){},cancel(){}}));
+ await assert.rejects(()=>readJson(response,4096,AbortSignal.timeout(10)),IntakeError);
+});
