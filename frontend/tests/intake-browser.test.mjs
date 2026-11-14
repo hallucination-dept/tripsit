@@ -6,7 +6,7 @@ test('browser UAT requires explicit local origin, two real sessions and issue fi
   assert.throws(() => browserConfiguration({}), /configuration/);
   const env = { TRIPSIT_LIVE_ORIGIN: 'http://127.0.0.1:5173', TRIPSIT_LIVE_OWNER_COOKIE: 'session=owner', TRIPSIT_LIVE_OTHER_COOKIE: 'session=other', TRIPSIT_LIVE_REPOSITORY: 'team/repo', TRIPSIT_LIVE_ISSUE_NUMBER: '2' };
   assert.equal(browserConfiguration(env).issueNumber, 2);
-  for (const change of [{TRIPSIT_LIVE_ORIGIN:'https://production.example'}, {TRIPSIT_LIVE_ORIGIN:'http://user:password@localhost:5173'}, {TRIPSIT_LIVE_REPOSITORY:'../repo'}, {TRIPSIT_LIVE_ISSUE_NUMBER:'2.5'}, {TRIPSIT_LIVE_OTHER_COOKIE:'session=owner'}]) {
+  for (const change of [{TRIPSIT_LIVE_ORIGIN:'https://production.example'}, {TRIPSIT_LIVE_ORIGIN:'http://user:password@localhost:5173'}, {TRIPSIT_LIVE_REPOSITORY:'../repo'}, {TRIPSIT_LIVE_ISSUE_NUMBER:'2.5'}, {TRIPSIT_LIVE_ISSUE_NUMBER:'2e1'}, {TRIPSIT_LIVE_ISSUE_NUMBER:' 2'}, {TRIPSIT_LIVE_ISSUE_NUMBER:'+2'}, {TRIPSIT_LIVE_OTHER_COOKIE:'session=owner'}]) {
     assert.throws(() => browserConfiguration({...env,...change}));
   }
 });
