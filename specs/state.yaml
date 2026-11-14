@@ -13,14 +13,13 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  summary: 'e01s01 public intake slice implemented and locally checked: existing OAuth,
-    owner/user-App repository intersection, immutable snapshots, escaped owner UI,
-    actual disposable PostgreSQL owner-isolation/concurrency/expiry tests. Tasks1-6
-    local commands pass; task7 actual live probes/private admission/periodic retention
-    and task8 authenticated browser UAT remain failing. Private persistence is always
-    refused. live_gates.py is a failclosed admission reporter stub, not actual service
-    probe implementation. Parent independent review pending; stay step4 and do not
-    start dependent story. Worktree /tmp/tripsit-e01s01.'
+  summary: e01s01 public intake implemented; local independent round2 A100/B100 pass
+    (19 focused cases, 2 actual PostgreSQL cases, check/build). This approves only
+    the local public slice. Tasks7/8 live probes/private admission/recurring retention/browser
+    UAT remain failing; story blocked at step4, do not start dependents. Private storage
+    refused. Evidence verifications/REVIEW-e01s01.md and e01s01.md. Resume ONLY /tmp/tripsit-e01s01;
+    no production changes/push/merge. Disposable DB stopped after checks; recreate
+    for further DB tests.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
