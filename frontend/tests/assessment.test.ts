@@ -1,0 +1,115 @@
+import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import test from 'node:test';
+import { createAssessment, type AssessmentDependencies } from '../src/lib/server/assessment.ts';
+import { IntakeError } from '../src/lib/server/intake.ts';
+import type { WorkItem } from '../src/lib/server/records.ts';
+import type { StoredCandidate } from '../src/lib/server/generation.ts';
+import type { StoredReview } from '../src/lib/server/review-records.ts';
+const itemId = '11111111-1111-4111-8111-111111111111';
+const candidateId = '22222222-2222-4222-8222-222222222222';
+const encode = (content: string) => new TextEncoder().encode(content);
+const sha = (content: string) => createHash('sha1').update(`blob ${encode(content).length}\0`).update(encode(content)).digest('hex');
+function fixture() {
+  const item: WorkItem = { id: itemId, createdAt: new Date().toISOString(), expiresAt: new Date(Date.now() + 60_000).toISOString(), snapshot: { repositoryId: 1, repository: 'team/repo', private: false, issueNumber: 2, issueId: 3, baseSha: 'a'.repeat(40), supplied: { title: 'Change a', body: 'Issue text', provenance: 'supplied' }, inferred: [], ownerConfirmed: [] } };
+  const original = 'export const a=1;'; const replacement = 'export const a=2;\r\n// é😀';
+  const sources = new Map([['a.ts', original], ['b.ts', "import './a';"], ['c.ts', "export * from './b';"]]);
+  const candidate: StoredCandidate = { id: candidateId, candidate: { baseSha: item.snapshot.baseSha, expiresAt: item.expiresAt, outputDigest: 'b'.repeat(64), model: 'SECRET_CONFIDENCE', settings: {}, rawOutput: encode('SECRET_CONFIDENCE'), mapping: { status: 'unavailable', reason: 'SECRET_CONFIDENCE' }, observations: { status: 'observed', tokens: [{ token: 'SECRET_CONFIDENCE', bytes: [], logprob: -1 }] }, files: [{ path: 'a.ts', originalBlob: sha(original), blobSha: sha(replacement), content: encode(replacement) }] } };
+  const calls = { intake: 0, generation: 0, context: 0, reviewer: 0, append: 0 };
+  const artifacts: StoredReview[] = [];
+  const deps: AssessmentDependencies = {
+    intake: { async get(owner) { calls.intake++; if (owner !== 'owner') throw new IntakeError(404, 'secret owner data'); return structuredClone(item); } },
+    generation: { async get(owner) { calls.generation++; if (owner !== 'owner') throw new IntakeError(404, 'secret candidate data'); return structuredClone(candidate); } },
+    github: {
+      async files() { return [...sources].map(([path, content]) => ({ path, blobSha: sha(content) })); },
+      async context(_snapshot, paths) { calls.context++; assert(paths.length <= 8); return paths.map(path => ({ path, originalBlob: sources.has(path) ? sha(sources.get(path)!) : null, content: sources.get(path) ?? '' })); }
+    },
+    reviews: {
+      async append(_owner, identity, result) { calls.append++; const stored = { id: String(calls.append), identity, createdAt: new Date().toISOString(), result, digest: 'c'.repeat(64) }; artifacts.push(stored); return stored; },
+      async list() { return structuredClone(artifacts); }
+    },
+    reviewer: { async review(input) { calls.reviewer++; assert(!JSON.stringify(input).includes('SECRET_CONFIDENCE')); assert.deepEqual(Object.keys(input).sort(), ['baseSha','candidateDigest','files','issue','nodes','private','requirements'].sort()); return { status: 'unavailable', reason: 'Not configured.' }; } }
+  };
+  return { item, candidate, sources, deps, calls, artifacts, service: createAssessment(deps), signal: new AbortController().signal };
+}
+
+test('loads real unchanged caller impact, policy, scoped reviews and exact source provenance', async () => {
+  const f = fixture(); const assessment = await f.service.load('owner', itemId, candidateId, f.signal);
+  assert.equal(assessment.identity.ownerId, 'owner'); assert.equal(assessment.identity.candidateDigest, 'b'.repeat(64));
+  assert(assessment.policy.requirements.some(row => row.mandatory));
+  assert(assessment.impact.impact.affected.some(row => row.node.source?.path === 'c.ts' && row.distance === 2));
+  assert.equal(assessment.files.find(row => row.path === 'a.ts')?.replacement, 'export const a=2;\r\n// é😀');
+  assert.equal(assessment.impact.coverage.complete, true);
+  assert.deepEqual(assessment.reviews, []);
+});
+
+test('denies invalid IDs, unauthorized owners, private and expired snapshots before context/reviewer', async () => {
+  for (const mode of ['id', 'owner', 'private', 'expired']) {
+    const f = fixture(); if (mode === 'private') f.item.snapshot.private = true; if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();
+    await assert.rejects(() => f.service.review(mode === 'owner' ? 'other' : 'owner', mode === 'id' ? 'bad' : itemId, candidateId, f.signal), (error: Error) => !error.message.includes('secret'));
+    assert.equal(f.calls.context, 0); assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+  }
+});
+
+test('supports verified new files and refuses stale originals or unsafe/corrupt candidate bytes', async () => {
+  const added = fixture(); added.candidate.candidate.files[0].path = 'new.ts'; added.candidate.candidate.files[0].originalBlob = null;
+  const result = await added.service.load('owner', itemId, candidateId, added.signal);
+  assert.equal(result.files.find(row => row.path === 'new.ts')?.original, null);
+  for (const mode of ['stale', 'missing-original', 'unsafe', 'blob', 'unicode']) {
+    const f = fixture(); const file = f.candidate.candidate.files[0];
+    if (mode === 'stale') file.originalBlob = 'd'.repeat(40);
+    if (mode === 'missing-original') file.originalBlob = null;
+    if (mode === 'unsafe') file.path = '../outside';
+    if (mode === 'blob') file.blobSha = 'd'.repeat(40);
+    if (mode === 'unicode') file.content = new Uint8Array([255]);
+    await assert.rejects(() => f.service.load('owner', itemId, candidateId, f.signal));
+    assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+  }
+});
+
+test('optional oversized/unavailable context stays explicit, while access denials stop loading', async () => {
+  for (const status of [413, 502, 403]) {
+    const f = fixture(); const context = f.deps.github.context;
+    f.deps.github.context = async (snapshot, paths, signal) => { if (!paths.includes('a.ts')) throw new IntakeError(status, 'secret context'); return context(snapshot, paths, signal); };
+    if (status === 403) await assert.rejects(() => f.service.load('owner', itemId, candidateId, f.signal), { status: 403 });
+    else { const result = await f.service.load('owner', itemId, candidateId, f.signal); assert.equal(result.impact.coverage.complete, false); assert(result.impact.gaps.some(gap => gap.kind === 'optional_context_unavailable')); }
+  }
+  const f = fixture(); f.sources.set('b.ts', 'x'.repeat(150_000));
+  const result = await f.service.load('owner', itemId, candidateId, f.signal);
+  assert.equal(result.impact.coverage.complete, false);
+  assert(result.impact.gaps.some(gap => gap.kind === 'optional_context_limit'));
+});
+
+test('essential combined source limit fails closed instead of truncating', async () => {
+  const f = fixture(); const text = 'x'.repeat(140_000); f.sources.set('a.ts', text);
+  f.candidate.candidate.files[0] = { path: 'a.ts', originalBlob: sha(text), blobSha: sha(text), content: encode(text) };
+  await assert.rejects(() => f.service.load('owner', itemId, candidateId, f.signal), { status: 413 });
+  assert.equal(f.calls.reviewer, 0);
+});
+
+test('revocation during context or reviewer and stale reviewer output cannot append artifacts', async () => {
+  for (const mode of ['context-private', 'review-private', 'candidate-stale', 'review-stale']) {
+    const f = fixture();
+    if (mode === 'context-private') { const context = f.deps.github.context; f.deps.github.context = async (...args) => { const result = await context(...args); f.item.snapshot.private = true; return result; }; }
+    else f.deps.reviewer.review = async () => { f.calls.reviewer++; if (mode === 'review-private') f.item.snapshot.private = true; if (mode === 'candidate-stale') f.candidate.candidate.outputDigest = 'd'.repeat(64); return mode === 'review-stale' ? { status: 'completed', baseSha: 'd'.repeat(40), candidateDigest: 'b'.repeat(64), model: 'reviewer', destination: 'https://review.example', retentionDisclosure: 'none', promptDigest: 'e'.repeat(64), responseDigest: 'f'.repeat(64), claims: [], checks: [] } : { status: 'unavailable', reason: 'Not configured.' }; };
+    await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal));
+    assert.equal(f.calls.append, 0);
+    if (mode === 'context-private') assert.equal(f.calls.reviewer, 0);
+  }
+});
+
+test('review dispatch excludes generation signals and retains prior conflicting/unavailable artifacts', async () => {
+  const f = fixture();
+  const first = await f.service.review('owner', itemId, candidateId, f.signal);
+  assert.equal(first.result.status, 'unavailable');
+  await f.service.review('owner', itemId, candidateId, f.signal);
+  const loaded = await f.service.load('owner', itemId, candidateId, f.signal);
+  assert.equal(loaded.reviews.length, 2); assert.equal(f.calls.reviewer, 2);
+});
+
+test('cancellation bounds noncooperative source dependencies and never dispatches review', async () => {
+  const f = fixture(); const controller = new AbortController();
+  f.deps.github.context = async () => { controller.abort(); return new Promise(() => {}); };
+  await assert.rejects(() => f.service.review('owner', itemId, candidateId, controller.signal), { status: 504 });
+  assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+});
