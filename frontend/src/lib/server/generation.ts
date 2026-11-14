@@ -66,7 +66,7 @@ export function createGeneration(dependencies: GenerationDependencies) {
     try { return await whileActive(() => action(active), active); }
     catch (error) {
       if (error instanceof GenerationError) throw error;
-      const status = error instanceof IntakeError && [401, 403, 404, 410, 504].includes(error.status) ? error.status : 502;
+      const status = error instanceof IntakeError && [400, 401, 403, 404, 409, 410, 413, 429, 503, 504].includes(error.status) ? error.status : 502;
       deny(status);
     }
   }
