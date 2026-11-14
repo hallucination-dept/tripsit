@@ -59,7 +59,8 @@ test('private, unconfigured and invalid inputs dispatch zero requests', async ()
   }
   const reviewer = createReviewer({ ...configuration, fetcher });
   for (const changed of [{ ...input(), private: true }, { ...input(), verdict: 'passed' }, { ...input(), authorProbabilities: [0.9] },
-    { ...input(), candidateDigest: 'bad' }, { ...input(), files: [{ ...input().files[0], replacement: '\ud800' }] },
+    { ...input(), candidateDigest: 'bad' }, { ...input(), baseSha: [input().baseSha] }, { ...input(), candidateDigest: [input().candidateDigest] },
+    { ...input(), files: [{ ...input().files[0], replacement: '\ud800' }] },
     { ...input(), requirements: [input().requirements[0], input().requirements[0]] },
     { ...input(), files: [{ path: 'x', original: null, replacement: 'x'.repeat(262145) }] }]) {
     assert.equal((await reviewer.review(changed, new AbortController().signal)).status, 'unavailable');
@@ -73,6 +74,7 @@ test('strict proposal schema rejects fake results, malformed references and over
     { claims: [{ ...schema().claims[0], requirementIds: ['missing'] }], checks: [] },
     { claims: [{ ...schema().claims[0], nodeIds: ['missing'] }], checks: [] },
     { claims: [{ ...schema().claims[0], stance: 'passed' }], checks: [] },
+    { claims: [{ ...schema().claims[0], stance: ['supports'] }], checks: [] },
     { claims: [{ ...schema().claims[0], statement: '\ud800' }], checks: [] },
     { claims: [schema().claims[0], schema().claims[0]], checks: [] },
     { claims: [], checks: [{ ...schema().checks[0], id: 'C1' }, { ...schema().checks[0], id: 'C1' }] },
