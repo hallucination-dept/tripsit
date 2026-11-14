@@ -41,6 +41,7 @@ test('loads real unchanged caller impact, policy, scoped reviews and exact sourc
   assert.equal(assessment.files.find(row => row.path === 'a.ts')?.replacement, 'export const a=2;\r\n// é😀');
   assert.equal(assessment.impact.coverage.complete, true);
   assert.deepEqual(assessment.reviews, []);
+  assert.deepEqual(assessment.generation, { model: 'SECRET_CONFIDENCE', settingsDigest: createHash('sha256').update(JSON.stringify(f.candidate.candidate.settings)).digest('hex'), mapping: f.candidate.candidate.mapping, observedTokens: 1 });
 });
 
 test('denies invalid IDs, unauthorized owners, private and expired snapshots before context/reviewer', async () => {
