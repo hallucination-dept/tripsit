@@ -66,3 +66,23 @@ test('depth cutoff is explicit, while malformed revisions, spans, graph identiti
   assert.throws(() => analyzeImpact(graph(), { maxNodes: 10, maxEdges: 1, maxDepth: 1 }), /Invalid impact graph/);
   assert.throws(() => analyzeImpact(graph(), { maxNodes: 10, maxEdges: 10, maxDepth: 65 }), /Invalid impact graph/);
 });
+
+test('rejects conflicting source identities and inconsistent blob byte lengths', () => {
+  for (const mode of ['path-blob', 'path-length', 'blob-length']) {
+    const input = graph();
+    if (mode !== 'blob-length') input.nodes[1].source!.path = input.nodes[0].source!.path;
+    if (mode === 'path-blob') input.nodes[1].source!.blobSha = 'd'.repeat(40);
+    else input.nodes[1].source!.byteLength = 11;
+    assert.throws(() => analyzeImpact(input), /Invalid impact graph/);
+  }
+  const input = graph();
+  input.nodes[1].source!.path = input.nodes[0].source!.path;
+  assert.equal(analyzeImpact(input).affected.length, 3);
+});
+
+test('rejects sparse changed IDs and unsupported-language arrays', () => {
+  const changed = graph(); changed.changed = new Array(1);
+  assert.throws(() => analyzeImpact(changed), /Invalid impact graph/);
+  const unsupported = graph(); unsupported.unsupportedLanguages = new Array(1);
+  assert.throws(() => analyzeImpact(unsupported), /Invalid impact graph/);
+});
