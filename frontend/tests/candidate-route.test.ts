@@ -55,3 +55,29 @@ test('candidate routes keep auth/CSRF/body bounds, owner scope and no-store boun
     assert.equal((await pending).status, 504);
   } finally { hooks.deregister(); delete bridge.candidateTestRuntime; delete bridge.candidateTestIntake; delete bridge.candidateTestGithub; }
 });
+
+test('runtime refuses missing storage before GitHub or model cost and constructs without model configuration', async () => {
+  let ready = false; let githubCalls = 0;
+  const bridge = globalThis as typeof globalThis & { candidateReady?: () => unknown; candidateGithub?: () => unknown };
+  bridge.candidateReady = async () => { if (!ready) throw new IntakeError(503, 'Candidate storage unavailable.'); };
+  bridge.candidateGithub = async () => { githubCalls++; return {}; };
+  const hooks = registerHooks({ resolve(specifier, context, next) {
+    const mocks: Record<string, string> = {
+      '$app/env/private': 'export const MODAL_API_URL=undefined,MODAL_PROXY_TOKEN=undefined,MODEL_ID=undefined;',
+      '#lib/auth.js': 'export const database={};',
+      './intake-runtime.ts': 'export const githubRuntime=(...args)=>globalThis.candidateGithub(...args);',
+      './candidate-records.ts': 'export const createCandidateRecords=()=>({ready:()=>globalThis.candidateReady()});',
+      './records.ts': 'export const createRecords=()=>({});'
+    };
+    return mocks[specifier] ? { url: `data:text/javascript,${encodeURIComponent(mocks[specifier])}`, shortCircuit: true } : next(specifier, context);
+  } });
+  try {
+    const { candidateRuntime } = await import('../src/lib/server/generation-runtime.ts');
+    await assert.rejects(() => candidateRuntime(new Headers(), 'owner', new AbortController().signal), { status: 503 });
+    assert.equal(githubCalls, 0);
+    ready = true;
+    const runtime = await candidateRuntime(new Headers(), 'owner', new AbortController().signal);
+    assert.equal(typeof runtime.create, 'function'); assert.equal(typeof runtime.get, 'function');
+    assert.equal(githubCalls, 1);
+  } finally { hooks.deregister(); delete bridge.candidateReady; delete bridge.candidateGithub; }
+});
