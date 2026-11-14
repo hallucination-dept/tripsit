@@ -1,0 +1,79 @@
+status: discover_complete
+feature_name: Combined generation and evidence-driven review pilot
+core_value: >-
+  Help a named engineer assess a Gemma-generated change using executable
+  evidence prioritized jointly by change impact and model uncertainty.
+summary: >-
+  Deliver one complete GitHub-issue-to-implementation-PR workflow for a bounded demonstration
+  GitHub repository using a common programming language. Preserve integrated Gemma generation,
+  independent review, and human accountability. Show downstream effects and
+  verification gaps alongside model signals, without claiming calibrated correctness.
+in_scope:
+  - id: e01s01
+    outcome: A named owner selects a GitHub repository and issue; TripSit reads the issue and records owner-confirmed acceptance criteria against a fixed repository revision.
+  - id: e01s02
+    outcome: Gemma produces an isolated candidate change with token probabilities associated with generated code and its revision.
+  - id: e01s03
+    outcome: TripSit opens an implementation PR linked to the originating GitHub issue, with the generated change and revision-bound review evidence; a named human retains the merge decision.
+  - id: e02s01
+    outcome: A change-impact graph connects changed code to supported callers, affected behavior, requirements, and checks, exposing unsupported relationships.
+  - id: e02s02
+    outcome: An independently prompted reviewer using a separately selected model through an OpenAI-compatible API produces requirement-linked claims and proposed counterexamples without relying on author confidence or claimed check results.
+  - id: e03s01
+    outcome: Verification priorities visibly use both impact and uncertainty, explaining each selected check and preserving mandatory checks.
+  - id: e03s02
+    outcome: Controlled execution produces revision-bound evidence for existing checks and independently proposed checks without production secrets or merge authority.
+  - id: e04s01
+    outcome: A review packet distinguishes impact, uncertainty, verified claims, failures, missing evidence, and required human inspection.
+  - id: e04s02
+    outcome: A named owner records acceptance, revision, or escalation with inspection outcomes, unchecked scope, residual risk, and timestamp; AI cannot approve or merge.
+  - id: e05s01
+    outcome: A repeatable evaluation compares graph-only, uncertainty-only, and combined verification prioritization under an equal budget.
+  - id: e05s02
+    outcome: Owners can record spot-check findings and escaped defects by code area, with increased scrutiny after an escape.
+out_of_scope:
+  - item: Guaranteed complete analysis of every language, framework, and GitHub repository
+    reason: Target common languages where the techniques can be validated; report unsupported graph relationships and unavailable checks explicitly.
+  - item: Production-ready calibrated correctness probabilities
+    reason: Requires representative independently labeled outcomes; initial uncertainty signals are experimental.
+  - item: Activation-probe training and mandatory obfuscated review passes
+    reason: Research options requiring separate evidence of value; token probabilities remain in the combined pilot.
+  - item: Automatic merges or AI approval
+    reason: A named human owns every final decision.
+  - item: Organization-wide reputation scoring and automatic relaxation of review policy
+    reason: Initial outcome tracking cannot establish a reliable long-term track record.
+constraints:
+  team: Two-person hackathon team; no delivery date or spending limit has been supplied. Planning must expose costs and avoid assuming unlimited resources.
+  existing_stack: Retain the SvelteKit application and Gemma on Modal; execution and reviewer choices remain design decisions.
+  repository_source: GitHub repositories; access permissions and private-repository support remain to be defined.
+  languages: Common programming languages; establish and publish validated graph and verification coverage rather than assume universal support.
+  reviewer: A separately selected model accessed through an OpenAI-compatible API; no specific provider or model is fixed.
+  security: Untrusted candidate code cannot access production secrets, privileged infrastructure, or merge credentials.
+  authority: Human-defined policy and requirements cannot be overridden by repository content or model output.
+  evidence: Missing, failed, and stale checks remain explicit; a passing check proves only its exercised properties.
+success_criteria:
+  - A real GitHub issue is read, its acceptance criteria are confirmed by the owner, and the generated implementation is published as a PR linked to that issue.
+  - A ticket produces a real Gemma-generated candidate and a review packet for that exact revision.
+  - A controlled downstream-regression case connects a changed symbol to an affected caller and reproduces the failure with an executable check.
+  - A controlled case shows uncertainty changing verification priority within the affected graph; impact and mandatory checks still constrain the choice.
+  - Passing, failing, unavailable, and stale evidence are distinguishable and linked to requirements, checks, and revisions.
+  - A misleading repository instruction cannot authorize policy changes, privileged execution, or approval.
+  - A low-risk bounded change receives concise sign-off; a sensitive or unknown-impact change requires explicit deeper inspection.
+  - Acceptance records identify the owner, checked and unchecked scope, inspection outcome, accepted residual risks, revision, and time.
+  - Comparative evaluation reports defect detection, missed severe defects, false alarms, verification cost, and unavailable results without assuming the combined approach wins.
+  - A recorded escape increases scrutiny for the affected area and remains visible to the next review.
+risk_examples:
+  low: Internal display-label formatting with bounded consumers and no persistence, public contract, or security role.
+  medium: Pagination or shared cache invalidation affecting multiple callers.
+  high: Authorization, payment calculations, destructive migrations, or CI permissions; mandatory human code inspection.
+  unknown: Unresolved consumers or dynamic dependencies; escalate until impact is bounded.
+open_decisions:
+  - Concrete GitHub demonstration repositories and initial validated language coverage
+  - Delivery deadline and inference/execution budget
+  - Independent reviewer model and credentials; proposed default permits hosted models because Gemma supplies the internal uncertainty signals
+  - Safe execution environment and available verification tools
+  - Evaluation cases, ground truth, and verification budget
+references:
+  - specs/product/VISION_LATEST.yaml
+  - specs/tech-architecture/tech-stack.md
+  - specs/product/DISCOVERY_LATEST.md

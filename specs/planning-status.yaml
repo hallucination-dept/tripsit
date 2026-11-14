@@ -1,0 +1,9 @@
+discover:
+  status: complete
+  artifacts:
+    - specs/product/VISION_LATEST.yaml
+    - specs/product/SCOPE_LATEST.yaml
+    - specs/product/DISCOVERY_LATEST.md
+    - specs/tech-architecture/tech-stack.md
+  transition_confirmation: pending
+  next_phase: elaborate

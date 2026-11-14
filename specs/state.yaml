@@ -4,10 +4,13 @@ active_flow: orchestrate_project
 project_cycle:
   mode: standard
   current_phase: 1
-  completed_phases: []
+  completed_phases: [1]
+  transition:
+    to_phase: 2
+    status: awaiting_confirmation
 handoff:
-  next_skill: scope-work
-  summary: "User agreed to integrated Gemma generation, uncertainty-guided verification over a change-impact graph, an independent generalist critic, explicit human-review routing, named-owner sign-off, and outcome tracking. Direction recorded in product/VISION_LATEST.yaml; first-release scope and acceptance criteria remain open."
+  next_skill: research-first
+  summary: "Discover artifacts complete, explicitly including GitHub issue intake, owner-confirmed acceptance criteria, Gemma implementation, and a linked implementation PR with review evidence and a human merge decision. Eleven future stories defined. Await confirmation before Elaborate; technical and evaluation choices remain open."
 integration:
   hands_free: "Open a PR and obtain human approval before merging."
   interactive: "No blanket human-approval requirement; follow explicit user authorization."

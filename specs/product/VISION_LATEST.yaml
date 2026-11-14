@@ -10,7 +10,7 @@ objective: >-
   and human accountability.
 current_capability: "Authenticated code review with per-token probability highlighting."
 planned_capabilities:
-  - Integrated coding ticket implementation using Gemma on Modal
+  - Integrated resolution of GitHub tickets/issues using Gemma on Modal, from issue intake to a linked implementation PR and human merge decision
   - A mixed review approach combining model-weight access, per-token probabilities, and further uncertainty estimates with independent verification
   - Independent requirement-based testing, security checks, and reproducible evidence
   - Detection and mitigation of hallucinations, prompt injection, regressions, and vulnerabilities
@@ -58,4 +58,4 @@ agreed_direction:
     - Evaluate original and selectively masked review views before adopting obfuscation.
     - Evaluate activation probes separately from existing token probabilities.
     - Compare graph-only, uncertainty-only, and combined prioritization under equal verification budgets.
-scope_status: "Vision established; first-release scope and acceptance criteria remain open."
+scope_status: "Discover complete; first-release boundaries and observable acceptance criteria recorded in SCOPE_LATEST.yaml. Technical choices remain for Elaborate."
