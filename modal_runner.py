@@ -7,8 +7,41 @@ import asyncio
 import json
 from pathlib import Path
 
-from runner import CONFIG, MAX_REQUEST, Runner, RunnerError
+from runner import CONFIG, MAX_REQUEST, Runner, RunnerError, while_active
 
+
+class SandboxTransport:
+    def __init__(self, handle):
+        self.handle=handle
+        self.ready=asyncio.Event()
+    async def run(self, mode, payload, timeout, cancel):
+        cancel=cancel or asyncio.Event()
+        async def operation():
+            def active():
+                if cancel.is_set(): raise RunnerError()
+            active()
+            await self.handle.filesystem.write_text.aio(Path(__file__).with_name('runner_supervisor.py').read_text(),'/run/tripsit-supervisor.py')
+            active()
+            process=await self.handle.exec.aio('python3','-I','/run/tripsit-supervisor.py',mode,timeout=max(1,int(timeout)+1),text=False)
+            active()
+            if mode=='execute':
+                process.stdin.write(json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode())
+            active()
+            process.stdin.write_eof()
+            await process.stdin.drain.aio()
+            active()
+            data=bytearray()
+            async for chunk in process.stdout:
+                active()
+                data.extend(chunk)
+                if len(data)>65536: raise RunnerError()
+                if mode=='cancel_probe' and data==b'ready\n': self.ready.set()
+            active()
+            if await process.wait.aio()!=0: raise RunnerError()
+            active()
+            return json.loads(data)
+        return await while_active(operation(),cancel,timeout)
+    async def terminate(self): await self.handle.terminate.aio(wait=True)
 
 # Import remains available to offline tests without installing or contacting Modal.
 try:
@@ -29,41 +62,19 @@ if modal is not None:
         from fastapi.responses import JSONResponse
         api=FastAPI(title='TripSit controlled checks')
 
-        class Sandbox:
-            def __init__(self, handle): self.handle=handle
-            async def run(self, mode, payload, timeout, cancel):
-                await self.handle.filesystem.write_text.aio(Path(__file__).with_name('runner_supervisor.py').read_text(),'/run/tripsit-supervisor.py')
-                process=await self.handle.exec.aio('python3','-I','/run/tripsit-supervisor.py',mode,timeout=max(1,int(timeout)+1),text=False)
-                if mode=='execute':
-                    process.stdin.write(json.dumps(payload,ensure_ascii=False,separators=(',',':'),allow_nan=False).encode())
-                process.stdin.write_eof()
-                await process.stdin.drain.aio()
-                data=bytearray()
-                async def collect():
-                    async for chunk in process.stdout:
-                        data.extend(chunk)
-                        if len(data)>65536: raise RunnerError()
-                    if await process.wait.aio()!=0: raise RunnerError()
-                    return json.loads(data)
-                task=asyncio.create_task(collect())
-                cancellation=asyncio.create_task(cancel.wait()) if cancel is not None else None
-                try:
-                    pending=[task] + ([cancellation] if cancellation is not None else [])
-                    done,_=await asyncio.wait(pending,timeout=timeout,return_when=asyncio.FIRST_COMPLETED)
-                    if task not in done or cancellation is not None and cancellation in done: raise RunnerError()
-                    return task.result()
-                finally:
-                    for active in (task,cancellation):
-                        if active is not None and not active.done(): active.cancel()
-                    await asyncio.gather(*[active for active in (task,cancellation) if active is not None],return_exceptions=True)
-            async def terminate(self): await self.handle.terminate.aio(wait=True)
+        @api.middleware('http')
+        async def no_store(request, call_next):
+            response=await call_next(request)
+            response.headers['Cache-Control']='no-store'
+            return response
+
 
         async def factory():
             handle=await modal.Sandbox.create.aio('sleep','1200',app=app,image=sandbox_image,
                       block_network=True,secrets=[],env={},include_oidc_identity_token=False,
                       cpu=tuple(CONFIG['cpu']),memory=tuple(CONFIG['memory']),timeout=CONFIG['sandbox_timeout'],
                       volumes={},network_file_systems={},encrypted_ports=[],unencrypted_ports=[])
-            return Sandbox(handle)
+            return SandboxTransport(handle)
 
         # Image object identity is immutable once built, unlike the registry's mutable tag.
         sandbox_image.build(app=app)

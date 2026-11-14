@@ -12,8 +12,9 @@ import time
 import uuid
 
 MAX_REQUEST = 1_048_576
-CONTROLS = ('clean_environment', 'blocked_egress', 'unprivileged_worker', 'oracle_isolation',
+PROBE_CONTROLS = ('clean_environment', 'blocked_egress', 'unprivileged_worker', 'oracle_isolation',
             'bounded_output', 'timeout_termination', 'artifact_containment', 'runtime_contract')
+CONTROLS = (*PROBE_CONTROLS, 'cancellation_termination')
 CONFIG = {'version': 1, 'block_network': True, 'secrets': [], 'include_oidc_identity_token': False,
           'cpu': [0.25, 1], 'memory': [256, 512], 'sandbox_timeout': 1200,
           'files': 24, 'source_bytes': 262144, 'checks': 16, 'cases': 16,
@@ -25,6 +26,38 @@ class RunnerError(Exception):
     def __init__(self, message='Execution unavailable.', status=503):
         super().__init__(message)
         self.status = status
+
+
+_pending_cleanup = set()
+
+def _consume(task):
+    if not task.cancelled(): task.exception()
+
+
+async def while_active(operation, cancel, timeout, late_cleanup=None):
+    task=asyncio.create_task(operation)
+    stopped=asyncio.create_task(cancel.wait())
+    try:
+        done,_=await asyncio.wait((task,stopped),timeout=timeout,return_when=asyncio.FIRST_COMPLETED)
+        if task not in done or stopped in done or cancel.is_set(): raise RunnerError()
+        return task.result()
+    except BaseException:
+        if late_cleanup is not None:
+            async def cleanup():
+                try:
+                    handle=await task
+                    await asyncio.wait_for(late_cleanup(handle),15)
+                except (Exception,asyncio.CancelledError): pass
+            cleanup_task=asyncio.create_task(cleanup())
+            _pending_cleanup.add(cleanup_task)
+            cleanup_task.add_done_callback(_pending_cleanup.discard)
+        else:
+            task.cancel()
+            task.add_done_callback(_consume)
+        raise
+    finally:
+        stopped.cancel()
+        await asyncio.gather(stopped,return_exceptions=True)
 
 
 def canonical(value):
@@ -142,39 +175,60 @@ class Runner:
     async def verify(self):
         async with self._lock:
             self._admission = None
-            sandbox = None
+            sandbox, cancel_task, cancellation, binding = None, None, None, None
             try:
                 sandbox = await asyncio.wait_for(self.factory(), 60)
                 result = await asyncio.wait_for(sandbox.run('probe', {}, 30, None), 35)
-                if not isinstance(result,dict) or set(result)!= {'controls'} or not isinstance(result['controls'],dict) or set(result['controls'])!=set(CONTROLS) or any(result['controls'][key] is not True for key in CONTROLS): raise RunnerError()
-                self._admission = self._binding()
-                self._verified_at = self.clock()
+                if not isinstance(result,dict) or set(result)!= {'controls'} or not isinstance(result['controls'],dict) or set(result['controls'])!=set(PROBE_CONTROLS) or any(result['controls'][key] is not True for key in PROBE_CONTROLS): raise RunnerError()
+                cancellation=asyncio.Event()
+                cancel_task=asyncio.create_task(sandbox.run('cancel_probe',{},30,cancellation))
+                await asyncio.wait_for(sandbox.ready.wait(),5)
+                if cancel_task.done():
+                    _consume(cancel_task)
+                    raise RunnerError()
+                cancellation.set()
+                try:
+                    await asyncio.wait_for(cancel_task,3)
+                except RunnerError: pass
+                else: raise RunnerError()
+                binding = self._binding()
             except (Exception, asyncio.CancelledError):
-                self._admission = None
+                binding = None
             finally:
+                if cancellation is not None: cancellation.set()
+                if cancel_task is not None:
+                    if not cancel_task.done(): cancel_task.cancel()
+                    cancel_task.add_done_callback(_consume)
                 if sandbox is not None:
                     try: await asyncio.wait_for(asyncio.shield(sandbox.terminate()), 15)
-                    except (Exception, asyncio.CancelledError): self._admission = None
+                    except (Exception, asyncio.CancelledError): binding = None
+            self._admission = binding
+            self._verified_at = self.clock() if binding else 0
             return self.admission()
 
     async def execute(self, request, cancel=None):
         value = validate_request(request)
-        if cancel is not None and cancel.is_set(): raise RunnerError()
+        cancel=cancel or asyncio.Event()
+        if cancel.is_set(): raise RunnerError()
         admission = self.admission()
         if admission['status']!='passed': raise RunnerError()
         if self._lock.locked(): raise RunnerError('Execution unavailable.', 429)
         async with self._lock:
             sandbox = None
             try:
-                sandbox = await asyncio.wait_for(self.factory(), 60)
+                try:
+                    sandbox = await while_active(self.factory(),cancel,60,late_cleanup=lambda handle:handle.terminate())
+                except BaseException:
+                    self._admission=None
+                    raise
                 timeout = sum(row['timeoutMs'] for row in value['checks'])/1000+30
-                result = await asyncio.wait_for(sandbox.run('execute', value, timeout, cancel), timeout+5)
+                result = await while_active(sandbox.run('execute',value,timeout,cancel),cancel,timeout+5)
                 if cancel is not None and cancel.is_set(): raise RunnerError()
                 if self.admission()['environmentDigest'] != admission['environmentDigest']: raise RunnerError()
                 rows=result['results']
                 if not isinstance(result,dict) or set(result)!= {'results'} or not isinstance(rows,list) or len(rows)!=len(value['checks']): raise RunnerError()
                 definitions, executions = [], []
-                dependency = digest(sorted([{'path':row['path'],'blobSha':row['blobSha']} for row in value['files']],key=lambda row:row['path']))
+                dependency = digest(sorted([{'path':row['path'],'blobSha':row['blobSha']} for row in value['files']],key=lambda row:row['path'].encode('utf-16-be')))
                 for check, row in zip(value['checks'], rows):
                     if not isinstance(row,dict) or set(row)!= {'checkId','status','result','exitCode','executedTests'} or row['checkId']!=check['id']: raise RunnerError()
                     if row['status'] not in ('completed','timed_out','cancelled','infrastructure_error') or row['result'] not in ('passed','failed','inconclusive') or type(row['executedTests']) is not int or not 0<=row['executedTests']<=len(check['cases']): raise RunnerError()

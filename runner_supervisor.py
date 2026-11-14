@@ -152,6 +152,7 @@ def execute(payload):
             if observed in ('passed','failed'):
                 executed+=1
                 failed=failed or observed=='failed'
+                if failed: break
             else:
                 inconclusive=True
                 status='timed_out' if observed=='timed_out' else 'infrastructure_error'
@@ -218,6 +219,10 @@ if __name__=='__main__':
     try:
         mode=sys.argv[1]
         if mode=='probe': result=probe()
+        elif mode=='cancel_probe':
+            sys.stdout.write('ready\n'); sys.stdout.flush()
+            time.sleep(30)
+            raise RuntimeError('Cancellation probe did not terminate')
         elif mode=='execute':
             raw=sys.stdin.buffer.read(1048577)
             if len(raw)>1048576: raise ValueError()

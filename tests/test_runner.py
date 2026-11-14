@@ -28,8 +28,10 @@ class FakeSandbox:
         self.response=response
         self.terminated=0
         self.requests=[]
+        self.ready=asyncio.Event()
     async def run(self, mode, payload, timeout, cancel):
         if mode=='cancel_probe':
+            self.ready.set()
             await cancel.wait()
             raise runner.RunnerError()
         self.requests.append((mode,payload,timeout))
