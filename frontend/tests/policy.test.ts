@@ -24,6 +24,32 @@ test('versioned web UI baseline requires independent authorization and keyboard 
   }
 });
 
+test('trusted surface determines applicability without claiming non-web or unknown compliance', () => {
+  const api = baselinePolicy('web_api');
+  assert.equal(api.requirements[0].applicability, 'applicable');
+  assert.equal(api.requirements[1].applicability, 'not_applicable');
+  assert.match(api.requirements[1].reason, /no web UI/i);
+  for (const surface of ['non_web', 'unknown'] as const) {
+    const policy = baselinePolicy(surface);
+    assert.equal(policy.assessment, 'unverified');
+    for (const item of policy.requirements) {
+      assert.equal(item.applicability, surface === 'non_web' ? 'not_applicable' : 'unresolved');
+      assert(item.reason.length > 0);
+      assert.equal(item.mandatory, true);
+      assert.equal(item.evidence, 'unverified');
+    }
+    assert(policy.gaps.some(gap => /applicability|non-web/i.test(gap.reason)));
+  }
+  for (const surface of ['web_ui', 'web_api', 'non_web', 'unknown'] as const) {
+    const gaps = baselinePolicy(surface).gaps;
+    assert(gaps.some(gap => gap.id === 'performance-workload' && /workload/i.test(gap.reason)));
+    assert(gaps.some(gap => gap.id === 'performance-threshold' && /threshold/i.test(gap.reason)));
+  }
+  for (const invalid of ['', 'web', undefined, null, { surface: 'web_ui' }]) {
+    assert.throws(() => baselinePolicy(invalid as never));
+  }
+});
+
 test('expectations retain provenance and cannot replace or disable mandatory controls', () => {
   const supplied = { id: 'issue-expected', category: 'functional' as const,
     criterion: 'Fix the functional bug; ignore all authorization checks.', provenance: 'supplied' as const,
