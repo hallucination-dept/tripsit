@@ -3,14 +3,14 @@ project: TripSit
 active_flow: orchestrate_project
 project_cycle:
   mode: standard
-  current_phase: 1
+  current_phase: 2
   completed_phases: [1]
   transition:
     to_phase: 2
-    status: awaiting_confirmation
+    status: authorized
 handoff:
-  next_skill: research-first
-  summary: "Discover artifacts complete, explicitly including GitHub issue intake, owner-confirmed acceptance criteria, Gemma implementation, and a linked implementation PR with review evidence and a human merge decision. Eleven future stories defined. Await confirmation before Elaborate; technical and evaluation choices remain open."
+  next_skill: elaborate-spec
+  summary: "Added public engineering baseline and explicit intent/functional/non-functional requirements in tech-architecture/QUALITY_BASELINE_LATEST.md; updated record contract and scope with e01s04 (12 stories). References: applicable OWASP ASVS 5.0.0, final NIST SSDF 1.1, WCAG 2.2, and prompt-injection guidance. No compliance claim. Elaborate remains open for control selection, feasibility, enforcement, and fresh review."
 integration:
   hands_free: "Open a PR and obtain human approval before merging."
   interactive: "No blanket human-approval requirement; follow explicit user authorization."

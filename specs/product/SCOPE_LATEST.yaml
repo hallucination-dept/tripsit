@@ -10,9 +10,11 @@ summary: >-
   verification gaps alongside model signals, without claiming calibrated correctness.
 in_scope:
   - id: e01s01
-    outcome: A named owner selects a GitHub repository and issue; TripSit reads the issue and records owner-confirmed acceptance criteria against a fixed repository revision.
+    outcome: A named owner selects a GitHub repository and issue; TripSit snapshots the reported problem, supplied expectations, and any acceptance criteria against a fixed repository revision, distinguishing inferred expectations from optional owner confirmation.
   - id: e01s02
     outcome: Gemma produces an isolated candidate change with token probabilities associated with generated code and its revision.
+  - id: e01s04
+    outcome: Review intent, functional expectations, and relevant non-functional constraints against applicable versioned public security/quality controls, exposing applicability and evidence gaps.
   - id: e01s03
     outcome: TripSit opens an implementation PR linked to the originating GitHub issue, with the generated change and revision-bound review evidence; a named human retains the merge decision.
   - id: e02s01
@@ -52,7 +54,8 @@ constraints:
   authority: Human-defined policy and requirements cannot be overridden by repository content or model output.
   evidence: Missing, failed, and stale checks remain explicit; a passing check proves only its exercised properties.
 success_criteria:
-  - A real GitHub issue is read, its acceptance criteria are confirmed by the owner, and the generated implementation is published as a PR linked to that issue.
+  - Claims and checks trace to task requirements or applicable public baseline controls; functional success cannot hide unmet or unverified security and quality constraints.
+  - A real GitHub issue, including a bug report without formal acceptance criteria, is read and the generated implementation is published as a linked PR; supplied expectations, model hypotheses, and optional owner confirmations remain distinguishable.
   - A ticket produces a real Gemma-generated candidate and a review packet for that exact revision.
   - A controlled downstream-regression case connects a changed symbol to an affected caller and reproduces the failure with an executable check.
   - A controlled case shows uncertainty changing verification priority within the affected graph; impact and mandatory checks still constrain the choice.
@@ -77,3 +80,8 @@ references:
   - specs/product/VISION_LATEST.yaml
   - specs/tech-architecture/tech-stack.md
   - specs/product/DISCOVERY_LATEST.md
+  - specs/tech-architecture/QUALITY_BASELINE_LATEST.md
+prior_art:
+  status: initial_research_complete
+  reference: specs/tech-architecture/PRIOR_ART_LATEST.md
+  decision: Compose existing inference, parsing, sandbox, and GitHub primitives; build the product-specific evidence linkage and prioritization.

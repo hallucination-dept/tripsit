@@ -24,7 +24,7 @@ principles:
   - Verification evidence supports the named human owner's final merge decision.
 agreed_direction:
   workflow:
-    - A named owner establishes requirements and acceptance criteria.
+    - A named owner selects an issue; TripSit preserves reported behavior and expectations, distinguishes inferred hypotheses, and supports optional owner-confirmed acceptance criteria.
     - Gemma implements the ticket and retains generation uncertainty signals.
     - A change-impact graph connects changed code to affected behavior, requirements, and tests, exposing unresolved dependencies.
     - An independent generalist critic investigates defects and downstream effects without assuming its breadth is reliable.

@@ -5,5 +5,15 @@ discover:
     - specs/product/SCOPE_LATEST.yaml
     - specs/product/DISCOVERY_LATEST.md
     - specs/tech-architecture/tech-stack.md
-  transition_confirmation: pending
+  transition_confirmation: authorized
   next_phase: elaborate
+elaborate:
+  status: in_progress
+  prior_art: specs/tech-architecture/PRIOR_ART_LATEST.md
+  design_drafts:
+    - specs/tech-architecture/REVIEW_RECORDS_LATEST.md
+    - specs/tech-architecture/CHANGE_GRAPH_LATEST.md
+    - specs/tech-architecture/UNCERTAINTY_LATEST.md
+    - specs/tech-architecture/REVIEW_WORKFLOW_LATEST.md
+  feasibility: partial_synthetic_local_checks
+  feasibility_evidence: specs/tech-architecture/FEASIBILITY_LATEST.md

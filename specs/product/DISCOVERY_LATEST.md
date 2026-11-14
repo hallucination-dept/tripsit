@@ -6,7 +6,7 @@ Named engineers need to assess AI-generated changes without reading every line. 
 
 ## Agreed product boundary
 
-TripSit reads GitHub issues, records owner-confirmed acceptance criteria, generates implementations with Gemma on Modal, and opens PRs linked to the originating issues. It combines model uncertainty, a change-impact graph, an independent critic, and controlled executable verification. Both graph impact and uncertainty must influence verification priorities.
+TripSit reads GitHub issues, including reported bugs without formal acceptance criteria, generates implementations with Gemma on Modal, and opens linked PRs. It preserves supplied expectations, inferred hypotheses, and optional owner-confirmed criteria. It combines model uncertainty, a change-impact graph, an independent critic, and controlled executable verification. Both impact and uncertainty influence verification priorities.
 
 The graph connects changes to affected behavior, requirements, and checks. Missing relationships remain visible. Model signals guide investigation; they do not certify correctness or waive policy.
 
@@ -18,7 +18,7 @@ The existing application offers authenticated code review and token-probability 
 
 ## First-release outcomes
 
-SCOPE_LATEST.yaml defines eleven future stories and observable acceptance criteria. The pilot must demonstrate real GitHub issue intake and a linked implementation PR, a downstream regression, uncertainty-directed verification, revision-bound evidence, risk-based human inspection, and outcome recording. Resolving an issue requires implementation and verification; AI review alone does not fulfill the ticket.
+SCOPE_LATEST.yaml defines twelve future stories and observable acceptance criteria. The pilot must demonstrate real GitHub issue intake and a linked implementation PR, a downstream regression, uncertainty-directed verification, revision-bound evidence, risk-based human inspection, and outcome recording. Resolving an issue requires implementation and verification; AI review alone does not fulfill the ticket.
 
 Evaluation compares graph-only, uncertainty-only, and combined prioritization under equal verification budgets. Record misses and costs even if the combined approach does not outperform the alternatives. Do not claim statistical superiority from a small demonstration.
 
