@@ -1,0 +1,61 @@
+story_id: e04s01
+title: Show revision-bound evidence and gaps
+type: feat
+context: domain
+spec: e04s01-review-packet.md
+status: failing
+bcps: 3
+depends_on:
+- e03s02
+tasks:
+- id: 1
+  description: Define regression fixtures and assert the happy path, edge cases and
+    security denials below before implementation.
+  verify: cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e04s01
+- id: 2
+  description: 'Implement packet read model and accessible UI with explicit evidence
+    reuse assessment within a PR; never reuse across new PRs. Connect the owner UI/API
+    path and fail-closed errors; retain revision provenance. Ref: ADR 0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e04s01
+- id: 3
+  description: "Integrate all affected contracts and run frontend diagnostics/build;\
+    \ include no new security findings in affected paths in focused assertions. Ref:\
+    \ ADRs 0001\u20130003."
+  verify: (cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts)
+    && (cd frontend && npm run check && npm run build)
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e04s01
+- id: 4
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
+    statuses and limitations; reject an empty evidence record.
+  verify: test -s specs/verifications/e04s01.md
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e04s01

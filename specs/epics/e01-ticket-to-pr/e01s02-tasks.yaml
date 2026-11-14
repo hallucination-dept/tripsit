@@ -1,0 +1,75 @@
+story_id: e01s02
+title: Generate a bounded revision-bound candidate
+type: feat
+context: domain
+spec: e01s02-candidate-generation.md
+status: failing
+bcps: 8
+depends_on:
+- e01s01
+tasks:
+- id: 1
+  description: Define regression fixtures and assert the happy path, edge cases and
+    security denials below before implementation.
+  verify: cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s02
+- id: 2
+  description: 'Implement bounded generation, decoder and isolated candidate staging;
+    preserve existing review response fields and text fallback while adding raw observations.
+    Connect the owner UI/API path and fail-closed errors; retain revision provenance.
+    Ref: ADR 0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s02
+- id: 3
+  description: "Integrate all affected contracts and run frontend diagnostics/build;\
+    \ include no new security findings in affected paths in focused assertions. Ref:\
+    \ ADRs 0001\u20130003."
+  verify: (cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts)
+    && (cd frontend && npm run check && npm run build)
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s02
+- id: 4
+  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py;
+    configured real service must pass before dependent live behavior. Missing credentials/control
+    checks fail rather than skip. Record evidence without secrets. Ref: ADR 0003.'
+  verify: python3 specs/experiments/live_gates.py e01s02 --require-configured
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s02
+- id: 5
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
+    statuses and limitations; reject an empty evidence record.
+  verify: test -s specs/verifications/e01s02.md
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s02

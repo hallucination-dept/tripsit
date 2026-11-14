@@ -1,0 +1,63 @@
+story_id: e02s01
+title: Inspect supported downstream change impact
+type: feat
+context: domain
+spec: e02s01-impact-graph.md
+status: failing
+bcps: 8
+depends_on:
+- e01s02
+- e01s04
+tasks:
+- id: 1
+  description: Define regression fixtures and assert the happy path, edge cases and
+    security denials below before implementation.
+  verify: cd frontend && node --experimental-strip-types --test tests/e02s01.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e02s01
+- id: 2
+  description: 'Implement file diff/import baseline and language-aware extraction
+    only where validated; publish separate extraction, resolution and executable-check
+    coverage for JS/TS, Python, C++, C# and Rust. Connect the owner UI/API path and
+    fail-closed errors; retain revision provenance. Ref: ADR 0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e02s01.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e02s01
+- id: 3
+  description: "Integrate all affected contracts and run frontend diagnostics/build;\
+    \ include no new security findings in affected paths in focused assertions. Ref:\
+    \ ADRs 0001\u20130003."
+  verify: (cd frontend && node --experimental-strip-types --test tests/e02s01.test.ts)
+    && (cd frontend && npm run check && npm run build)
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e02s01
+- id: 4
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
+    statuses and limitations; reject an empty evidence record.
+  verify: test -s specs/verifications/e02s01.md
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e02s01

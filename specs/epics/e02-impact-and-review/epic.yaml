@@ -1,0 +1,20 @@
+id: e02
+title: Downstream impact and independent review
+type: feat
+context: domain
+wsjf: 2.0
+total_bcps: 13
+status: todo
+stories:
+- id: e02s01
+  title: Inspect supported downstream change impact
+  bcps: 8
+  delta: ADDED
+  spec: e02s01-impact-graph.md
+  tasks: e02s01-tasks.yaml
+- id: e02s02
+  title: Obtain independent requirement-linked counterexamples
+  bcps: 5
+  delta: ADDED
+  spec: e02s02-independent-review.md
+  tasks: e02s02-tasks.yaml

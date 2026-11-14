@@ -1,0 +1,67 @@
+story_id: e05s01
+title: Compare prioritization on independently labeled fixtures
+type: feat
+context: domain
+spec: e05s01-comparative-evaluation.md
+status: failing
+bcps: 5
+depends_on:
+- e01s03
+tasks:
+- id: 1
+  description: Define regression fixtures and assert the happy path, edge cases and
+    security denials below before implementation.
+  verify: python3 -m unittest discover -s specs/experiments/tests -p test_evaluation.py
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e05s01
+- id: 2
+  description: 'Create independently labeled fixtures and freeze manifest/split digests
+    before outcomes; implement evaluate.py to execute all three methods and emit the
+    complete comparative report. Validate frozen manifest and split digests, revision-bound
+    real execution IDs, identical mandatory checks/equal optional budgets, nonempty
+    clean/defective held-out denominators and explicit unavailable results. Missing
+    executions or empty denominators fail; unit invariants alone cannot complete evaluation.
+    Ref: ADR 0003.'
+  verify: python3 specs/experiments/evaluate.py --manifest specs/experiments/fixtures/evaluation-manifest.json
+    --split held-out --methods graph-only uncertainty-only combined --require-executions
+    --report specs/verifications/EVALUATION_LATEST.json
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e05s01
+- id: 3
+  description: "Integrate all affected contracts and run frontend diagnostics/build;\
+    \ include no new security findings in affected paths in focused assertions. Ref:\
+    \ ADRs 0001\u20130003."
+  verify: (python3 -m unittest discover -s specs/experiments/tests -p test_evaluation.py)
+    && (cd frontend && npm run check && npm run build)
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e05s01
+- id: 4
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
+    statuses and limitations; reject an empty evidence record.
+  verify: test -s specs/verifications/e05s01.md
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e05s01

@@ -1,20 +1,20 @@
 discover:
   status: complete
   artifacts:
-    - specs/product/VISION_LATEST.yaml
-    - specs/product/SCOPE_LATEST.yaml
-    - specs/product/DISCOVERY_LATEST.md
-    - specs/tech-architecture/tech-stack.md
+  - specs/product/VISION_LATEST.yaml
+  - specs/product/SCOPE_LATEST.yaml
+  - specs/product/DISCOVERY_LATEST.md
+  - specs/tech-architecture/tech-stack.md
   transition_confirmation: authorized
   next_phase: elaborate
 elaborate:
   status: complete
   prior_art: specs/tech-architecture/PRIOR_ART_LATEST.md
   design_drafts:
-    - specs/tech-architecture/REVIEW_RECORDS_LATEST.md
-    - specs/tech-architecture/CHANGE_GRAPH_LATEST.md
-    - specs/tech-architecture/UNCERTAINTY_LATEST.md
-    - specs/tech-architecture/REVIEW_WORKFLOW_LATEST.md
+  - specs/tech-architecture/REVIEW_RECORDS_LATEST.md
+  - specs/tech-architecture/CHANGE_GRAPH_LATEST.md
+  - specs/tech-architecture/UNCERTAINTY_LATEST.md
+  - specs/tech-architecture/REVIEW_WORKFLOW_LATEST.md
   feasibility: partial_synthetic_local_checks
   feasibility_evidence: specs/tech-architecture/FEASIBILITY_LATEST.md
   architecture_decision: specs/adr/0003-hackathon-integration-and-deferred-live-gates.md
@@ -23,6 +23,19 @@ elaborate:
   transition_confirmation: authorized
   next_phase: plan
 plan:
-  status: not_started
+  status: complete
   entry_authorized: true
-  next_skill: plan-release
+  next_skill: build-epic
+  release_index: specs/release-plan.yaml
+  impact: specs/tech-architecture/IMPACT_LATEST.md
+  test_plan: specs/tech-architecture/TEST_PLAN_LATEST.md
+  local_validation: python3 specs/experiments/plan_selfcheck.py
+  quality_gate: dual_pass_A95_B100_round_1_improvement_applied
+  transition_confirmation: authorized
+  design_review: specs/tech-architecture/PLAN_REVIEW_LATEST.md
+  next_phase: build
+build:
+  status: in_progress
+  active_story: e01s01
+  current_step: 3
+  next_skill: kickoff-branch

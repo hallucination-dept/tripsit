@@ -1,0 +1,16 @@
+e01s01: in_progress
+e01s02: todo
+e01s04: todo
+e02s01: todo
+e02s02: todo
+e03s01: todo
+e03s02: todo
+e04s01: todo
+e04s02: todo
+e01s03: todo
+e05s01: todo
+e05s02: todo
+stories:
+  e01s01:
+    status: in_progress
+    started_at: '2026-11-14T19:06:28.448672+00:00'

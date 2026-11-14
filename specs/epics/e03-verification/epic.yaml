@@ -1,0 +1,20 @@
+id: e03
+title: Prioritized controlled verification
+type: feat
+context: domain
+wsjf: 2.636
+total_bcps: 11
+status: todo
+stories:
+- id: e03s01
+  title: Explain joint impact and uncertainty priorities
+  bcps: 3
+  delta: ADDED
+  spec: e03s01-verification-priority.md
+  tasks: e03s01-tasks.yaml
+- id: e03s02
+  title: Run checks in a verified disposable boundary
+  bcps: 8
+  delta: ADDED
+  spec: e03s02-controlled-evidence.md
+  tasks: e03s02-tasks.yaml
