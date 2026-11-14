@@ -62,10 +62,11 @@ export function createReviewRecords(database: Database, clock = () => new Date()
         return reviews.map(artifact => {
           if (!artifact || !uuid(artifact.id) || !Number.isFinite(Date.parse(artifact.createdAt))
             || typeof artifact.body !== 'string' || Buffer.byteLength(artifact.body) > 256 * 1024 || digest(artifact.body) !== artifact.digest
-            || Object.keys(identity).some(key => artifact.identity?.[key] !== identity[key as keyof ReviewIdentity])) throw unavailable();
+            || ['ownerId', 'itemId', 'candidateId', 'baseSha', 'candidateDigest'].some(key => artifact.identity?.[key] !== identity[key as keyof ReviewIdentity])) throw unavailable();
+          validIdentity(owner, artifact.identity);
           const result = JSON.parse(artifact.body) as ReviewerResult;
-          validateResult(result, identity);
-          return { id: artifact.id, identity: { ...identity }, createdAt: artifact.createdAt, result, digest: artifact.digest };
+          validateResult(result, artifact.identity);
+          return { id: artifact.id, identity: { ...artifact.identity }, createdAt: artifact.createdAt, result, digest: artifact.digest };
         });
       } catch { throw unavailable(); }
     }

@@ -31,6 +31,7 @@ test('real PostgreSQL scopes immutable reviews, caps history and purges all raw 
       const result = { status: 'unavailable' as const, reason: 'Exact fixture text: 雪\r\n<script>not executed</script>' };
       const first = await reviews.append('owner', identity, result);
       assert.deepEqual(await reviews.list('owner', identity), [first]);
+      assert.deepEqual((await reviews.list('owner', { ...identity, policyVersion: 'baseline-next' }))[0].identity, identity);
       assert.deepEqual((await candidates.get('owner', item.id, candidate.id))!.candidate.files[0].content, content);
       await assert.rejects(() => reviews.list('other', { ...identity, ownerId: 'other' }), { status: 404 });
       await assert.rejects(() => reviews.append('other', { ...identity, ownerId: 'other' }, result), { status: 404 });
