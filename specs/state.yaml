@@ -453,3 +453,23 @@ delivery_checkpoint_current:
   running_locally: localhost5173; database Aiven and generation Modal remain remote.
   reviewer_configured: false
   production_changes_this_wave: None; no new migration, deployment, merge or live reviewer call.
+completion_wave:
+  request: Finish e02s01, e02s02, e03s01 and e04s01; do not equate implemented subsets with completed stories.
+  baseline: 5c203c8
+  status: Planning checkpoint before parallel dispatch.
+  streams:
+    impact:
+      scope: Exact-source JS/TS symbol/call relationships, unchanged callers and explicit unsupported-language coverage; focused extraction regressions.
+      files: impact-extractor.ts, impact.ts, associated tests only in isolated worktree.
+      verify: cd frontend && node --experimental-strip-types tests/impact-extractor.test.ts && node --experimental-strip-types tests/impact.test.ts
+    reviewer:
+      scope: Runnable fail-closed configured reviewer gate with source-free evidence; inspect consent/admission and report any remaining acceptance gap.
+      files: reviewer gate scripts/tests and live_gates.py only in isolated worktree.
+      verify: python3 -m unittest discover -s specs/experiments/tests
+    evidence:
+      scope: Trusted executable-check integration feasibility and packet coverage; determine smallest safe complete coordinator without executing untrusted code on host.
+      files: Read-only initial assessment; report precise interfaces before implementation.
+      verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types tests/priorities.test.ts
+  parent_scope: Integrate streams, actual authenticated development UAT, configuration, evidence and acceptance ledger.
+  synchronization: Parent reviews each stream before integration; no shared-file edits; commit central state before further dispatch.
+  limits: No private dispatch before admission/consent; no untrusted host execution; no infrastructure provisioning or main merge.
