@@ -13,7 +13,7 @@ export async function POST({ request, fetch, locals }) {
 	}
 
 	if (!MODAL_API_URL || !MODAL_PROXY_TOKEN) {
-		throw error(500, 'Set MODAL_API_URL and MODAL_PROXY_TOKEN in frontend/.env.');
+		throw error(500, 'Set MODAL_API_URL and MODAL_PROXY_TOKEN in the application environment.');
 	}
 
 	let response: Response;
