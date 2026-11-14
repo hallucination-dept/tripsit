@@ -133,139 +133,212 @@
 </script>
 
 <svelte:head>
-	<title>TripSit</title>
-	<meta name="description" content="Gemma 4 code review with per-token confidence" />
+	<title>TripSit — Review workspace</title>
+	<meta name="description" content="GitHub issue snapshots and code review with visible token likelihood." />
 </svelte:head>
 
-<main>
-	<header>
-		<p class="eyebrow">Gemma 4 on Modal</p>
-		<h1>TripSit</h1>
-		<p class="intro">Code review with visible per-token confidence.</p>
-	</header>
-
+<header class="appbar"><div class="appbar-inner">
+	<a class="brand" href="/" aria-label="TripSit home"><span class="brand-mark" aria-hidden="true">T</span>TripSit</a>
 	{#if $session.data}
-		<div class="account-bar">
-			<span>Signed in as <strong>{$session.data.user.name || $session.data.user.email}</strong></span>
-			<button class="quiet" onclick={() => authClient.signOut()}>Sign out</button>
-		</div>
+		<nav aria-label="Workspace"><a href="#issue-heading">Issues</a><a href="#code-review">Code review</a></nav>
+		<div class="account-bar"><strong title={$session.data.user.email}>{$session.data.user.name || $session.data.user.email}</strong><button class="button-quiet" onclick={() => authClient.signOut()}>Sign out</button></div>
+	{:else}<span class="appbar-caption">Code review workspace</span>{/if}
+</div></header>
 
+<main class:auth-layout={!$session.data}>
+	{#if $session.data}
+		<div class="page-heading"><div><p class="eyebrow">Workspace</p><h1>Review workspace</h1><p class="intro">Capture a GitHub issue or take a closer look at a code change.</p></div></div>
 		<section aria-labelledby="issue-heading">
-			<h2 id="issue-heading">Select a GitHub issue</h2>
-			<p>Use your existing GitHub sign-in. Repository access and a TripSit GitHub App installation are required. Private issue storage is awaiting verification.</p>
-			{#if discovery.owner === $session.data.user.id}
-			<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
-				<label for="repository">Repository</label>
-				<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
-					<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
-					{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
-				</select>
-				<label for="issue-number">Open issue</label>
-				<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || discovery.loading || !discovery.issues.length}>
-					<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
-					{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
-				</select>
-				<button type="submit" disabled={issueBusy || discovery.loading || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
-			</form>
-			<p aria-live="polite">{discovery.loading ? 'Refreshing repositories and issues…' : 'Repositories and open issues refresh automatically every minute. Select a ticket to snapshot it; work does not start automatically.'}</p>
-			{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
-			{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p>No accessible repositories found. Check the TripSit App installation and repository access.</p>{/if}
-			{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p>No open issues in this repository.</p>{/if}
-			{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p>Only part of the available list was returned. Automatic refresh will check again.</p>{/if}
-			<button type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button>
-			{:else}<p aria-live="polite">Discovering repositories and issues…</p>{/if}
-			<button type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button>
-			{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
-			{#if intakeOwner === $session.data.user.id}
-				<ul>{#each issueItems as item (item.id)}<li><button type="button" disabled={issueBusy} onclick={() => issueRequest('detail', item.id)}>{item.snapshot.repository} #{item.snapshot.issueNumber}</button></li>{/each}</ul>
-				{#if selectedIssue}
-					<div aria-live="polite">
-						<h3>{selectedIssue.snapshot.supplied.title}</h3>
-						<p>{selectedIssue.snapshot.repository} #{selectedIssue.snapshot.issueNumber}</p>
-						<p>Frozen base: <code>{selectedIssue.snapshot.baseSha}</code></p>
-						<h4>Supplied issue text (unconfirmed)</h4>
-						<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
-						<p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p>
-						<p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Scheduled deletion is not yet verified.</p>
-					</div>
-				{/if}
-			{/if}
+			<div class="section-heading"><div><h2 id="issue-heading">GitHub issues</h2><p>Keep the problem and its code revision together.</p></div><span class="section-label">Issue intake</span></div>
+			<div class="intake-grid">
+				<div class="panel ticket-panel">
+					<div class="panel-heading"><p class="panel-title">Select an issue</p><span class="sync-state" aria-live="polite">{discovery.loading ? 'Refreshing…' : 'Refreshes every minute'}</span></div>
+					{#if discovery.owner === $session.data.user.id}
+						<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
+							<label for="repository">Repository</label>
+							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
+								<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
+								{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
+							</select>
+							<label for="issue-number">Open issue</label>
+							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || discovery.loading || !discovery.issues.length}>
+								<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
+								{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
+							</select>
+							<button class="button-primary capture-button" type="submit" disabled={issueBusy || discovery.loading || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+						</form>
+						{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
+						{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p class="empty-note">No repositories found. Check the App installation and your repository access.</p>{/if}
+						{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p class="empty-note">No open issues in this repository.</p>{/if}
+						{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p class="notice">This is a partial list. Automatic refresh will check again.</p>{/if}
+						<div class="panel-footer"><span>No work starts automatically.</span><button class="button-quiet" type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button></div>
+					{:else}<p class="empty-note" aria-live="polite">Discovering repositories and issues…</p>{/if}
+					<p class="privacy-note">Private issue snapshots are currently unavailable.</p>
+				</div>
+				<div class="panel snapshot-panel">
+					<div class="panel-heading"><p class="panel-title">Snapshots</p><button class="button-quiet" type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button></div>
+					{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
+					{#if intakeOwner === $session.data.user.id && issueItems.length}
+						<ul class="snapshot-list">{#each issueItems as item (item.id)}<li><button class:active={selectedIssue?.id === item.id} type="button" disabled={issueBusy} onclick={() => issueRequest('detail', item.id)}>{item.snapshot.repository} #{item.snapshot.issueNumber}</button></li>{/each}</ul>
+					{/if}
+					{#if intakeOwner === $session.data.user.id && selectedIssue}
+						<div class="snapshot-content" aria-live="polite">
+							<p class="snapshot-reference">{selectedIssue.snapshot.repository} <span>#{selectedIssue.snapshot.issueNumber}</span></p>
+							<h3>{selectedIssue.snapshot.supplied.title}</h3>
+							<div class="commit-reference"><span>Base commit</span><code>{selectedIssue.snapshot.baseSha}</code></div>
+							<h4>Supplied issue text (unconfirmed)</h4>
+							<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
+							<details class="snapshot-details"><summary>Provenance & retention</summary><p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p><p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Scheduled deletion is not yet verified.</p></details>
+						</div>
+					{:else}<div class="snapshot-empty"><p class="empty-title">No snapshot selected</p><p>Choose an issue and capture its current code revision, or reload your saved snapshots.</p></div>{/if}
+				</div>
+			</div>
 		</section>
 
-		<form onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
-			<label for="code">Code to review</label>
-			<textarea id="code" bind:value={code} required spellcheck="false" placeholder="Paste code here..."></textarea>
-			<button type="submit" disabled={isLoading || !code.trim()}>{isLoading ? 'Reviewing…' : 'Review code'}</button>
-		</form>
-
-		{#if message}<p class="error" role="alert">{message}</p>{/if}
-
-		{#if tokens.length || review}
-			<section aria-live="polite">
-				<div class="section-heading"><h2>Review</h2><p>Hover a token for its probability.</p></div>
-				<div class="review">
-					{#if tokens.length}
-						{#each tokens as item}
-							<span class="token" style:background-color={`rgba(56, 189, 248, ${opacity(item.probability_percent)})`} title={`${item.probability_percent.toFixed(2)}% likely`}>{item.token}</span>
-						{/each}
-					{:else}{review}{/if}
-				</div>
-				<p class="legend"><span class="low"></span>lower confidence <span class="high"></span>higher confidence</p>
-			</section>
-		{/if}
+		<section id="code-review" class="review-section" aria-labelledby="code-review-heading">
+			<div class="section-heading"><div><h2 id="code-review-heading">Code review</h2><p>Inspect a change with model-generated feedback.</p></div><span class="section-label">Gemma</span></div>
+			<form class="panel editor-panel" onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
+				<label for="code">Code to review</label>
+				<textarea id="code" bind:value={code} required spellcheck="false" placeholder="Paste the code you want reviewed…"></textarea>
+				<div class="editor-footer"><span>Token likelihood is a model signal, not a correctness score.</span><button class="button-primary" type="submit" disabled={isLoading || !code.trim()}>{isLoading ? 'Reviewing…' : 'Review code'}</button></div>
+			</form>
+			{#if message}<p class="error" role="alert">{message}</p>{/if}
+			{#if tokens.length || review}
+				<section class="panel review-result" aria-live="polite">
+					<div class="panel-heading"><h2>Review</h2><p>Hover a token for its probability.</p></div>
+					<div class="review">{#if tokens.length}{#each tokens as item}<span class="token" style:background-color={`rgba(135, 165, 228, ${opacity(item.probability_percent)})`} title={`${item.probability_percent.toFixed(2)}% likely`}>{item.token}</span>{/each}{:else}{review}{/if}</div>
+					<p class="legend"><span class="low"></span>lower likelihood <span class="high"></span>higher likelihood</p>
+				</section>
+			{/if}
+		</section>
 	{:else}
-		<section class="auth-card">
-			<h2>{authMode === 'sign-in' ? 'Sign in to review code' : 'Create your account'}</h2>
-			<p>Use GitHub or an email address and password.</p>
+		<section class="auth-card" aria-labelledby="auth-heading">
+			<p class="eyebrow">Your review workspace</p><h1 id="auth-heading">{authMode === 'sign-in' ? 'Sign in to TripSit' : 'Create your account'}</h1>
+			<p class="auth-intro">Connect your repositories. Keep code reviews in context.</p>
 			<button class="github" onclick={signInWithGitHub} disabled={isAuthenticating}>Continue with GitHub</button>
-			<div class="divider"><span>or</span></div>
+			<div class="divider"><span>or use email</span></div>
 			<form onsubmit={(event) => { event.preventDefault(); submitEmailAuth(); }}>
-				{#if authMode === 'sign-up'}
-					<label for="name">Name</label>
-					<input id="name" bind:value={name} required autocomplete="name" />
-				{/if}
-				<label for="email">Email</label>
-				<input id="email" bind:value={email} required type="email" autocomplete="email" />
-				<label for="password">Password</label>
-				<input id="password" bind:value={password} required type="password" minlength="8" autocomplete={authMode === 'sign-in' ? 'current-password' : 'new-password'} />
-				<button type="submit" disabled={isAuthenticating}>{isAuthenticating ? 'Working…' : authMode === 'sign-in' ? 'Sign in with email' : 'Create account'}</button>
+				{#if authMode === 'sign-up'}<label for="name">Name</label><input id="name" bind:value={name} required autocomplete="name" />{/if}
+				<label for="email">Email</label><input id="email" bind:value={email} required type="email" autocomplete="email" />
+				<label for="password">Password</label><input id="password" bind:value={password} required type="password" minlength="8" autocomplete={authMode === 'sign-in' ? 'current-password' : 'new-password'} />
+				<button class="button-primary email-submit" type="submit" disabled={isAuthenticating}>{isAuthenticating ? 'Working…' : authMode === 'sign-in' ? 'Sign in with email' : 'Create account'}</button>
 			</form>
 			{#if authError}<p class="error" role="alert">{authError}</p>{/if}
-			<button class="text-button" onclick={() => { authMode = authMode === 'sign-in' ? 'sign-up' : 'sign-in'; authError = ''; }}>
-				{authMode === 'sign-in' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}
-			</button>
+			<button class="auth-switch" onclick={() => { authMode = authMode === 'sign-in' ? 'sign-up' : 'sign-in'; authError = ''; }}>{authMode === 'sign-in' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}</button>
 		</section>
 	{/if}
 </main>
 
 <style>
 	:global(*) { box-sizing: border-box; }
-	:global(body) { margin: 0; background: #09111f; color: #edf3ff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-	main { width: min(100% - 32px, 960px); margin: 0 auto; padding: 72px 0; }
-	.eyebrow { margin: 0; color: #62d8ff; font-size: .78rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-	h1 { margin: 8px 0; font-size: clamp(2.6rem, 7vw, 4.8rem); letter-spacing: -.06em; }
-	.intro { margin: 0 0 36px; color: #9badcb; font-size: 1.15rem; }
-	form, section, .account-bar { padding: 24px; border: 1px solid #263958; border-radius: 16px; background: #101b30; }
-	.account-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding: 14px 18px; color: #bed1ef; }
-	label { display: block; margin: 14px 0 8px; color: #bdd1f3; font-size: .9rem; font-weight: 650; }
-	textarea, input, select { display: block; width: 100%; padding: 12px 14px; border: 1px solid #30496f; border-radius: 9px; background: #091322; color: #edf3ff; }
-	textarea { min-height: 280px; resize: vertical; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
-	button { margin-top: 16px; padding: 11px 17px; border: 0; border-radius: 8px; background: #68d9ff; color: #06101c; font-weight: 800; cursor: pointer; }
-	button:disabled { opacity: .5; cursor: wait; }
-	.quiet, .text-button { margin: 0; color: #b9d2fa; background: transparent; font-weight: 650; }
-	.error { margin: 16px 0; color: #ff9fac; }
-	section { margin-top: 28px; }
-	.auth-card { width: min(100%, 480px); margin: 0 auto; }
-	.auth-card h2 { margin-top: 0; } .auth-card > p { color: #9badcb; }
-	.github { width: 100%; background: #edf3ff; color: #0b1424; }
-	.divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 6px; color: #8fa4c7; font-size: .85rem; }
-	.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #30496f; }
-	.text-button { width: 100%; margin-top: 18px; text-align: center; }
-	.section-heading { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
-	h2 { margin: 0; font-size: 1.2rem; } .section-heading p, .legend { color: #96aacc; font-size: .86rem; }
-	.issue-body { white-space: pre-wrap; overflow-wrap: anywhere; }
-	.review { margin-top: 16px; white-space: pre-wrap; line-height: 1.7; }
-	.token { border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-	.low, .high { display: inline-block; width: 12px; height: 12px; margin: 0 6px 0 12px; border-radius: 3px; background: #38bdf8; vertical-align: -1px; }
+	:global(html) { scroll-behavior: smooth; scroll-padding-top: 24px; }
+	:global(body) { margin: 0; background: #f5f6f8; color: #202938; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; line-height: 1.5; }
+	:global(button), :global(input), :global(select), :global(textarea) { font: inherit; }
+	:global(:focus-visible) { outline: 3px solid #3158bd; outline-offset: 3px; }
+	.appbar { background: #fff; border-bottom: 1px solid #e1e5eb; }
+	.appbar-inner { max-width: 1232px; margin: auto; padding: 0 28px; min-height: 68px; display: flex; align-items: center; gap: 38px; }
+	.brand { display: inline-flex; align-items: center; gap: 10px; color: #172334; text-decoration: none; font-size: 19px; font-weight: 700; letter-spacing: -.6px; }
+	.brand-mark { width: 27px; height: 27px; display: grid; place-items: center; border-radius: 6px; background: #2849a4; color: #fff; font-size: 23px; line-height: 1; font-weight: 600; }
+	nav { display: flex; gap: 26px; align-self: stretch; align-items: center; }
+	nav a { color: #596779; text-decoration: none; font-size: 13px; font-weight: 550; }
+	nav a:hover { color: #2849a4; }
+	.account-bar { margin-left: auto; display: flex; align-items: center; gap: 18px; min-width: 0; }
+	.account-bar strong { max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #526074; font-size: 12px; font-weight: 500; }
+	.appbar-caption { margin-left: auto; color: #5f6b7a; font-size: 12px; }
+	main { width: min(100%, 1232px); padding: 34px 28px 64px; margin: auto; }
+	.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
+	.eyebrow { margin: 0 0 7px; color: #68758a; font-size: 12px; font-weight: 650; letter-spacing: 1.1px; text-transform: uppercase; }
+	h1 { margin: 0; color: #172334; font-size: 28px; font-weight: 600; line-height: 1.2; letter-spacing: -.85px; }
+	.intro { margin: 9px 0 0; color: #5f6b7a; font-size: 13px; }
+	.section-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 14px; }
+	h2 { margin: 0; color: #263143; font-size: 16px; line-height: 1.4; font-weight: 600; letter-spacing: -.2px; }
+	.section-heading p { margin: 4px 0 0; color: #5f6b7a; font-size: 12px; }
+	.section-label { padding: 3px 8px; border: 1px solid #dfe4ec; border-radius: 4px; color: #5f6b7a; font-size: 12px; white-space: nowrap; }
+	.intake-grid { display: grid; grid-template-columns: minmax(300px, .88fr) minmax(0, 1.3fr); gap: 18px; align-items: start; }
+	.panel { background: #fff; border: 1px solid #dfe4eb; border-radius: 8px; min-width: 0; }
+	.ticket-panel, .snapshot-panel { padding: 20px; }
+	.panel-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; min-width: 0; margin-bottom: 19px; }
+	.panel-title { margin: 0; color: #344156; font-size: 13px; font-weight: 600; }
+	.sync-state { color: #5f6b7a; font-size: 12px; text-align: right; }
+	label { display: block; margin: 16px 0 7px; color: #49566a; font-size: 12px; font-weight: 550; }
+	input, select, textarea { display: block; width: 100%; min-width: 0; color: #263143; background: #fff; border: 1px solid #ccd3de; border-radius: 5px; padding: 9px 11px; }
+	input, select { height: 40px; }
+	input:hover, select:hover, textarea:hover { border-color: #a6b2c5; }
+	input:disabled, select:disabled { background: #f6f7f9; color: #5f6b7a; }
+	button { border: 1px solid transparent; border-radius: 5px; padding: 8px 12px; cursor: pointer; font-size: 12px; font-weight: 550; line-height: 1.5; }
+	button:disabled { opacity: .48; cursor: not-allowed; }
+	.button-primary { background: #3158bd; color: #fff; border-color: #3158bd; }
+	.button-primary:hover:not(:disabled) { background: #24489f; border-color: #24489f; }
+	.button-quiet { padding: 4px 0; background: transparent; color: #56657c; white-space: nowrap; }
+	.button-quiet:hover:not(:disabled) { color: #2849a4; }
+	.capture-button { width: 100%; margin-top: 18px; }
+	.panel-footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 18px; padding-top: 14px; border-top: 1px solid #edf0f4; color: #5f6b7a; font-size: 12px; }
+	.privacy-note { margin: 13px 0 0; color: #5f6b7a; font-size: 12px; }
+	.empty-note, .notice { margin: 14px 0 0; color: #5f6b7a; font-size: 12px; }
+	.error { margin: 14px 0; padding: 9px 11px; border-left: 3px solid #b94c52; background: #fff4f4; color: #9a313b; font-size: 12px; overflow-wrap: anywhere; }
+	.snapshot-list { list-style: none; margin: -4px 0 16px; padding: 0; border-bottom: 1px solid #edf0f4; }
+	.snapshot-list button { width: 100%; padding: 8px 9px; margin-bottom: 4px; background: #f7f8fb; color: #5c6980; text-align: left; overflow-wrap: anywhere; }
+	.snapshot-list button.active { background: #edf2ff; color: #2849a4; }
+	.snapshot-empty { min-height: 238px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 18px 24px 30px; color: #5f6b7a; }
+	.snapshot-empty p { max-width: 300px; margin: 5px 0 0; font-size: 12px; }
+	.snapshot-empty .empty-title { color: #647187; font-weight: 550; }
+	.snapshot-reference { margin: 0 0 7px; color: #5f6b7a; font-size: 12px; overflow-wrap: anywhere; }
+	.snapshot-reference span { margin-left: 6px; color: #5f6b7a; }
+	h3 { margin: 0 0 16px; color: #253249; font-size: 18px; font-weight: 600; line-height: 1.4; letter-spacing: -.3px; overflow-wrap: anywhere; }
+	.commit-reference { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; padding-bottom: 18px; margin-bottom: 17px; border-bottom: 1px solid #edf0f4; color: #5f6b7a; font-size: 12px; }
+	code { font: 12px/1.7 ui-monospace, SFMono-Regular, Consolas, monospace; color: #5c6f8e; overflow-wrap: anywhere; }
+	h4 { margin: 0 0 8px; color: #526178; font-size: 12px; font-weight: 600; }
+	.issue-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #5a677c; font-size: 13px; line-height: 1.8; }
+	.snapshot-details { margin-top: 21px; padding-top: 13px; border-top: 1px solid #edf0f4; color: #5f6b7a; font-size: 12px; }
+	summary { color: #63728a; cursor: pointer; }
+	.snapshot-details p { margin: 8px 0 0; }
+	.review-section { margin-top: 30px; }
+	.editor-panel { overflow: hidden; }
+	.editor-panel label { margin: 0; padding: 12px 17px; background: #fbfcfd; border-bottom: 1px solid #edf0f4; font-size: 12px; }
+	textarea { min-height: 228px; resize: vertical; border: 0; border-radius: 0; padding: 17px; background: #fff; font: 12px/1.8 ui-monospace, SFMono-Regular, Consolas, monospace; }
+	textarea::placeholder { color: #5f6b7a; }
+	.editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 16px; border-top: 1px solid #edf0f4; color: #5f6b7a; font-size: 12px; }
+	.editor-footer button { flex-shrink: 0; }
+	.review-result { margin-top: 16px; padding: 20px; }
+	.review-result .panel-heading { margin-bottom: 14px; }
+	.review-result .panel-heading p { color: #5f6b7a; font-size: 12px; margin: 0; }
+	.review { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; }
+	.token { border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+	.legend { margin: 16px 0 0; color: #5f6b7a; font-size: 12px; }
+	.low, .high { display: inline-block; width: 9px; height: 9px; margin: 0 5px 0 12px; border-radius: 2px; background: #87a5e4; vertical-align: 0; }
 	.low { opacity: .18; margin-left: 0; } .high { opacity: .9; }
+	.auth-layout { display: flex; justify-content: center; padding-top: 70px; }
+	.auth-card { width: 100%; max-width: 400px; padding: 31px; background: #fff; border: 1px solid #dfe4eb; border-radius: 8px; }
+	.auth-card h1 { font-size: 25px; }
+	.auth-intro { color: #5f6b7a; font-size: 12px; margin: 12px 0 25px; }
+	.github { width: 100%; background: #252e3e; color: #fff; padding: 10px 16px; }
+	.github:hover:not(:disabled) { background: #131d2d; }
+	.divider { display: flex; align-items: center; gap: 12px; margin: 23px 0 0; color: #5f6b7a; font-size: 12px; }
+	.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #e8ecf2; }
+	.email-submit { width: 100%; margin-top: 21px; }
+	.auth-switch { width: 100%; margin-top: 20px; padding: 0; background: transparent; color: #647793; font-size: 12px; }
+	.auth-switch:hover { color: #2849a4; }
+	@media (max-width: 760px) {
+		.appbar-inner { padding: 15px 20px; gap: 15px; flex-wrap: wrap; min-height: 62px; }
+		nav { order: 3; width: 100%; gap: 24px; padding-top: 4px; }
+		.account-bar { gap: 12px; }
+		.account-bar strong { max-width: 120px; }
+		main { padding: 26px 20px 40px; }
+		.page-heading { margin-bottom: 26px; }
+		h1 { font-size: 25px; }
+		.intake-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
+		.ticket-panel, .snapshot-panel { padding: 18px; }
+		.snapshot-empty { min-height: 190px; }
+		.auth-layout { padding-top: 40px; }
+	}
+	@media (max-width: 420px) {
+		.appbar-inner, main { padding-left: 16px; padding-right: 16px; }
+		.appbar-caption { font-size: 12px; }
+		.panel-heading { align-items: flex-start; }
+		.editor-footer { flex-wrap: wrap; gap: 12px; }
+		.editor-footer button { width: 100%; }
+		.auth-card { padding: 25px 22px; }
+		.panel-footer { gap: 8px; flex-wrap: wrap; }
+	}
+	@media (prefers-reduced-motion: reduce) { :global(html) { scroll-behavior: auto; } }
 </style>
