@@ -114,3 +114,22 @@ test('real bounded extraction retains all 607 unresolved gap references in the a
   assert.equal(view.packet.acceptanceReady, false);
   assert(view.packet.gaps.filter(gap => gap.kind === 'impact_gap').length === 607);
 });
+
+test('packet traces a stored downstream failure to requirements and exact unchanged source; stale evidence cannot pass', () => {
+ const input = fixture();
+ const source = 'export function caller(x) { return x + 1; }';
+ const blobSha = createHash('sha1').update(`blob ${Buffer.byteLength(source)}\0`).update(source).digest('hex');
+ input.impact = buildImpact({ baseSha: input.identity.baseSha, candidateDigest: input.identity.candidateDigest, files: [{path:'caller.js',base:{content:source,blobSha},candidate:{content:source,blobSha}}], repositoryPaths:['caller.js'], complete:true });
+ const requirementId = input.policy.requirements[0].id;
+ const check = { id:'caller-regression',mandatory:true,impact:'high' as const,timeoutMs:1000,provenance:'trusted_repository' as const,definitionDigest:digest('1'),environmentDigest:digest('2'),dependencyDigest:digest('3'),oracleDigest:digest('4'),requirementIds:[requirementId],nodeIds:[input.impact.graph.nodes[0].id] };
+ const execution = {...check,id:'exec1',checkId:check.id,collector:'trusted_runner' as const,runnerId:'sandbox1',prId:null,status:'completed' as const,result:'failed' as const,exitCode:1,executedTests:1};
+ input.verifications = [{id:'33333333-3333-4333-8333-333333333333',identity:{...input.identity},createdAt:'2026-01-01T00:00:00Z',digest:digest('5'),result:{checks:[check],executions:[execution],admission:{status:'passed',configurationDigest:digest('6'),codeDigest:digest('7'),environmentDigest:check.environmentDigest}}}];
+ const packet = assessmentView('owner',input,true,true).packet;
+ assert.equal(packet.executions[0].evidenceStatus,'current'); assert.equal(packet.executions[0].result,'failed');
+ assert.equal(packet.requirementCoverage.find(row=>row.id===requirementId)!.status,'failed');
+ const node = input.impact.graph.nodes.find(node=>node.id===packet.checkDefinitions[0].nodeIds[0])!;
+ assert.equal(node.source!.path,'caller.js'); assert.equal(node.source!.blobSha,blobSha);
+ input.verifications[0].identity.policyVersion='old-policy';
+ const stale=assessmentView('owner',input,true,true).packet;
+ assert.notEqual(stale.executions[0].evidenceStatus,'current'); assert(stale.gaps.some(gap=>gap.kind==='stale_artifact'));
+});

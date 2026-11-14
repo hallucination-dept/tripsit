@@ -19,6 +19,7 @@ test('assessment routes enforce auth, owner, CSRF, exact empty JSON, queries, UU
         if (hanging) return new Promise(() => {});
         assert(!(signal as AbortSignal).aborted); return { identity: { ownerId: owner }, marker: 'actual-assessment' };
       },
+      async verify(selectedOwner: string, item: string, candidate: string) { assert.equal(selectedOwner, owner); assert.equal(item, itemId); assert.equal(candidate, candidateId); return { id: 'verification' }; },
       async review(selectedOwner: string, item: string, candidate: string) {
         assert.equal(selectedOwner, owner); assert.equal(item, itemId); assert.equal(candidate, candidateId);
         return { id: 'review', result: { status: 'unavailable', reason: 'Reviewer is not configured.' } };
@@ -35,6 +36,7 @@ test('assessment routes enforce auth, owner, CSRF, exact empty JSON, queries, UU
   try {
     const { GET } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/assessment/+server.ts');
     const { POST } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/assessment/reviews/+server.ts');
+    const { POST: verifyPost } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/assessment/verification/+server.ts');
     const { POST: legacyPost } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/reviews/+server.ts');
     const event = (request: Request, owner: string | null = 'owner', id = itemId, candidate = candidateId) => ({ request, locals: { user: owner ? { id: owner } : null }, params: { id, candidateId: candidate } });
     const request = (body = '{}', origin = 'http://localhost', query = '', signal?: AbortSignal) => new Request(base + '/reviews' + query, { method: 'POST', headers: { origin, 'Content-Type': 'application/json' }, body, signal });
@@ -43,10 +45,13 @@ test('assessment routes enforce auth, owner, CSRF, exact empty JSON, queries, UU
     assert.equal((await legacyPost(event(request(), null))).status, 401);
     assert.equal((await legacyPost(event(request('{}', 'https://other.example')))).status, 403);
     assert.equal(calls, 0);
+    assert.equal((await verifyPost(event(request(), null))).status, 401);
+    assert.equal((await verifyPost(event(request('{}', 'https://other.example')))).status, 403);
+    for (const body of ['null', '[]', '{', '{"result":"passed"}']) assert.equal((await verifyPost(event(request(body)))).status, 400);
     assert.equal((await POST(event(request('{}', 'https://other.example')))).status, 403);
     for (const body of ['null', '[]', '{', '{"result":"passed"}', '{"url":"https://evil.example"}']) assert.equal((await POST(event(request(body)))).status, 400);
     assert.equal((await POST(event(request(' '.repeat(1025))))).status, 413);
-    for (const route of [GET, POST]) {
+    for (const route of [GET, POST, verifyPost]) {
       const req = route === GET ? new Request(base + '?config=none') : request('{}', 'http://localhost', '?result=pass');
       assert.equal((await route(event(req))).status, 400);
       assert.equal((await route(event(route === GET ? new Request(base) : request(), 'owner', 'bad'))).status, 404);
@@ -57,6 +62,7 @@ test('assessment routes enforce auth, owner, CSRF, exact empty JSON, queries, UU
     const loaded = await GET(event(new Request(base)));
     assert.equal(loaded.status, 200); assert.equal(loaded.headers.get('cache-control'), 'no-store');
     assert.equal((await loaded.json()).reviewerConfigured, false);
+    const verified = await verifyPost(event(request())); assert.equal(verified.status, 200); assert.equal((await verified.json()).verification.id, 'verification');
     const unavailable = await POST(event(request()));
     assert.equal(unavailable.status, 200); assert.equal(unavailable.headers.get('cache-control'), 'no-store');
     assert.equal((await unavailable.json()).review.result.status, 'unavailable');
@@ -92,10 +98,10 @@ test('assessment runtime shares candidate admission services and uses only confi
   bridge.assessmentReviewStore = reviewStore;
   const hooks = registerHooks({ resolve(specifier, context, next) {
     const mocks: Record<string, string> = {
-      '$app/env/private': 'export let REVIEWER_API_URL,REVIEWER_API_KEY,REVIEWER_MODEL,REVIEWER_RETENTION_DISCLOSURE;globalThis.configureAssessmentReviewer=enabled=>{REVIEWER_API_URL=enabled?"https://trusted.example":undefined;REVIEWER_API_KEY=enabled?"fixture-key":undefined;REVIEWER_MODEL=enabled?"trusted-model":undefined;REVIEWER_RETENTION_DISCLOSURE=enabled?"Configured retention.":undefined;};',
+      '$app/env/private': 'export let REVIEWER_API_URL,REVIEWER_API_KEY,REVIEWER_MODEL,REVIEWER_RETENTION_DISCLOSURE,RUNNER_API_URL,RUNNER_API_KEY,TRUSTED_CHECKS_JSON;globalThis.configureAssessmentReviewer=enabled=>{REVIEWER_API_URL=enabled?"https://trusted.example":undefined;REVIEWER_API_KEY=enabled?"fixture-key":undefined;REVIEWER_MODEL=enabled?"trusted-model":undefined;REVIEWER_RETENTION_DISCLOSURE=enabled?"Configured retention.":undefined;};',
       '#lib/auth.js': 'export const database={};',
       './generation-runtime.ts': 'export const candidateServices=(...args)=>globalThis.assessmentServices(...args);',
-      './assessment.ts': 'export const createAssessment=dependencies=>globalThis.assessmentFactory(dependencies);',
+      './assessment.ts': 'export const createAssessment=dependencies=>globalThis.assessmentFactory(dependencies);export const verificationContext=assessment=>assessment;',
       './reviewer.ts': 'export const createReviewer=options=>globalThis.assessmentReviewer(options);export const reviewerConfigured=options=>Boolean(options.url&&options.token&&options.model&&options.retentionDisclosure);',
       './review-records.ts': 'export const createReviewRecords=()=>globalThis.assessmentReviewStore;'
     };

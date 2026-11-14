@@ -151,3 +151,17 @@ test('actual load accepts an assembled 607-gap extractor view and enforces the f
   assert.equal(inspection.state.assessment, null);
   assert(inspection.state.error);
 });
+
+test('controlled verification requires explicit action and stale or signed-out responses cannot publish', async () => {
+ let posts=0;let resolvePost: ((value:Response)=>void)|undefined;
+ const inspection=createCandidateInspection({fetcher:async(_url,options)=>{
+  if(options?.method==='POST'){posts++;return new Promise<Response>(resolve=>{resolvePost=resolve;});}
+  return response({...assessment(),verificationConfigured:true});
+ }});
+ await inspection.select('owner',item,candidate,baseSha,candidateDigest);assert.equal(posts,0);
+ const pending=inspection.verify();assert.equal(posts,1);assert.equal(inspection.state.verifying,true);
+ inspection.stop();resolvePost!(response({verification:{identity:identity(),digest:'1'.repeat(64)}}));await pending;
+ assert.equal(inspection.state.assessment,null);assert.equal(inspection.state.verifying,false);assert.equal(inspection.state.owner,'');
+ const unavailable=createCandidateInspection({fetcher:async()=>response(assessment())});
+ await unavailable.select('owner',item,candidate,baseSha,candidateDigest);await unavailable.verify();assert(unavailable.state.reviewError);
+});

@@ -132,3 +132,12 @@ test('full immutable artifact capacity refuses reviewer cost before dispatch', a
   await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal), { status: 429 });
   assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
 });
+
+test('verification rechecks revision after remote execution and never persists stale or private results', async () => {
+ const f=fixture(); let ran=0; let saved=0;
+ f.deps.verificationRecords={async list(){return[];},async append(){saved++;throw new Error('must not append');}};
+ f.deps.verification={async run(context){ran++;assert.equal(context.repositoryId,1);assert(context.files.some(file=>file.path==='b.ts'));f.candidate.candidate.outputDigest='e'.repeat(64);return{checks:[],executions:[],admission:{status:'passed',configurationDigest:'1'.repeat(64),codeDigest:'2'.repeat(64),environmentDigest:'3'.repeat(64)}};}};
+ await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal),{status:409});assert.equal(ran,1);assert.equal(saved,0);
+ f.item.snapshot.private=true;
+ await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal),{status:403});assert.equal(ran,1);
+});
