@@ -1,9 +1,13 @@
 workflow_mode: solo-git
 project: TripSit
-active_flow: null
+active_flow: orchestrate_project
+project_cycle:
+  mode: standard
+  current_phase: 1
+  completed_phases: []
 handoff:
-  next_skill: survey-context
-  summary: "Project conventions seeded; no implementation task selected."
+  next_skill: scope-work
+  summary: "User agreed to integrated Gemma generation, uncertainty-guided verification over a change-impact graph, an independent generalist critic, explicit human-review routing, named-owner sign-off, and outcome tracking. Direction recorded in product/VISION_LATEST.yaml; first-release scope and acceptance criteria remain open."
 integration:
   hands_free: "Open a PR and obtain human approval before merging."
   interactive: "No blanket human-approval requirement; follow explicit user authorization."

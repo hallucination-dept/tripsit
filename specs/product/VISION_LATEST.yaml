@@ -1,9 +1,61 @@
 name: TripSit
 purpose: >-
   TripSit is a coding ticket implementation agent powered by Gemma on Modal,
-  using uncertainty estimation through per-token probability and other
-  sophisticated features to support confident, human-led PR merges.
+  integrating code generation with a scalable, evidence-driven PR review
+  factory so humans can safely accept AI-generated code without manually
+  inspecting every line.
+objective: >-
+  Replace manual code-reading effort with verifiable evidence wherever safe,
+  reducing review bottlenecks while preserving software quality, security,
+  and human accountability.
 current_capability: "Authenticated code review with per-token probability highlighting."
 planned_capabilities:
-  - Coding ticket implementation
-  - Further uncertainty estimation features
+  - Integrated coding ticket implementation using Gemma on Modal
+  - A mixed review approach combining model-weight access, per-token probabilities, and further uncertainty estimates with independent verification
+  - Independent requirement-based testing, security checks, and reproducible evidence
+  - Detection and mitigation of hallucinations, prompt injection, regressions, and vulnerabilities
+  - Risk-based review depth, with automated verification for low-risk changes and deeper human inspection for high-risk changes
+  - Transparent reporting of verified behavior, remaining uncertainty, and accepted risks
+  - A named engineer accountable for each final merge decision
+  - Continuous measurement of real defects, escaped failures, reviewer performance, and per-code-area track records
+principles:
+  - AI judgments and confidence scores are not proof of correctness.
+  - AI never approves its own work.
+  - Verification evidence supports the named human owner's final merge decision.
+agreed_direction:
+  workflow:
+    - A named owner establishes requirements and acceptance criteria.
+    - Gemma implements the ticket and retains generation uncertainty signals.
+    - A change-impact graph connects changed code to affected behavior, requirements, and tests, exposing unresolved dependencies.
+    - An independent generalist critic investigates defects and downstream effects without assuming its breadth is reliable.
+    - Impact, uncertainty, reviewer disagreement, and evidence gaps guide controlled verification.
+    - Execution results are attached to claims and the exact reviewed revision; affected evidence is reassessed after changes.
+    - Explicit policy routes unresolved or high-risk behavior to human inspection.
+    - The named engineer accepts, requests revision, or escalates, and outcomes inform future scrutiny.
+  combined_assessment:
+    - Uncertainty guides investigation through the graph; verification results update assessments of affected behavior.
+    - Present impact, verification evidence, and experimental defect-risk estimates separately.
+    - Calibrate estimates against observed outcomes before presenting them as reliable correctness probabilities.
+    - Confidence cannot waive failed checks, missing evidence, or mandatory human inspection.
+  human_signoff:
+    - Exact revision and requirements
+    - What was checked, results, and who or what performed each check
+    - What was not checked and why
+    - Required human inspection and its outcome
+    - Residual risks explicitly accepted by the named owner
+    - Decision and timestamp
+  escalation_triggers:
+    - Ambiguous or conflicting requirements
+    - Unresolved graph dependencies or unknown impact
+    - Unsupported findings, failed checks, unavailable checks, or stale evidence
+    - Material reviewer disagreement or uncertainty estimates outside their evaluated domain
+    - Policy-mandated human inspection for sensitive changes
+  outcome_tracking:
+    - Track escaped defects, severity, false alarms, and human overrides per code area and verification method, with exposure context.
+    - Include random human spot-checks of changes routed to light review.
+    - Increase scrutiny after escapes; restore lighter review only with supporting evidence.
+  research_options:
+    - Evaluate original and selectively masked review views before adopting obfuscation.
+    - Evaluate activation probes separately from existing token probabilities.
+    - Compare graph-only, uncertainty-only, and combined prioritization under equal verification budgets.
+scope_status: "Vision established; first-release scope and acceptance criteria remain open."
