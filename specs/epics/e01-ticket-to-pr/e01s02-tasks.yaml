@@ -89,5 +89,5 @@ preparatory_subtasks:
     isolated_typecheck: tsc --ignoreConfig --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --skipLibCheck src/lib/server/candidate-output.ts; exit 0.
     build: npm run build; exit 0 using shared installed dependencies.
     check: npm run check; exit 1 twice with 13 missing generated route/layout $types declarations; no decoder diagnostics. Full preflight remains red.
-    check_next_action: Parent must rerun check after selective integration on cleaned main with normal installed dependencies; fix or log any remaining failure before dependent integration.
+    check_resolution: Replaced only this worktree node_modules symlink with a local cp -a dependency copy; npm run check && npm run build then passed together (exit 0, zero diagnostics). Earlier generated-type failures were confined to the symlinked environment.
     tdd: RED bc2672b failed with ERR_MODULE_NOT_FOUND before implementation; repository has no scripts/verify-tdd-red-commit.sh (exit 127), so mechanical script evidence is unavailable.
