@@ -13,18 +13,15 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  last_step_completed: Integrated AST extractor, reviewer client, packet builder, assessment coordinator, controller and component; HTTP integration and rendered checks pending.
-  summary: >-
-    Candidate workflow PR6 is merged in main74e4573 and migration002 applied by
-    explicit authorization. Current worktree /tmp/tripsit-e01s01 is on
-    feat/impact-review-workflow, source checkpoint15a4c13. Impact/reviewer/packet
-    modules and inspection component are committed here, but the component is
-    not yet embedded in the shared page. Assessment HTTP changes remain in
-    isolated /tmp/tripsit-assessment-http, final preflight/commit pending.
-    Do not claim end-to-end inspection ready. First fix older-policy review
-    handling without relabeling evidence, then integrate HTTP, embed component,
-    run full preflight/native/DB/browser checks and open PR. No current-wave
-    production changes, untrusted execution, publication or auto start.
+  last_step_completed: Assembled API/component and compatibility integration verified; final review found
+    a gap-limit mismatch to fix before delivery.
+  summary: Candidate workflow PR6 is merged in main74e4573 and migration002 applied by explicit authorization.
+    Current worktree /tmp/tripsit-e01s01 is on feat/impact-review-workflow, source checkpoint15a4c13.
+    Impact/reviewer/packet modules and inspection component are committed here, but the component is not
+    yet embedded in the shared page. Assessment HTTP changes remain in isolated /tmp/tripsit-assessment-http,
+    final preflight/commit pending. Do not claim end-to-end inspection ready. First fix older-policy review
+    handling without relabeling evidence, then integrate HTTP, embed component, run full preflight/native/DB/browser
+    checks and open PR. No current-wave production changes, untrusted execution, publication or auto start.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -34,17 +31,16 @@ integration:
     ui: https://github.com/hallucination-dept/tripsit/pull/3
     duplicate_cleanup: https://github.com/hallucination-dept/tripsit/pull/4
 user_constraints:
-  build_window: Roughly 24 hours of agent build work for the hackathon; exact timeframe
-    is not a gate.
-  resources: Use the already supplied stack and resources; do not require an additional
-    resource inventory or budget to finish Elaborate.
-  reviewer: Configurable OpenAI-compatible API; provider/model selection explicitly
-    deferred until later, not an Elaborate blocker.
-  documentation: User requests focus on features/code; do not add routine Markdown
-    reports. Use this state and executable tests for ongoing evidence.
-  database_testing: User explicitly authorized testing in configured production database
-    and manually approved exact app-owned 001_work_items.sql migration; applied transactionally,
-    auth tables unchanged. Keep test fixtures isolated and clean up.
+  build_window: Roughly 24 hours of agent build work for the hackathon; exact timeframe is not a gate.
+  resources: Use the already supplied stack and resources; do not require an additional resource inventory
+    or budget to finish Elaborate.
+  reviewer: Configurable OpenAI-compatible API; provider/model selection explicitly deferred until later,
+    not an Elaborate blocker.
+  documentation: User requests focus on features/code; do not add routine Markdown reports. Use this state
+    and executable tests for ongoing evidence.
+  database_testing: User explicitly authorized testing in configured production database and manually
+    approved exact app-owned 001_work_items.sql migration; applied transactionally, auth tables unchanged.
+    Keep test fixtures isolated and clean up.
 active_epic: e02
 active_story: e02s01
 epic_cycle:
@@ -69,14 +65,14 @@ environment:
     checks: GET /200, GET /api/auth/get-session200, anonymous GET /api/work-items401
     env_source: user-provided primary frontend/.env; values not printed/copied
     oauth_client_id: Iv23liAX4hdiKcwxPade
-    oauth_check: GitHub App OAuth pair selected exclusively; email permission read
-      confirmed. Prior email_not_found issue resolved; no current OAuth blocker recorded.
+    oauth_check: GitHub App OAuth pair selected exclusively; email permission read confirmed. Prior email_not_found
+      issue resolved; no current OAuth blocker recorded.
 vcs:
   kind: git
   branch: feat/impact-review-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: 15a4c13
+  checkpoint: 8db0f17
 verification:
   tooling_review:
     round: 2
@@ -94,9 +90,8 @@ verification:
   configured_database_migration: approved and applied; no auth-table changes
   github_app_key: valid; App metadata identity matches
   github_installations: 1
-  configured_database_storage: Passed owner isolation, expiry, physical purge and
-    source-free metadata in auto-dropped temporary tables; existing application rows
-    unchanged
+  configured_database_storage: Passed owner isolation, expiry, physical purge and source-free metadata
+    in auto-dropped temporary tables; existing application rows unchanged
   github_discovery_tests: 4
   issue_polling_tests: 4
   auth_config_tests: 1
@@ -106,54 +101,47 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Checkpoint current central state, then finish impact/review HTTP and page integration
+active_work: Align valid impact-gap bounds across packet and browser before final publication.
 implementation_plan:
-  scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
-    and open issues; refresh every60s; auto-start is deferred by user.
+  scope: Extend e01s01 intake UI to automatically discover accessible installed repositories and open
+    issues; refresh every60s; auto-start is deferred by user.
   contracts:
     GET /api/github/repositories: '{repositories:[{id,fullName,private}],complete:boolean}'
     GET /api/github/issues?repository=owner/name: '{issues:[{id,number,title,updatedAt}],complete:boolean}'
   tasks:
   - owner: backend worktree
-    changes: Bounded authenticated discovery on existing GitHub adapter; user/App
-      intersection, explicit pagination limits/completeness, exclude PRs; thin protected
-      routes
-    verify: cd frontend && node --experimental-strip-types tests/github-discovery.test.ts
-      && npm run check && npm run build
+    changes: Bounded authenticated discovery on existing GitHub adapter; user/App intersection, explicit
+      pagination limits/completeness, exclude PRs; thin protected routes
+    verify: cd frontend && node --experimental-strip-types tests/github-discovery.test.ts && npm run check
+      && npm run build
   - owner: frontend worktree
-    changes: Select controls for discovered repo and open issue, first load and60s
-      polling, cancellation and session/repo change stale-response guards; update
-      browser harness selectors
-    verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts
-      && npm run check && npm run build
+    changes: Select controls for discovered repo and open issue, first load and60s polling, cancellation
+      and session/repo change stale-response guards; update browser harness selectors
+    verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts && npm run check
+      && npm run build
   - owner: parent
-    changes: Integrate isolated commits, review and run full relevant regression/build
-      plus live local flow, push interim PR
+    changes: Integrate isolated commits, review and run full relevant regression/build plus live local
+      flow, push interim PR
     verify: Actual authenticated GET discovery routes; native tests; check/build
-  bounds: No automatic ticket execution, no private-persistence bypass, no new dependencies,
-    no routine Markdown reports
+  bounds: No automatic ticket execution, no private-persistence bypass, no new dependencies, no routine
+    Markdown reports
   status: implemented; local verification passed; automatic-start explicitly deferred
 ui_plan:
-  scope: Professional responsive workspace and sign-in visual refinement; preserve
-    all implemented flows, labels/keyboard access and honest availability states.
-    No new backend features or dependencies.
+  scope: Professional responsive workspace and sign-in visual refinement; preserve all implemented flows,
+    labels/keyboard access and honest availability states. No new backend features or dependencies.
   targets:
   - frontend/src/routes/+page.svelte
   - presentation stylesheet only if useful
-  - existing browser harness/fixtures only if necessary for intentional label/markup
-    changes
+  - existing browser harness/fixtures only if necessary for intentional label/markup changes
   - frontend/src/lib/assets/favicon.svg
-  impact: Existing page is sole caller of discovery controller/auth client/intake/review
-    APIs. Preserve API calls, owner/session guards, IDs and Svelte runes; rendering/copy/CSS
-    only.
+  impact: Existing page is sole caller of discovery controller/auth client/intake/review APIs. Preserve
+    API calls, owner/session guards, IDs and Svelte runes; rendering/copy/CSS only.
   tasks:
-  - action: Restructure and style compact neutral workspace/sign-in with clearer task/detail/review
-      hierarchy
+  - action: Restructure and style compact neutral workspace/sign-in with clearer task/detail/review hierarchy
     verify: cd frontend && npm run check && npm run build
-  - action: Visual browser checks desktop/mobile with isolated synthetic presentation
-      data, plus existing controller/auth/intake/Chrome regressions
-    verify: Native existing tests, real Chrome capture and no horizontal overflow
-      at1440/390 widths
+  - action: Visual browser checks desktop/mobile with isolated synthetic presentation data, plus existing
+      controller/auth/intake/Chrome regressions
+    verify: Native existing tests, real Chrome capture and no horizontal overflow at1440/390 widths
   - action: Integrate reviewed UI commit and push current PR
     verify: git diff --check; live localhost page200; preserve functional flows
   status: complete; rendered visual checks and regressions passed
@@ -161,9 +149,8 @@ ui_plan:
     check_build: passed; Svelte 0 errors/0 warnings
     native_regressions: 28
     chrome_harness_tests: 2
-    visual_fixtures: Desktop1440, mobile390 and sign-in1440 rendered in real Chrome;
-      no horizontal overflow; snapshot and review text fallback exercised using isolated
-      synthetic presentation API responses
+    visual_fixtures: Desktop1440, mobile390 and sign-in1440 rendered in real Chrome; no horizontal overflow;
+      snapshot and review text fallback exercised using isolated synthetic presentation API responses
     behavior_script: Preserved in PR 3; PR 4 intentionally removed duplicate project handlers
     dependencies_added: 0
     markdown_reports_added: 0
@@ -176,27 +163,31 @@ merge_investigation:
   plan:
   - Add only missing import and env declaration on isolated current-main fix branch
   - Run check/build and existingnative regression tests
-  - Integrate latestmain/fix with isolated UI polish preserving both parents project+discovery
-    functionality; push reviewable follow-up without forcepush or merge tomain
-  verify: npm run check && npm run build; existingnative tests; compare preservedpagehandlers
-    and project controls
-  result: Repair PR 2 merged by user; current main 3774b04 integrated. Check/build
-    pass with Svelte 0 errors/0 warnings; Chrome harness 2 passing. Final project
-    controls preserved; real authenticated project and PR flow not exercised.
+  - Integrate latestmain/fix with isolated UI polish preserving both parents project+discovery functionality;
+    push reviewable follow-up without forcepush or merge tomain
+  verify: npm run check && npm run build; existingnative tests; compare preservedpagehandlers and project
+    controls
+  result: Repair PR 2 merged by user; current main 3774b04 integrated. Check/build pass with Svelte 0
+    errors/0 warnings; Chrome harness 2 passing. Final project controls preserved; real authenticated
+    project and PR flow not exercised.
 cleanup_plan:
   reason: User requests removing accidentally merged duplicate project subsystem before continuing.
   next_packages: Held in isolated worktrees; no decoder or policy code integrated.
   scope:
-  - Remove legacy project database helpers, project APIs, manual PR form, duplicated issue UI and migration command.
+  - Remove legacy project database helpers, project APIs, manual PR form, duplicated issue UI and migration
+    command.
   - Remove direct jose dependency; retain transitive auth dependency and lockfile consistency.
-  - Keep authenticated GitHub install redirect and fixed setup callback for externally configured URL compatibility.
+  - Keep authenticated GitHub install redirect and fixed setup callback for externally configured URL
+    compatibility.
   - Preserve automatic discovery/polling, owner-scoped issue snapshots, Better Auth and code review.
-  bounds: No database/schema changes or deletion of existing project records; no live private/generation enablement.
+  bounds: No database/schema changes or deletion of existing project records; no live private/generation
+    enablement.
   tasks:
   - action: Delete obsolete flow and simplify installation entrypoints; add focused routing tests.
     verify: cd frontend && node --experimental-strip-types tests/github-install.test.ts
   - action: Run retained regressions, frontend preflight and desktop/mobile presentation checks.
-    verify: cd frontend && npm run check && npm run build; native intake/auth/discovery tests; Chrome fixture checks
+    verify: cd frontend && npm run check && npm run build; native intake/auth/discovery tests; Chrome
+      fixture checks
   - action: Review deletion boundary and publish cleanup PR for human review.
     verify: git diff --check; no legacy project callers; clean package lock
   status: Merged in PR 4; source baseline f2ed60a.
@@ -204,7 +195,8 @@ cleanup_plan:
     routing_tests: 2 passed; auth, missing configuration and fixed redirect covered.
     retained_tests: 28 intake/auth/discovery, 2 browser configuration and 2 Chrome harness passed.
     preflight: npm run check and npm run build passed; Svelte 0 errors and 0 warnings.
-    visual: Synthetic desktop1440/mobile390/signin checks pass without overflow; no requests to removed project APIs.
+    visual: Synthetic desktop1440/mobile390/signin checks pass without overflow; no requests to removed
+      project APIs.
     review: Independent deletion-boundary review found no must-fix findings.
     package_lock: Regenerated offline; jose remains required by Better Auth transitively.
     limitations: Live authenticated installation roundtrip not rerun; existing database table/data untouched.
@@ -216,8 +208,10 @@ implementation_status:
   - Existing code review and token rendering with text fallback; responsive workspace UI.
   - Duplicate legacy project/OAuth/manual PR subsystem removed; installation entrypoint preserved.
   incomplete:
-  - e01s01 live gate aggregation, private admission, verified recurring purge and real authenticated two-owner browser UAT.
-  - Candidate generation, requirements policy integration, impact graph, independent review and controlled execution.
+  - e01s01 live gate aggregation, private admission, verified recurring purge and real authenticated two-owner
+    browser UAT.
+  - Candidate generation, requirements policy integration, impact graph, independent review and controlled
+    execution.
   - Review packet, human decisions, revision-bound PR publication and comparative evaluation.
   intentionally_deferred:
   - Automatic work start; automatic discovery is implemented separately.
@@ -229,30 +223,43 @@ resumed_feature_plan:
   streams:
   - owner: candidate agent
     scope: Bounded decoder and authorized generation coordinator with inert candidate files; no execution.
-    verify: cd frontend && node --experimental-strip-types tests/candidate-output.test.ts && node --experimental-strip-types tests/generation.test.ts
+    verify: cd frontend && node --experimental-strip-types tests/candidate-output.test.ts && node --experimental-strip-types
+      tests/generation.test.ts
   - owner: policy agent
-    scope: Trusted baseline requirements and owner-scoped read-only policy endpoint; unknown applicability remains a gap.
-    verify: cd frontend && node --experimental-strip-types tests/policy.test.ts && node --experimental-strip-types tests/policy-route.test.ts
+    scope: Trusted baseline requirements and owner-scoped read-only policy endpoint; unknown applicability
+      remains a gap.
+    verify: cd frontend && node --experimental-strip-types tests/policy.test.ts && node --experimental-strip-types
+      tests/policy-route.test.ts
   - owner: intake gate agent
     scope: Orchestrate existing evidence verifiers with revision binding; incomplete controls remain denied.
     verify: python3 -m unittest discover -s specs/experiments/tests
   - owner: parent
-    scope: Exact revision GitHub file context, bounded Modal adapter, expiring owner-scoped candidate storage/migration, preview API and UI integration.
-    verify: Focused context/model/storage/API tests; disposable-local PostgreSQL integration; frontend check/build and synthetic browser flow.
+    scope: Exact revision GitHub file context, bounded Modal adapter, expiring owner-scoped candidate
+      storage/migration, preview API and UI integration.
+    verify: Focused context/model/storage/API tests; disposable-local PostgreSQL integration; frontend
+      check/build and synthetic browser flow.
   synchronization: Parent reviews and integrates separate commits; only parent changes shared UI/runtime/storage/Modal.
-  bounds: No untrusted execution, private source dispatch, automatic work start or automatic merges. Migration002 tested locally then applied to configured database after explicit user authorization.
+  bounds: No untrusted execution, private source dispatch, automatic work start or automatic merges. Migration002
+    tested locally then applied to configured database after explicit user authorization.
 current_feature_verification:
   candidate_workflow: Implemented; full e01s02 remains incomplete.
   policy_workflow: Implemented; real authenticated UAT remains incomplete.
   preflight: npm run check and npm run build passed; Svelte 0 errors and 0 warnings.
-  focused_regressions: Native decoder/service/model/storage/routes/view/controller/policy/context/limit tests passed; retained intake/auth/discovery checks passed.
+  focused_regressions: Native decoder/service/model/storage/routes/view/controller/policy/context/limit
+    tests passed; retained intake/auth/discovery checks passed.
   python: 12 admission-verifier tests and 8 inference compatibility/cancellation tests passed.
-  disposable_database: 2 candidate persistence, 2 intake database and 2 retention tests passed; local migration command applied001+002 successfully.
-  model_smoke: Configured Modal synthetic JSON replacement decoded successfully (93outputbytes); no repository source sent. Observations and exact mapping unavailable on currently deployed wrapper.
-  presentation: Real Chrome synthetic desktop1440/mobile390/signin; policy+files load, manual candidate generation, escaped preview and review fallback pass with no horizontal overflow.
-  review_fixes: Candidate reads now reauthorize after storage; Modal forwarding cancels+awaits upstream on client disconnect.
-  migration: frontend/migrations/002_candidates.sql applied transactionally to configured database after explicit user authorization; both tables/cascade and runtime readiness verified.
-  remaining: Full private/live acceptance, isolated Git commit staging, exact span mapping, deployed cancellation verification, controlled execution and revision-bound publication.
+  disposable_database: 2 candidate persistence, 2 intake database and 2 retention tests passed; local
+    migration command applied001+002 successfully.
+  model_smoke: Configured Modal synthetic JSON replacement decoded successfully (93outputbytes); no repository
+    source sent. Observations and exact mapping unavailable on currently deployed wrapper.
+  presentation: Real Chrome synthetic desktop1440/mobile390/signin; policy+files load, manual candidate
+    generation, escaped preview and review fallback pass with no horizontal overflow.
+  review_fixes: Candidate reads now reauthorize after storage; Modal forwarding cancels+awaits upstream
+    on client disconnect.
+  migration: frontend/migrations/002_candidates.sql applied transactionally to configured database after
+    explicit user authorization; both tables/cascade and runtime readiness verified.
+  remaining: Full private/live acceptance, isolated Git commit staging, exact span mapping, deployed cancellation
+    verification, controlled execution and revision-bound publication.
   next_parallel_work:
   - e02s01 reverse impact core complete offline; draft PR 7, seven tests/check/build pass, not integrated.
   - e03s01 priority core complete offline; draft PR 8, six tests/check/build pass, not integrated.
@@ -261,48 +268,67 @@ delivery_checkpoint:
   candidate_status: PR6 merged in main74e4573; migration002 applied successfully; candidate storage ready.
   impact_draft: https://github.com/hallucination-dept/tripsit/pull/7
   priorities_draft: https://github.com/hallucination-dept/tripsit/pull/8
-  review_results: Post-read access revocation, disconnected upstream work, missing token bytes, conflicting impact identities and sparse impact inputs fixed with regression tests.
-  production_changes: User explicitly authorized migration002; applied transactionally, auth tables unchanged. No deployment or merge performed by agent.
-  development_app: localhost5173 returns200 and serves integrated candidate/policy workflow; candidate storage ready, protected APIs401 anonymously. Database is remote Aiven, inference remote Modal; impact/priority drafts not integrated.
+  review_results: Post-read access revocation, disconnected upstream work, missing token bytes, conflicting
+    impact identities and sparse impact inputs fixed with regression tests.
+  production_changes: User explicitly authorized migration002; applied transactionally, auth tables unchanged.
+    No deployment or merge performed by agent.
+  development_app: localhost5173 returns200 and serves integrated candidate/policy workflow; candidate
+    storage ready, protected APIs401 anonymously. Database is remote Aiven, inference remote Modal; impact/priority
+    drafts not integrated.
 authorized_migration002:
   authorization: User explicitly instructed do the migration.
   committed: true
-  validation: Both candidate tables exist; snapshot deletion cascade verified; createCandidateRecords.ready passes.
+  validation: Both candidate tables exist; snapshot deletion cascade verified; createCandidateRecords.ready
+    passes.
   application_checks: Local GET /200, auth/session200, anonymous work-items and files401.
   scope: Schema-only transaction; auth tables unchanged, no application rows created or deleted.
-  limitation: Full real authenticated snapshot-to-candidate browser flow not rerun after migration; Modal wrapper raw-observation/cancellation changes not deployed by agent.
+  limitation: Full real authenticated snapshot-to-candidate browser flow not rerun after migration; Modal
+    wrapper raw-observation/cancellation changes not deployed by agent.
 impact_review_plan:
   authorization: User requested maximum parallel implementation of remaining features.
   source_baseline: main74e4573 after merged candidate workflow PR6.
   independent_streams:
   - owner: impact agent
     files: impact.ts, impact-extractor.ts and focused tests
-    scope: Bounded real JS/TS static import extraction, artifact revision identity and explicit unsupported/unknown gaps.
-    verify: cd frontend && node --experimental-strip-types tests/impact-extractor.test.ts && node --experimental-strip-types tests/impact.test.ts
+    scope: Bounded real JS/TS static import extraction, artifact revision identity and explicit unsupported/unknown
+      gaps.
+    verify: cd frontend && node --experimental-strip-types tests/impact-extractor.test.ts && node --experimental-strip-types
+      tests/impact.test.ts
   - owner: reviewer agent
     files: reviewer.ts and focused tests
-    scope: Server-configured public-only independent review with strict linked claims/checks and unavailable states.
+    scope: Server-configured public-only independent review with strict linked claims/checks and unavailable
+      states.
     verify: cd frontend && node --experimental-strip-types tests/reviewer.test.ts
   - owner: packet agent
     files: packet.ts, priorities.ts and focused tests
     scope: Revision-bound packet, truthful evidence gaps and check plan; no fabricated executions.
-    verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types tests/priorities.test.ts
+    verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types
+      tests/priorities.test.ts
   - owner: parent
-    files: Candidate analysis acquisition, owner-scoped artifact persistence/runtime/routes, UI/controller, env and package manifests.
-    scope: Integrate actual candidate/policy/impact/review into user workflow with existing expiry cascade; retain immutable generation fields. TypeScript existing dependency becomes runtime for AST extraction.
-    verify: Native integration/controller/storage/route tests, disposable database verification, frontend check/build, synthetic Chrome flow.
+    files: Candidate analysis acquisition, owner-scoped artifact persistence/runtime/routes, UI/controller,
+      env and package manifests.
+    scope: Integrate actual candidate/policy/impact/review into user workflow with existing expiry cascade;
+      retain immutable generation fields. TypeScript existing dependency becomes runtime for AST extraction.
+    verify: Native integration/controller/storage/route tests, disposable database verification, frontend
+      check/build, synthetic Chrome flow.
   synchronization: Separate worktrees and file ownership; parent sequentially reviews and integrates commits.
-  bounds: No untrusted execution, private dispatch, automatic work start, merges or unapproved production schema changes. Reviewer absent configuration remains unavailable.
+  bounds: No untrusted execution, private dispatch, automatic work start, merges or unapproved production
+    schema changes. Reviewer absent configuration remains unavailable.
 assessment_coordinator_plan:
-  flow: Authorized frozen candidate -> essential and bounded optional file context -> actual AST impact and stored review history -> fresh revision/access checks.
-  review_flow: Send only issue, requirements, graph references and file text to separately configured reviewer; recheck access before dispatch, after response and around storage.
-  bounds: 24 files,256KiB combined source,90s operation; optional unavailable sources remain gaps, private/revoked access always denies.
-  artifact_storage: Append bounded immutable digest-checked review envelopes inside existing owner-scoped candidate raw payload; snapshot purge already cascades deletion, no new schema.
-  verify: cd frontend && node --experimental-strip-types tests/assessment.test.ts && node --experimental-strip-types tests/review-records.test.ts; disposable PostgreSQL artifact ownership/cascade tests
-
+  flow: Authorized frozen candidate -> essential and bounded optional file context -> actual AST impact
+    and stored review history -> fresh revision/access checks.
+  review_flow: Send only issue, requirements, graph references and file text to separately configured
+    reviewer; recheck access before dispatch, after response and around storage.
+  bounds: 24 files,256KiB combined source,90s operation; optional unavailable sources remain gaps, private/revoked
+    access always denies.
+  artifact_storage: Append bounded immutable digest-checked review envelopes inside existing owner-scoped
+    candidate raw payload; snapshot purge already cascades deletion, no new schema.
+  verify: cd frontend && node --experimental-strip-types tests/assessment.test.ts && node --experimental-strip-types
+    tests/review-records.test.ts; disposable PostgreSQL artifact ownership/cascade tests
 parallel_continuation:
   authorization: User invoked orchestrate-project and requested more implementations in parallel.
-  scope: Finish existing public candidate assessment, independent-review and packet workflow; no new story acceptance claims.
+  scope: Finish existing public candidate assessment, independent-review and packet workflow; no new story
+    acceptance claims.
   streams:
   - owner: assessment_api
     files: Assessment runtime, protected assessment/reviews routes and focused route tests.
@@ -312,16 +338,20 @@ parallel_continuation:
     verify: cd frontend && node --experimental-strip-types tests/candidate-inspection.test.ts
   - owner: assessment_verify
     files: Existing assessment/reviewer/record core regressions and minimal fixes.
-    verify: cd frontend && node --experimental-strip-types --test tests/assessment.test.ts tests/reviewer.test.ts tests/review-records.test.ts
+    verify: cd frontend && node --experimental-strip-types --test tests/assessment.test.ts tests/reviewer.test.ts
+      tests/review-records.test.ts
   - owner: parent
     files: State, integration review and verification.
     verify: cd frontend && npm run check && npm run build
-  bounds: No production migrations, deployment, private dispatch, untrusted execution, automatic work start or merge. Existing unfinished admission/UAT gates remain incomplete.
+  bounds: No production migrations, deployment, private dispatch, untrusted execution, automatic work
+    start or merge. Existing unfinished admission/UAT gates remain incomplete.
   baseline: Eight native assessment/inspection/impact/packet/priority/reviewer/record test files passed.
 current_workstreams:
-  source_checkpoint: 15a4c13
-  checkpoint_reason: User asked whether central state was consistently recorded before work; synchronize before continuing.
-  state_discipline: Record each new workstream plan, owner, files and verify command here before dispatch; refresh execution ledger before resuming implementation.
+  source_checkpoint: 8db0f17
+  checkpoint_reason: User asked whether central state was consistently recorded before work; synchronize
+    before continuing.
+  state_discipline: Record each new workstream plan, owner, files and verify command here before dispatch;
+    refresh execution ledger before resuming implementation.
   impact_extractor:
     status: Committed and integrated in feature branch; not main.
     verification: 6 extractor and 9 graph native tests pass; isolated check/build pass.
@@ -333,19 +363,74 @@ current_workstreams:
     status: Committed and integrated in feature branch; not main.
     verification: 11 packet and 7 priority native tests plus isolated check/build pass.
     limitation: No actual trusted executions; candidateCommit null and acceptanceReady false.
+    pending_fix: 'Final review reproduced 300-import fixture: extractor allows 607 gaps, packet/browser
+      cap512 rejects valid assessment. Fix pending.'
   assessment_and_storage:
     status: Committed and integrated in feature branch; not main.
-    verification: 9 assessment and 2 storage native tests; real disposable PostgreSQL history/owner/cap/expiry test passes.
-    pending_fix: Preserve older-policy artifact identity and mark it stale rather than rejecting history or relabeling it current.
+    verification: 9 assessment and 2 storage native tests; real disposable PostgreSQL history/owner/cap/expiry
+      test passes.
+    resolved: Historical policy identity retained; current raw review list excludes stale reviews and
+      packet marks stale artifacts.
   inspection_controller_component:
-    status: Committed in feature branch; shared page embedding and browser checks pending.
+    status: Committed, embedded in shared page and synthetic browser-verified; feature branch only.
     verification: 5 controller tests and isolated component check/build pass.
   assessment_http:
-    status: Isolated worktree changes not integrated; final check and commit pending.
+    status: Committed and integrated, including compatibility review URL and original artifact provenance.
     worktree: /tmp/tripsit-assessment-http
     owner: intake_gate_completion
-    verification: View/routing/runtime focused tests pass; final preflight after stale-artifact view filter pending.
-  remaining_validation: Full integrated frontend check/build, retained regressions, native route/controller/storage tests and synthetic Chrome desktop/mobile flow before PR.
+    verification: Routing/view/runtime and compatibility cases pass; assembled check/build and four synthetic
+      Chrome states passed.
+  remaining_validation: Add gap-bound assembled regression, align caps, rerun affected packet/view/controller
+    tests plus frontend preflight; full live UAT/provider remains unverified.
+evaluation_manifest_workstream:
+  owner: parallel-continuation-root
+  status: started
+  worktree: /tmp/tripsit-evaluation-manifest
+  branch: feat/evaluation-manifest
+  files:
+  - specs/experiments/freeze_evaluation.py
+  - specs/experiments/tests/test_evaluation_manifest.py
+  - specs/epics/e05-evaluation/e05s01-tasks.yaml (preparatory subtask only)
+  scope: Validate externally independently labeled fixture metadata and source digests; freeze split and
+    equal budget manifest before outcomes. No executions or full e05s01 completion.
+  verify: python3 -m unittest discover -s specs/experiments/tests -p test_evaluation_manifest.py
+  coordination: Existing assessment HTTP, storage, page and controller claims left to their owners. Earlier
+    overlapping subagents stopped; their committed changes left intact for integrator review.
+integration_reconciliation:
+  source_checkpoint: b46ffc4
+  observation: Shared branch also contains commits4a390ff,3ee2f92,bbd7ed5,bfa59b8,ed60db1 adding reviewer
+    readiness, inline page inspection and assessment/reviews routes.
+  current_state: Cherry-pick323435f add/add conflict in assessment-route.test.ts; assembled verification
+    not yet claimed.
+  plan: Keep validated reviewer readiness and existing /candidates/id/reviews URL as a compatibility alias,
+    adopt reviewed stale-aware view/shared runtime and one component UI, preserve routing regression coverage
+    for both paths.
+  verify: Native new and compatibility route tests, reviewer readiness and storage tests; frontend check/build;
+    real Chrome synthetic flow.
+gap_limit_fix_plan:
+  owner: next_package_dependencies in isolated worktree
+  scope: packet.ts and candidate-inspection.ts gap validation limits plus assembled regression in assessment-view/controller
+    tests
+  reproduction: One valid index.ts with300 external imports yields600 references and607 gaps; assessmentView
+    throws Invalid review packet.
+  behavior: Keep bounded complete gap information for extractor-supported output, no silent dropping or
+    false complete status.
+  verify: cd frontend && node --experimental-strip-types tests/assessment-view.test.ts && node --experimental-strip-types
+    tests/candidate-inspection.test.ts && node --experimental-strip-types tests/packet.test.ts && npm
+    run check && npm run build
+current_verified_results:
+  native:
+    files: 27
+    tests: 145
+    failures: 0
+  python: 8 inference and12 admission-verifier tests pass.
+  database: 2 candidate DB cases and1 review history/expiry case passed on disposable localhost PostgreSQL;
+    container removed.
+  chrome: Desktop1440/mobile390/sign-in/unavailable-provider synthetic fixtures and2 retained harness
+    cases pass; escaped untrusted text and explicit review covered.
+  preflight: Assembled npm run check and npm run build pass before final gap-limit regression fix.
+  live_reviewer: Not configured; no live reviewer request performed.
+  acceptance: Full stories remain incomplete; no execution/publication/decisions enabled.
 
 evaluation_manifest_delivery:
   owner: parallel-continuation-root
@@ -356,3 +441,4 @@ evaluation_manifest_delivery:
   verify: python3 -m unittest discover -s specs/experiments/tests
   result: All sixteen Python experiment tests passed, including four manifest cases.
   limitations: No actual independently labeled corpus supplied; declaration does not certify label independence. No candidate execution or full e05s01 acceptance. No frontend changes.
+  pr: https://github.com/hallucination-dept/tripsit/pull/10
