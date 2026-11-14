@@ -1,4 +1,6 @@
-type Requirement = {
+export type PolicySurface = 'web_ui' | 'web_api' | 'non_web' | 'unknown';
+
+export type Requirement = {
   id: string;
   category: 'intent' | 'functional' | 'non_functional';
   criterion: string;
@@ -11,7 +13,7 @@ type Requirement = {
   evidence: 'unverified';
 };
 
-type Expectation = Pick<Requirement, 'id' | 'category' | 'criterion' | 'source'> & {
+export type Expectation = Pick<Requirement, 'id' | 'category' | 'criterion' | 'source'> & {
   provenance: 'supplied' | 'inferred';
 };
 
@@ -19,8 +21,8 @@ const boundedText = (value: unknown, limit: number): value is string =>
   typeof value === 'string' && value.trim().length > 0 && value.length <= limit;
 
 // A small policy selection, not an ASVS or WCAG compliance assessment.
-export function baselinePolicy(trustedSurface: 'web_ui', expectations: readonly Expectation[] = []) {
-  if (trustedSurface !== 'web_ui') throw new Error('Invalid trusted surface.');
+export function baselinePolicy(trustedSurface: PolicySurface, expectations: readonly Expectation[] = []) {
+  if (!['web_ui', 'web_api', 'non_web', 'unknown'].includes(trustedSurface)) throw new Error('Invalid trusted surface.');
   if (!Array.isArray(expectations) || expectations.length > 100) throw new Error('Invalid expectations.');
   const requirements: Requirement[] = [
     {
@@ -44,6 +46,26 @@ export function baselinePolicy(trustedSurface: 'web_ui', expectations: readonly 
       evidence: 'unverified'
     }
   ];
+  const gaps = [
+    { id: 'performance-workload', reason: 'Performance workload is unspecified; no performance result can be assessed.' },
+    { id: 'performance-threshold', reason: 'Performance threshold is unspecified; do not invent a passing target.' }
+  ];
+  if (trustedSurface === 'unknown') {
+    for (const requirement of requirements) {
+      requirement.applicability = 'unresolved';
+      requirement.reason = 'Trusted applicability assessment is missing.';
+      gaps.push({ id: requirement.id, reason: requirement.reason });
+    }
+  } else if (trustedSurface === 'non_web') {
+    for (const requirement of requirements) {
+      requirement.applicability = 'not_applicable';
+      requirement.reason = 'This selected web profile does not assess non-web software.';
+    }
+    gaps.push({ id: 'non-web-coverage', reason: 'Non-web security and accessibility need a separately selected applicable baseline.' });
+  } else if (trustedSurface === 'web_api') {
+    requirements[1].applicability = 'not_applicable';
+    requirements[1].reason = 'Trusted scope has no web UI; keyboard functionality is outside this API assessment.';
+  }
   const ids = new Set(requirements.map(item => item.id));
   for (const expectation of expectations) {
     if (!expectation || !boundedText(expectation.id, 128) || ids.has(expectation.id)
@@ -61,6 +83,7 @@ export function baselinePolicy(trustedSurface: 'web_ui', expectations: readonly 
       mandatory: false, applicability: 'unresolved', reason: 'Imported expectation needs trusted applicability review.',
       verification: 'Define a check against the original expectation; inferred text remains a hypothesis.',
       evidence: 'unverified' });
+    gaps.push({ id: expectation.id, reason: 'Imported expectation needs trusted applicability review.' });
   }
-  return { version: 'tripsit-baseline-1', assessment: 'unverified' as const, requirements };
+  return { version: 'tripsit-baseline-1', assessment: 'unverified' as const, requirements, gaps };
 }
