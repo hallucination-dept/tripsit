@@ -1,4 +1,4 @@
-import { IntakeError } from './intake.ts';
+import { IntakeError, whileActive } from './intake.ts';
 
 export async function withIntake(request: Request, owner: string | undefined, action: (signal: AbortSignal) => Promise<unknown>): Promise<Response> {
   try {
@@ -8,7 +8,7 @@ export async function withIntake(request: Request, owner: string | undefined, ac
       if (request.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/json') throw new IntakeError(415, 'Submit JSON content.');
     }
     const signal = AbortSignal.any([request.signal, AbortSignal.timeout(30_000)]);
-    const data = await action(signal);
+    const data = await whileActive(() => action(signal), signal);
     return Response.json(data, { headers: { 'Cache-Control': 'no-store' } });
   } catch (cause) {
     const failure = cause instanceof IntakeError ? cause : new IntakeError(503, 'Issue intake is temporarily unavailable.');

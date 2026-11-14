@@ -52,3 +52,18 @@ export type IssueSnapshot = {
   inferred: string[];
   ownerConfirmed: string[];
 };
+
+// Bound callers even when an I/O library does not observe AbortSignal.
+export function whileActive<T>(work: () => Promise<T>, signal: AbortSignal): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const abort = () => reject(new IntakeError(504, 'Issue intake was cancelled or timed out.'));
+    if (signal.aborted) { abort(); return; }
+    signal.addEventListener('abort', abort, { once: true });
+    Promise.resolve().then(() => {
+      if (signal.aborted) throw new IntakeError(504, 'Issue intake was cancelled or timed out.');
+      return work();
+    }).then(value => {
+      if (signal.aborted) abort(); else resolve(value);
+    }, reject).finally(() => signal.removeEventListener('abort', abort));
+  });
+}

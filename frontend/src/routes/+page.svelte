@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { authClient } from '#lib/auth-client.js';
+	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
 	type Token = { token: string; probability_percent: number };
 
@@ -41,7 +42,10 @@
 			if ($session.data?.user.id !== owner) return;
 			intakeOwner = owner;
 			if (!response.ok) throw new Error(data.message ?? 'Issue intake failed.');
-			if (action === 'list') issueItems = data.items;
+			if (action === 'list') {
+				issueItems = data.items;
+				selectedIssue = selectedAfterReload(selectedIssue, issueItems);
+			}
 			else selectedIssue = data.item;
 		} catch (error) {
 			if ($session.data?.user.id === owner) {

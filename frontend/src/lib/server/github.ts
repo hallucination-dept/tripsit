@@ -7,7 +7,7 @@ export function githubAccount(accounts: GitHubAccount[], owner: string): GitHubA
 }
 
 import { createSign } from 'node:crypto';
-import { IntakeError, readJson } from './intake.ts';
+import { IntakeError, readJson, whileActive } from './intake.ts';
 import type { IssueSnapshot } from './intake.ts';
 
 type Options = { appId: string; privateKey: string; userToken: string; accountId: string; fetcher?: typeof fetch };
@@ -90,4 +90,19 @@ export function createGitHub(options: Options) {
         inferred: [], ownerConfirmed: [] };
     }
   };
+}
+
+type AccountApi = {
+  listUserAccounts(input: { headers: Headers }): Promise<GitHubAccount[]>;
+  getAccessToken(input: { headers: Headers; body: { accountId: string } }): Promise<{ accessToken: string }>;
+};
+
+export async function linkedGitHubToken(api: AccountApi, headers: Headers, owner: string, signal: AbortSignal) {
+  const accounts = await whileActive(() => api.listUserAccounts({ headers }), signal);
+  let account;
+  try { account = githubAccount(accounts, owner); }
+  catch { throw new IntakeError(403, 'Sign in with one linked GitHub account before selecting an issue.'); }
+  const token = await whileActive(() => api.getAccessToken({ headers, body: { accountId: account.id } }), signal);
+  if (!token.accessToken) throw new IntakeError(403, 'Reconnect GitHub before selecting an issue.');
+  return { userToken: token.accessToken, accountId: account.accountId };
 }
