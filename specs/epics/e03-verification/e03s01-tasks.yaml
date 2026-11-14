@@ -8,6 +8,16 @@ bcps: 3
 depends_on:
 - e02s01
 - e02s02
+preparatory_subtask:
+  status: planned
+  scope: Offline deterministic ordering only; no checks execute and dependent live behavior remains disabled.
+  plan:
+  - RED then GREEN mandatory inclusion outside optional budget, impact-first ordering and explicit missing-signal/unknown-impact inspection.
+  - Use numerical mean negative selected-token logprob only for exact spans with matching model/settings/revision.
+  - Bound and validate inputs/budgets, deterministic ID ties and explicit optional omissions with reasons.
+  verify: cd frontend && node --experimental-strip-types tests/priorities.test.ts
+  preflight: cd frontend && npm run check && npm run build
+  limits: No execution, correctness percentage, UI/API or full-story acceptance claim.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
