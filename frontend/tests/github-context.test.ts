@@ -49,16 +49,15 @@ test('files and context reauthorize public identity and read only exact frozen t
   assert(!calls.some(call => call.path.includes('/commits/') || call.path.includes('changed-branch')));
 });
 
-test('private snapshots, newly private repositories, changed repository IDs and linked/App identities deny source', async () => {
+test('changed repository IDs and linked/App identities deny source', async () => {
   for (const overrides of [{ '/user': { id: 99 } }, { '/repos/team/repo': { ...repository, id: 6 } },
-    { '/repos/team/repo': { ...repository, private: true } },
     { '/repos/team/repo/installation': { id: 7, app_id: 10, suspended_at: null } }]) {
     const { github, calls } = fixture(overrides);
     await assert.rejects(() => github.context(snapshot, [entry.path], signal()), IntakeError);
     assert(!calls.some(call => call.path.includes('/git/')));
   }
   const { github, calls } = fixture();
-  await assert.rejects(() => github.files({ ...snapshot, private: true }, signal()), IntakeError);
+  await assert.rejects(() => github.files({ ...snapshot, private: 'invalid' as any }, signal()), IntakeError);
   assert.equal(calls.length, 0);
 });
 
@@ -137,4 +136,14 @@ test('UTF8 BOM is preserved and aborting a streaming tree read prevents blob ret
   await assert.rejects(() => github.context(snapshot, [entry.path], controller.signal), IntakeError);
   assert(cancelled);
   assert(!calls.some(call => call.path === blobPath));
+});
+
+
+test('authorized private snapshots read only their frozen blobs using the same repository access checks', async () => {
+ const { github, calls } = fixture({ '/repos/team/repo': { ...repository, private: true } });
+ const privateSnapshot = { ...snapshot, private: true };
+ assert.deepEqual(await github.files(privateSnapshot, signal()), [{ path: entry.path, blobSha: sha }]);
+ assert.deepEqual(await github.context(privateSnapshot, [entry.path], signal()), [{ path: entry.path, originalBlob: sha, content: bytes.toString('utf8') }]);
+ assert.equal(calls.filter(call => call.path === '/user').length, 2);
+ assert(calls.filter(call => call.path.includes('/git/')).every(call => call.token === 'Bearer installation-token'));
 });

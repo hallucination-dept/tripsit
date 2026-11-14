@@ -77,20 +77,20 @@ test('abort and redirect responses never expose upstream errors or credentials',
 
 import { createIntake } from '../src/lib/server/work-items.ts';
 
-test('owner filtering precedes GitHub and private storage requires verified admission',async()=>{
+test('owner filtering precedes GitHub and authorized private intake follows normal repository access',async()=>{
  let writes=0, auths=0;
  const publicSnapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
  const stored={id:'item',snapshot:publicSnapshot,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2030-01-01T00:00:00Z'};
  const store={create:async()=>{writes++;return stored;},get:async(owner:string)=>owner==='owner'?stored:null,list:async()=>[stored]};
  const github={snapshot:async()=>({...publicSnapshot,private:true}),authorize:async()=>{auths++;}};
  const service=createIntake({store,github});
- await assert.rejects(()=>service.create('owner',{repository:'team/repo',issueNumber:2},new AbortController().signal),(e:IntakeError)=>e.status===503);
- assert.equal(writes,0);
+ await service.create('owner',{repository:'team/repo',issueNumber:2},new AbortController().signal);
+ assert.equal(writes,1);
  await assert.rejects(()=>service.get('other','item',new AbortController().signal),(e:IntakeError)=>e.status===404);
- assert.equal(auths,0);
+ assert.equal(auths,1);
  await assert.rejects(()=>service.create('',{},new AbortController().signal),(e:IntakeError)=>e.status===401);
  await service.get('owner','item',new AbortController().signal);
- assert.equal(auths,1);
+ assert.equal(auths,2);
  github.authorize=async()=>{throw new IntakeError(403,'revoked');};
  await assert.rejects(()=>service.get('owner','item',new AbortController().signal),(e:IntakeError)=>e.status===403);
 });
@@ -126,9 +126,9 @@ test('commit identities accept only complete 40 or 64 hexadecimal characters',as
 });
 
 
-test('read authorization refuses a repository that changed from public to private',async()=>{
+test('read authorization retains repository access when visibility changes to private',async()=>{
  const {github}=fixture({'Bearer installation-secret:/repos/team/repo':{...repository,private:true}});
- await assert.rejects(()=>github.authorize('team/repo',5,new AbortController().signal),(e:IntakeError)=>e.status===503);
+ await github.authorize('team/repo',5,new AbortController().signal);
 });
 
 test('user and installation repository identity mismatch is rejected',async()=>{
@@ -211,4 +211,21 @@ test('upstream fetch is cancelled when the request deadline aborts',async()=>{
  const github=createGitHub({appId:'9',privateKey:key,userToken:'user',accountId:'42',fetcher:async(_url,init)=>new Promise((_resolve,reject)=>{init?.signal?.addEventListener('abort',()=>reject(new Error('transport aborted')),{once:true});})});
  try {await assert.rejects(()=>github.snapshot('team/repo',2,controller.signal),IntakeError);}
  finally {clearTimeout(timer);}
+});
+
+test('private snapshots recheck current authority before persistence and reads without separate admission flags', async () => {
+ const publicSnapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
+ const snapshot={...publicSnapshot,private:true};
+ const item={id:'private-item',snapshot,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2030-01-01T00:00:00Z'};
+ let writes=0, auths=0, revoked=false;
+ const service=createIntake({store:{create:async()=>{writes++;return item;},get:async(owner)=>owner==='owner'?item:null,list:async()=>[item]},github:{snapshot:async()=>snapshot,authorize:async()=>{auths++;if(revoked)throw new IntakeError(403,'revoked');}}});
+ const signal=new AbortController().signal;
+ assert.equal((await service.create('owner',{repository:'team/repo',issueNumber:2},signal)).snapshot.private,true);
+ assert.equal(writes,1);assert.equal(auths,1);
+ assert.equal((await service.get('owner',item.id,signal)).id,item.id);
+ assert.deepEqual(await service.list('owner',signal),[item]);
+ revoked=true;await assert.rejects(()=>service.create('owner',{repository:'team/repo',issueNumber:2},signal),{status:403});assert.equal(writes,1);
+ await assert.rejects(()=>service.get('owner',item.id,signal),{status:403});
+ assert.deepEqual(await service.list('owner',signal),[]);
+ await assert.rejects(()=>service.get('other',item.id,signal),{status:404});
 });
