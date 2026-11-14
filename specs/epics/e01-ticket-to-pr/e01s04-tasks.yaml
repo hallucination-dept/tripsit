@@ -33,15 +33,21 @@ preparatory_subtask:
     operational_limit: No configured auth/live verification; build warns that Better Auth base URL is unset.
   remaining: Owner-scoped API/UI, frozen revision linkage, authenticated UAT and live admission remain unimplemented here.
 endpoint_subtask:
-  status: planned
+  status: complete_local_endpoint_only
   scope: Read-only owner-scoped GET policy for an authorized retained issue snapshot.
   plan:
   - RED native route fixtures using real withIntake and createIntake with injected runtime/store/GitHub boundaries.
   - GET validates UUID and rejects query parameters, then authorizes via intake.get before deriving unknown-surface policy.
-  - Return item ID, base SHA, SHA256 of authorized snapshot JSON and supplied title provenance; preserve frozen body separately.
+  - Return item ID, base SHA, SHA256 of canonical authorized snapshot content tuple and supplied title provenance; preserve frozen body separately.
   verify: cd frontend && node --experimental-strip-types tests/policy-route.test.ts && node --experimental-strip-types tests/policy.test.ts
   preflight: cd frontend && npm run check && npm run build
   limits: No policy persistence, owner confirmation, UI or compliance claims; whole story stays failing.
+  verification:
+    red: 2b942a8 route test failed with missing route; digest regression refined in 072a287 before implementation.
+    green: 30b7506 route test passed; all 3 pure policy tests passed.
+    preflight: npm run check && npm run build exited 0; Svelte 0 errors and 0 warnings.
+    checks: Auth-first, owner isolation, expiry, revoked repository denial, query/UUID rejection, safe errors, no-store and key-order-stable content digest.
+    limitation: Injected runtime/store/GitHub boundaries; no configured live authenticated UAT or database access.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
