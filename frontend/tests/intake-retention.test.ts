@@ -8,7 +8,8 @@ const run = promisify(execFile);
 const script = fileURLToPath(new URL('../scripts/intake-retention.ts', import.meta.url));
 
 test('retention CLI refuses missing and nonlocal configuration without exposing credentials', async () => {
-  for (const value of ['', 'postgres://secret-user:secret-password@remote.invalid/tripsit_e01s01_test', 'postgres://localhost/production']) {
+  for (const value of ['', 'postgres://secret-user:secret-password@remote.invalid/tripsit_e01s01_test', 'postgres://localhost/production',
+    'postgres://localhost/tripsit_e01s01_test?host=remote.invalid', 'postgres://localhost/tripsit_e01s01_test#override']) {
     await assert.rejects(() => run(process.execPath, ['--experimental-strip-types', script], {
       env: { ...process.env, TRIPSIT_TEST_DATABASE_URL: value }, timeout: 10_000
     }), (error: Error & { stderr?: string }) => {
