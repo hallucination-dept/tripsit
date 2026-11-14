@@ -1,0 +1,9 @@
+workflow_mode: solo-git
+project: TripSit
+active_flow: null
+handoff:
+  next_skill: survey-context
+  summary: "Project conventions seeded; no implementation task selected."
+integration:
+  hands_free: "Open a PR and obtain human approval before merging."
+  interactive: "No blanket human-approval requirement; follow explicit user authorization."

@@ -1,0 +1,9 @@
+name: TripSit
+purpose: >-
+  TripSit is a coding ticket implementation agent powered by Gemma on Modal,
+  using uncertainty estimation through per-token probability and other
+  sophisticated features to support confident, human-led PR merges.
+current_capability: "Authenticated code review with per-token probability highlighting."
+planned_capabilities:
+  - Coding ticket implementation
+  - Further uncertainty estimation features
