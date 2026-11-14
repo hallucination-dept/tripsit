@@ -31,7 +31,7 @@ test('generates inert exact bytes, blob identity and unavailable mapping, then r
   assert.equal(result.candidate.outputDigest, createHash('sha256').update(result.candidate.rawOutput).digest('hex'));
   assert.equal(result.candidate.mapping.status, 'unavailable');
   assert.equal((await f.service.get('owner', 'item', 'candidate', f.signal)).id, 'candidate');
-  assert.deepEqual(f.calls, { intake: 4, github: 1, model: 1, store: 1 });
+  assert.deepEqual(f.calls, { intake: 5, github: 1, model: 1, store: 1 });
 });
 
 test('denies unauthorized, private, expired and invalid selection before any model or storage', async () => {

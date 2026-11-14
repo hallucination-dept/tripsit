@@ -126,6 +126,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
         if (!stored || stored.id !== id) deny(404);
         if (stored.candidate.baseSha !== item.snapshot.baseSha || stored.candidate.expiresAt !== item.expiresAt
           || Date.parse(stored.candidate.expiresAt) <= Date.now()) deny(409);
+        const current = await readItem(owner, itemId, active);
+        if (JSON.stringify(current) !== JSON.stringify(item)) deny(409);
         return stored;
       });
     }
