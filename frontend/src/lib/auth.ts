@@ -4,7 +4,24 @@ import { betterAuth } from 'better-auth';
 import { sveltekitCookies } from 'better-auth/svelte-kit';
 import { Pool } from 'pg';
 
-const database = new Pool({ connectionString: DATABASE_URL });
+function connectionStringForNodePostgres(connectionString: string | undefined) {
+	if (!connectionString) return undefined;
+
+	const databaseUrl = new URL(connectionString);
+	// Aiven supplies sslmode=require. pg currently interprets it as strict
+	// certificate verification unless this compatibility flag is present.
+	if (
+		(databaseUrl.protocol === 'postgres:' || databaseUrl.protocol === 'postgresql:') &&
+		databaseUrl.searchParams.get('sslmode') === 'require' &&
+		!databaseUrl.searchParams.has('uselibpqcompat')
+	) {
+		databaseUrl.searchParams.set('uselibpqcompat', 'true');
+	}
+
+	return databaseUrl.toString();
+}
+
+const database = new Pool({ connectionString: connectionStringForNodePostgres(DATABASE_URL) });
 
 export const missingAuthEnvironment = [
 	'DATABASE_URL',

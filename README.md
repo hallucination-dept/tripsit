@@ -86,6 +86,8 @@ Open `http://localhost:8080` to test it.
 The Aiven PostgreSQL integration can inject its connection string directly as
 `DATABASE_URL`; do not commit that URL to the repository. If PostgreSQL is not
 hosted by Aiven, enter its connection string as an Aiven secret instead.
+For an Aiven URL using `sslmode=require`, the app enables
+`uselibpqcompat=true` automatically for Node's `pg` client.
 
 ### First deployment checklist
 
