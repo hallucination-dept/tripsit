@@ -32,6 +32,16 @@ preparatory_subtask:
     environment: Initial symlinked dependencies caused generated route type resolution errors; isolated dependency copy restored green preflight.
     operational_limit: No configured auth/live verification; build warns that Better Auth base URL is unset.
   remaining: Owner-scoped API/UI, frozen revision linkage, authenticated UAT and live admission remain unimplemented here.
+endpoint_subtask:
+  status: planned
+  scope: Read-only owner-scoped GET policy for an authorized retained issue snapshot.
+  plan:
+  - RED native route fixtures using real withIntake and createIntake with injected runtime/store/GitHub boundaries.
+  - GET validates UUID and rejects query parameters, then authorizes via intake.get before deriving unknown-surface policy.
+  - Return item ID, base SHA, SHA256 of authorized snapshot JSON and supplied title provenance; preserve frozen body separately.
+  verify: cd frontend && node --experimental-strip-types tests/policy-route.test.ts && node --experimental-strip-types tests/policy.test.ts
+  preflight: cd frontend && npm run check && npm run build
+  limits: No policy persistence, owner confirmation, UI or compliance claims; whole story stays failing.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
