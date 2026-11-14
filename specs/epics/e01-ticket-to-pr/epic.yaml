@@ -4,7 +4,7 @@ type: feat
 context: domain
 wsjf: 1.381
 total_bcps: 21
-status: todo
+status: in_progress
 stories:
 - id: e01s01
   title: Snapshot an owner-selected GitHub issue
