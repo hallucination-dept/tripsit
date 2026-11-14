@@ -29,7 +29,8 @@ function fixture(overrides: Record<string, unknown> = {}) {
     const url = new URL(String(input));
     assert.equal(url.origin, 'https://api.github.com');
     calls.push({ path: url.pathname, init });
-    const value = responses[url.pathname];
+    const credential = new Headers(init?.headers).get('authorization');
+    const value = responses[`${credential}:${url.pathname}`] ?? responses[url.pathname];
     if (value instanceof Response) return value;
     return new Response(JSON.stringify(value), { status: value === undefined ? 404 : 200 });
   };
@@ -82,7 +83,7 @@ test('owner filtering precedes GitHub and private storage requires verified admi
  const stored={id:'item',snapshot:publicSnapshot,createdAt:'now',expiresAt:'later'};
  const store={create:async()=>{writes++;return stored;},get:async(owner:string)=>owner==='owner'?stored:null,list:async()=>[stored]};
  const github={snapshot:async()=>({...publicSnapshot,private:true}),authorize:async()=>{auths++;}};
- const service=createIntake({store,github,privateAdmission:async()=>false});
+ const service=createIntake({store,github});
  await assert.rejects(()=>service.create('owner',{repository:'team/repo',issueNumber:2},new AbortController().signal),(e:IntakeError)=>e.status===503);
  assert.equal(writes,0);
  await assert.rejects(()=>service.get('other','item',new AbortController().signal),(e:IntakeError)=>e.status===404);
@@ -122,4 +123,27 @@ test('HTTP boundary enforces session, same-origin JSON and safe errors',async()=
 
 test('commit identities accept only complete 40 or 64 hexadecimal characters',async()=>{
  await assert.rejects(()=>fixture({'/repos/team/repo/commits/main':{sha:'a'.repeat(41)}}).github.snapshot('team/repo',2,new AbortController().signal),IntakeError);
+});
+
+
+test('read authorization refuses a repository that changed from public to private',async()=>{
+ const {github}=fixture({'Bearer installation-secret:/repos/team/repo':{...repository,private:true}});
+ await assert.rejects(()=>github.authorize('team/repo',5,new AbortController().signal),(e:IntakeError)=>e.status===503);
+});
+
+test('user and installation repository identity mismatch is rejected',async()=>{
+ const {github}=fixture({'Bearer installation-secret:/repos/team/repo':{...repository,id:6}});
+ await assert.rejects(()=>github.snapshot('team/repo',2,new AbortController().signal),IntakeError);
+});
+
+test('public intake persists only the selected owner and newly frozen snapshot',async()=>{
+ const snapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
+ let ownerWritten='';
+ const service=createIntake({
+  store:{create:async(owner,value)=>{ownerWritten=owner;assert.deepEqual(value,snapshot);return{id:'new-item',snapshot:value,createdAt:'now',expiresAt:'later'};},get:async()=>null,list:async()=>[]},
+  github:{snapshot:async()=>snapshot,authorize:async()=>{}}
+ });
+ const created=await service.create('owner',{repository:'team/repo',issueNumber:2},new AbortController().signal);
+ assert.equal(ownerWritten,'owner');
+ assert.equal(created.id,'new-item');
 });
