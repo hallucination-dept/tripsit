@@ -13,6 +13,7 @@
 		"preview": "vite preview",
 		"auth:migrate": "npx auth@latest migrate --config ./src/lib/auth.ts",
 		"auth:check": "npx auth@latest check --config ./src/lib/auth.ts",
+		"projects:migrate": "node --env-file=.env ./scripts/migrate-projects.mjs",
 		"prepare": "svelte-kit sync || echo ''",
 		"check": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json",
 		"check:watch": "svelte-kit sync && svelte-check --tsconfig ./tsconfig.json --watch"
@@ -30,6 +31,7 @@
 	},
 	"dependencies": {
 		"better-auth": "^1.7.23",
+		"jose": "^6.2.17",
 		"pg": "^8.23.1"
 	}
 }

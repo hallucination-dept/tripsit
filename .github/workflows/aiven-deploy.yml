@@ -1,0 +1,35 @@
+name: Deploy web app to Aiven Runtime
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Do not have two commits ask Aiven to rebuild the same Runtime application at once.
+concurrency:
+  group: aiven-runtime-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      AIVEN_TOKEN: ${{ secrets.AIVEN_TOKEN }}
+      AIVEN_PROJECT: ${{ secrets.AIVEN_PROJECT }}
+      AIVEN_APP_NAME: ${{ secrets.AIVEN_APP_NAME }}
+
+    steps:
+      - name: Validate deployment secrets
+        run: |
+          test -n "$AIVEN_TOKEN"
+          test -n "$AIVEN_PROJECT"
+          test -n "$AIVEN_APP_NAME"
+
+      - name: Deploy latest main commit
+        run: |
+          curl --fail-with-body --request POST \
+            "https://api.aiven.io/v1/project/${AIVEN_PROJECT}/service/${AIVEN_APP_NAME}/application/redeploy" \
+            --header "Authorization: Bearer ${AIVEN_TOKEN}"
