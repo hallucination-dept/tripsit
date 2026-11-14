@@ -104,7 +104,7 @@ export function createReviewer(configuration: ReviewerConfiguration) {
       let body: string;
       try {
         frozen = frozenInput(input);
-        body = JSON.stringify({ model, temperature: 0, max_tokens: 2048,
+        body = JSON.stringify({ model, temperature: 0, max_tokens: 2048, response_format: { type: 'json_object' },
           messages: [{ role: 'system', content: instruction }, { role: 'user', content: JSON.stringify(frozen) }] });
         valid(encoder.encode(body).byteLength <= 262_144);
       } catch { return { status: 'unavailable', reason: 'Frozen review input is invalid or exceeds the limit.' }; }
