@@ -12,7 +12,7 @@ function item(row: Row): WorkItem {
 export function testDatabaseUrl(value?: string): string {
   if (!value) throw new Error('Set TRIPSIT_TEST_DATABASE_URL to an explicitly disposable local database.');
   const url = new URL(value);
-  if (!['postgres:', 'postgresql:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.pathname !== '/tripsit_e01s01_test') {
+  if (!['postgres:', 'postgresql:'].includes(url.protocol) || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.pathname !== '/tripsit_e01s01_test' || url.search || url.hash) {
     throw new Error('Refusing a database that is not the disposable local tripsit_e01s01_test target.');
   }
   return value;
