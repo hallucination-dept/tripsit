@@ -11,7 +11,7 @@ const text = (value: unknown, max: number): value is string => typeof value === 
 
 function serialize(candidate: GeneratedCandidate): string {
   let observations;
-  try { observations = candidate.observations === undefined ? undefined : generationObservations(candidate.observations); }
+  try { observations = candidate?.observations === undefined ? undefined : generationObservations(candidate.observations); }
   catch { throw new IntakeError(400, 'Candidate observations are invalid.'); }
   if (!candidate || !/^[a-f0-9]{40}$/.test(candidate.baseSha)
       || !Number.isFinite(Date.parse(candidate.expiresAt))
