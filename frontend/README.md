@@ -15,7 +15,7 @@ npm run dev
 
 Register `http://localhost:5173/api/auth/callback/github` as the GitHub OAuth
 callback URL for local development. See the repository README for the full
-environment-variable list and production callback URL.
+environment-variable list, production callback URL, and Aiven deployment steps.
 
 ## Commands
 
@@ -25,10 +25,10 @@ npm run build        # production build
 npm run auth:check   # validate Better Auth setup after credentials are set
 ```
 
+The production image uses `@sveltejs/adapter-node` and starts with
+`node build` on port `8080`. Test the image from the repository root:
+
 ```sh
-npm run build
+docker build --file frontend/Dockerfile --tag tripsitter-web frontend
+docker run --rm --env-file frontend/.env --publish 8080:8080 tripsitter-web
 ```
-
-You can preview the production build with `npm run preview`.
-
-> To deploy your app, you may need to install an [adapter](https://svelte.dev/docs/kit/adapters) for your target environment.
