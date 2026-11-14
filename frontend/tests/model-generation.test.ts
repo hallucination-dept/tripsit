@@ -68,3 +68,10 @@ test('rejects malformed or unbounded raw observations', async () => {
     await assert.rejects(() => adapter.generate(prompt, signal()), { status: 502 });
   }
 });
+
+test('missing token bytes retain the candidate and raw logprob without inventing alignment', async () => {
+  const adapter = createModelGeneration({ url: 'https://model.example', token: 'fixture', model: 'gemma', fetcher: async () => response(payload({ choices: [{ finish_reason: 'stop', message: { content: 'é' }, logprobs: { content: [{ token: 'é', logprob: -0.5 }] } }] })) });
+  const result = await adapter.generate(prompt, signal());
+  assert.equal(new TextDecoder().decode(result.rawOutput), 'é');
+  assert.deepEqual(result.observations, { status: 'observed', tokens: [{ token: 'é', bytes: null, logprob: -0.5 }] });
+});
