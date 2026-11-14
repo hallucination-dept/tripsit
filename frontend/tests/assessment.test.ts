@@ -124,3 +124,11 @@ test('cancellation bounds noncooperative source dependencies and never dispatche
   await assert.rejects(() => f.service.review('owner', itemId, candidateId, controller.signal), { status: 504 });
   assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
 });
+
+test('full immutable artifact capacity refuses reviewer cost before dispatch', async () => {
+  const f = fixture();
+  const assessment = await f.service.load('owner', itemId, candidateId, f.signal);
+  for (let index = 0; index < 8; index++) f.artifacts.push({ id: String(index), identity: assessment.identity, createdAt: new Date().toISOString(), digest: 'c'.repeat(64), result: { status: 'unavailable', reason: 'Earlier attempt.' } });
+  await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal), { status: 429 });
+  assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+});
