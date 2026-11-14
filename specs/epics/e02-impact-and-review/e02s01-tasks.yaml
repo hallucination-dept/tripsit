@@ -75,7 +75,7 @@ preparatory_subtasks:
   verification_results: Five native focused tests passed; npm run check && npm run build exited 0 with zero Svelte diagnostics. Full e02s01 tasks remain failing; source byte spans are checked structurally against supplied byte lengths, not against repository text.
 
 - id: static-import-extractor
-  status: failing
+  status: passing
   scope: Bounded JS/TS AST file-import extraction from supplied exact base/candidate content only.
   files:
   - frontend/src/lib/server/impact.ts
@@ -84,3 +84,4 @@ preparatory_subtasks:
   - frontend/tests/impact-extractor.test.ts
   plan: Support explicit candidate artifact digest without a fabricated head commit; validate file/blob/Unicode identities and finite source limits, parse static imports/reexports using installed TypeScript AST, resolve only unambiguous relative paths, retain base deletion callers and explicit unsupported/dynamic/missing/coverage gaps. Verify AST spans against exact UTF-8 bytes. No semantic calls or execution.
   verify: cd frontend && node --experimental-strip-types --test tests/impact.test.ts tests/impact-extractor.test.ts
+  verification_results: Six native extractor fixtures and nine core fixtures passed; npm run check && npm run build exited 0 with zero Svelte diagnostics. Coverage complete means supplied source/listing coverage only, never semantic graph completeness or acceptance. Full story remains failing.
