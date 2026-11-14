@@ -7,6 +7,20 @@ status: failing
 bcps: 3
 depends_on:
 - e01s01
+preparatory_subtask:
+  scope: Pure trusted policy module only; no routes, persistence, UI or live integration.
+  status: planned
+  affected_paths:
+  - frontend/src/lib/server/policy.ts
+  - frontend/tests/policy.test.ts
+  plan:
+  - Verify exact ASVS 5.0.0 authorization and WCAG 2.2 keyboard IDs against publisher sources.
+  - RED then GREEN versioned baseline with explicit trusted applicability and unverified evidence.
+  - RED then GREEN requirement linkage preserving supplied/inferred provenance without policy overrides.
+  - RED then GREEN unresolved applicability, non-web coverage and missing performance target gaps.
+  verify: cd frontend && node --experimental-strip-types tests/policy.test.ts
+  preflight: cd frontend && npm run check && npm run build
+  limits: Full story stays failing; e01s01 and private/live admission remain untouched.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
