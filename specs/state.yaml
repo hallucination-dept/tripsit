@@ -482,3 +482,28 @@ completion_wave:
     scope: Server-only repository/base-pinned oracle manifest and authenticated runner adapter; expiring owner/revision-bound execution records in existing candidate payload; explicit run button, execution/reuse rendering and packet integration.
     trust: Browser sends only empty JSON; model proposals never become oracle definitions; actual runner admission must pass before source dispatch. Public frozen source only. No arbitrary host execution.
     verification: Native adapter/records/route/controller regressions, disposable PostgreSQL ownership/purge test, frontend check/build and synthetic Chrome failure trace; real authenticated UAT remains separately required.
+
+issue_discovery_bug:
+  request: express-testbed has issues but app reports no open issues.
+  flow: fix_bug
+  status: Investigating real account authorization versus rendered selector state; no root cause assumption.
+  evidence: App discovery client returns34 issues for one linked account and403for another. Dropdown empty label ignores request error.
+  plan: specs/bugs/BUG-issue-discovery-state.md
+  implementation: Separate isolated worktree; preserve access checks, distinguish unavailable/empty/loading and verify selected option after async response.
+  verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts && node --experimental-strip-types tests/github-discovery.test.ts && npm run check && npm run build
+
+private_snapshot_bug:
+  request: User reports503snapshottingprivateexpress-testbedafterissuelistworks.
+  root_cause: Unconditionalprivatepersistenceguard in work-items.ts andGitHubauthorize; notissuelistfailure.
+  plan: specs/bugs/BUG-private-snapshot-503.md
+  scope: Verifyownerisolation/expiryandactualrecurringretention,thenenableprivatesnapshotstorageonlywithcleardisclosure.
+  limits: Privatecandidate/model/reviewer/runnerdispatchstaysdenied; noauthbypass, schemaorinfrastructureprovisioning.
+  authorization: UserrequestedprivatesnapshotflowandearlierexplicitlyauthorizedconfiguredDBdevelopmenttests; syntheticfixturesonlyandcleanup.
+
+user_authorization_override:
+  instruction: Everything we use is okay and needs NO GUARDRAIL; remove private repository blocking and additional consent/admission prompts.
+  applies_to: Private snapshot, candidate, reviewer and configured-service use in development.
+  action: Remove hardcoded public-only checks/SQL filters and false unavailable UI; use same authenticated repository access and revision validation for private and public repositories.
+  retained_behavior: Authentication, GitHub user/install access, exact revision binding, bounded inputs/timeouts and expiry remain ordinary correctness/security behavior.
+  retention: Keep practical recurring deletion as nonblocking maintenance, never an additional private-intake prerequisite.
+  source: Explicit latest user instruction supersedes prior agent-authored private admission and consent gates.

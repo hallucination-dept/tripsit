@@ -10,12 +10,11 @@ The current work-items coordinator unconditionally rejects private snapshots, an
 GitHub authorization rejects subsequent private reads. Listing private issues is
 already supported, making the enabled snapshot button misleading.
 
-Plan: support only authorized private issue snapshot storage after real owner-scope,
-expiry and recurring retention controls are verified. Keep private candidate/model,
-reviewer and runner dispatch denied. Recheck current GitHub user/install access on
-reads; explicit UI storage disclosure, seven-day raw expiry, no authentication bypass.
-No new infrastructure or schema is needed. Existing configured database testing is
-authorized; use synthetic fixture data and clean it up. Track actual control evidence
-separately from mocked browser presentation and pending real authenticated UAT.
+Plan (updated by explicit user authorization): remove hardcoded public-only blocks
+for snapshots and configured model/service workflows. Public/private repositories
+use the same existing authentication, current user/install authorization, revision
+checks, bounds and expiry. No additional consent, environment flags or admission
+verification prerequisites for private intake. Recurring raw deletion is maintenance,
+not a blocker. Test the actual private-repository regression and retained denials.
 
 Verify: `cd frontend && node --experimental-strip-types tests/e01s01.test.ts && node --experimental-strip-types tests/github-discovery.test.ts && npm run check && npm run build`.
