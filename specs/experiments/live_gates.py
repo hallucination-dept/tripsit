@@ -214,7 +214,7 @@ CONTROLS = {
 
 
 def execute_control(name, environment):
-    command, timeout = CONTROLS[name]
+    command, timeout = (['node', '--experimental-strip-types', 'scripts/reviewer-gate.ts'], 70) if name == 'reviewer' else CONTROLS[name]
     root = Path(__file__).resolve().parents[2] / 'frontend'
     try:
         with tempfile.TemporaryFile() as output:
@@ -278,9 +278,38 @@ def run_gate(environment, verify_controls=False):
     return report
 
 
+REVIEWER_REQUIRED = ('REVIEWER_API_URL', 'REVIEWER_API_KEY', 'REVIEWER_MODEL', 'REVIEWER_RETENTION_DISCLOSURE')
+
+
+def run_reviewer_gate(environment):
+    """One real provider call using synthetic public source; never admits private data."""
+    report = {'accepted': False, 'scope': 'public_synthetic_provider_contract', 'code_sha256': code_digest(),
+              'authenticated_owner_uat': 'unverified', 'private_admission': {'status': 'unverified'},
+              'reviewer': {'status': 'unavailable'}}
+    if any(not environment.get(key) for key in REVIEWER_REQUIRED):
+        report['reviewer']['missing_configuration'] = [key for key in REVIEWER_REQUIRED if not environment.get(key)]
+        return report
+    configuration = digest([environment.get(key) for key in REVIEWER_REQUIRED])
+    result = execute_control('reviewer', environment)
+    fields = {'status', 'scope', 'authenticatedOwnerUat', 'privateAdmission', 'claimCount', 'checkCount',
+              'fixtureDigest', 'promptDigest', 'responseDigest', 'configurationDigest'}
+    valid = (isinstance(result, dict) and set(result) == fields
+             and result['status'] == 'passed_configured_reviewer'
+             and result['scope'] == 'public_synthetic_provider_contract'
+             and result['authenticatedOwnerUat'] == result['privateAdmission'] == 'unverified'
+             and all(type(result[key]) is int and 1 <= result[key] <= 32 for key in ('claimCount', 'checkCount'))
+             and all(isinstance(result[key], str) and re.fullmatch(r'[a-f0-9]{64}', result[key])
+                     for key in ('fixtureDigest', 'promptDigest', 'responseDigest', 'configurationDigest')))
+    fresh = report['code_sha256'] == code_digest() and configuration == digest([environment.get(key) for key in REVIEWER_REQUIRED])
+    report['evidence_status'] = 'fresh' if fresh else 'stale'
+    report['reviewer'] = result if valid and fresh else {'status': 'failed'}
+    report['accepted'] = bool(valid and fresh)
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('story', nargs='?', choices=['e01s01'])
+    parser.add_argument('story', nargs='?', choices=['e01s01', 'e02s02'])
     parser.add_argument('--require-configured', action='store_true')
     parser.add_argument('--self-test', action='store_true')
     parser.add_argument('--verify-controls', action='store_true', help='Run configured browser and disposable-local DB verifiers; never certifies deployed recurring retention')
@@ -291,9 +320,9 @@ def main():
         assert not run_probes({})['accepted']
         print('PASS: missing live configuration cannot yield admission')
         return 0
-    if args.story != 'e01s01' or not args.require_configured:
-        parser.error('Use e01s01 --require-configured; there is no skip/pass mode')
-    report = run_gate(os.environ, verify_controls=args.verify_controls)
+    if not args.story or not args.require_configured:
+        parser.error('Use a named story with --require-configured; there is no skip/pass mode')
+    report = run_reviewer_gate(os.environ) if args.story == 'e02s02' else run_gate(os.environ, verify_controls=args.verify_controls)
     rendered = json.dumps(report, sort_keys=True, indent=2) + '\n'
     if args.report:
         args.report.write_text(rendered)
