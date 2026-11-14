@@ -31,7 +31,7 @@ export function prioritizeChecks(trustedChecks: readonly VerificationCheck[], co
     || !integer(budget.totalMs, 0, 180_000) || !Array.isArray(trustedChecks) || trustedChecks.length > 256) invalid();
   const ids = new Set<string>();
   const gaps: Array<{ checkId: string; reason: string }> = [];
-  const priorities: Priority[] = trustedChecks.map(check => {
+  const priorities: Priority[] = Array.from(trustedChecks).map(check => {
     if (!object(check) || !text(check.id) || ids.has(check.id) || typeof check.mandatory !== 'boolean'
       || !Object.hasOwn(impactRank, check.impact) || typeof check.missingEvidence !== 'boolean'
       || typeof check.reviewerDisagreement !== 'boolean' || !integer(check.timeoutMs, 1, 3_600_000)) invalid();
@@ -43,7 +43,8 @@ export function prioritizeChecks(trustedChecks: readonly VerificationCheck[], co
       const supplied = check.signal;
       identity(supplied);
       if (!['exact', 'unavailable'].includes(supplied.mapping) || !Array.isArray(supplied.logprobs)
-        || supplied.logprobs.length > 8192 || supplied.logprobs.some(value => typeof value !== 'number' || !Number.isFinite(value) || value > 0)) invalid();
+        || supplied.logprobs.length > 8192) invalid();
+      for (const value of supplied.logprobs) if (typeof value !== 'number' || !Number.isFinite(value) || value > 0) invalid();
       if (supplied.span !== null && (!object(supplied.span) || !integer(supplied.span.start, 0, Number.MAX_SAFE_INTEGER)
         || !integer(supplied.span.end, 1, Number.MAX_SAFE_INTEGER) || supplied.span.end <= supplied.span.start)) invalid();
       signal = { model: supplied.model, settingsDigest: supplied.settingsDigest, revision: supplied.revision,
