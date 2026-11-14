@@ -68,3 +68,36 @@ test('validates actual blob identities, Unicode, paths, source and file limits',
     (value: ImpactInput) => { value.files[0].candidate = version('x'.repeat(262145)); }
   ]) { const value = input([file('a.ts', '', 'x')]); mutate(value); assert.throws(() => buildImpact(value), /Invalid impact input/); }
 });
+
+test('traces changed lexical symbols to unchanged aliased cross-file callers with exact declaration provenance', () => {
+  const callee = '// é😀\r\nexport function price(n: number) { return n + 1; }\r\nexport const untouched = 1;';
+  const replacement = callee.replace('n + 1', 'n - 1');
+  const caller = "import {price as quote} from './price.js';\nexport function invoice() { return quote(3); }";
+  const result = buildImpact(input([file('price.ts', callee, replacement), file('invoice.ts', caller)]));
+  const symbol = result.graph.nodes.find(node => node.kind === 'symbol' && node.source?.path === 'price.ts' && node.source.revision === 'candidate')!;
+  assert(symbol, 'changed callable declaration is a graph symbol');
+  assert.equal(new TextDecoder().decode(bytes(replacement).slice(symbol.source!.start, symbol.source!.end)), 'export function price(n: number) { return n - 1; }');
+  assert(result.graph.changed.includes(symbol.id));
+  const affectedCaller = result.impact.affected.find(item => item.node.kind === 'symbol' && item.node.source?.path === 'invoice.ts' && item.node.source.revision === 'candidate')!;
+  assert(affectedCaller, 'unchanged caller is reached by a lexical call relationship');
+  assert.equal(affectedCaller.distance, 1);
+  assert(result.graph.edges.some(edge => edge.from === affectedCaller.node.id && edge.to === symbol.id && edge.relationship === 'calls_symbol_lexical' && edge.resolution === 'observed'));
+  assert.equal(affectedCaller.node.source!.blobSha, version(caller).blobSha);
+});
+
+test('shadowed imports, property dispatch, overload ambiguity and unsupported languages stay explicit', () => {
+  const result = buildImpact(input([
+    file('a.ts', 'export function f() { return 1; }', 'export function f() { return 2; }'),
+    file('b.ts', "import { f } from './a'; export function test(f:()=>number) { return f(); } export function dynamic(x:any) { return x.f(); }"),
+    file('main.py', 'print(1)'), file('main.cpp', 'int main(){}'), file('main.cs', 'class C {}'), file('main.rs', 'fn main(){}')
+  ]));
+  assert(!result.graph.edges.some(edge => edge.relationship === 'calls_symbol_lexical' && result.graph.nodes.find(node => node.id === edge.to)?.source?.path === 'a.ts'));
+  assert(result.gaps.some(gap => gap.kind === 'unresolved_call'));
+  const coverage = result.coverage as typeof result.coverage & { languages: Array<{ language: string; extraction: string; resolution: string; executableChecks: string }> };
+  for (const language of ['javascript', 'typescript', 'python', 'cpp', 'csharp', 'rust']) {
+    const row = coverage.languages.find(row => row.language === language)!;
+    assert(row, language);
+    assert.equal(row.executableChecks, 'not_run');
+    assert.equal(row.resolution, ['javascript', 'typescript'].includes(language) ? 'lexical_direct_calls_only' : 'unavailable');
+  }
+});
