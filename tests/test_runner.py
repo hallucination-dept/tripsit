@@ -29,6 +29,9 @@ class FakeSandbox:
         self.terminated=0
         self.requests=[]
     async def run(self, mode, payload, timeout, cancel):
+        if mode=='cancel_probe':
+            await cancel.wait()
+            raise runner.RunnerError()
         self.requests.append((mode,payload,timeout))
         if isinstance(self.response,Exception): raise self.response
         return self.response
@@ -60,19 +63,19 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(service.admission()['status'],'unavailable')
 
     async def test_actual_control_report_is_required_and_termination_always_happens(self):
-        sandbox=FakeSandbox({'controls':{key:True for key in runner.CONTROLS}})
+        sandbox=FakeSandbox({'controls':{key:True for key in runner.PROBE_CONTROLS}})
         async def factory(): return sandbox
         service=runner.Runner(factory,'image-fixture')
         result=await service.verify()
         self.assertEqual(result['status'],'passed')
         self.assertEqual(sandbox.terminated,1)
-        for key in runner.CONTROLS:
-            sandbox.response={'controls':{name:name!=key for name in runner.CONTROLS}}
+        for key in runner.PROBE_CONTROLS:
+            sandbox.response={'controls':{name:name!=key for name in runner.PROBE_CONTROLS}}
             self.assertEqual((await service.verify())['status'],'unavailable')
         self.assertEqual(service.admission()['status'],'unavailable')
 
     async def test_coordinator_binds_results_and_rejects_forged_or_zero_test_success(self):
-        sandbox=FakeSandbox({'controls':{key:True for key in runner.CONTROLS}})
+        sandbox=FakeSandbox({'controls':{key:True for key in runner.PROBE_CONTROLS}})
         async def factory(): return sandbox
         service=runner.Runner(factory,'image-fixture')
         await service.verify()
@@ -91,7 +94,7 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(sandbox.terminated,4)
 
     async def test_deadline_and_cancellation_terminate_and_never_leak_upstream_errors(self):
-        sandbox=FakeSandbox({'controls':{key:True for key in runner.CONTROLS}})
+        sandbox=FakeSandbox({'controls':{key:True for key in runner.PROBE_CONTROLS}})
         async def factory(): return sandbox
         service=runner.Runner(factory,'image-fixture')
         await service.verify()
@@ -102,6 +105,62 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         cancelled=asyncio.Event(); cancelled.set()
         with self.assertRaises(runner.RunnerError): await service.execute(fixture(), cancelled)
         self.assertEqual(sandbox.terminated,2)
+
+    async def test_cancellation_before_factory_result_cleans_late_handle_without_dispatch(self):
+        release=asyncio.Event(); entered=asyncio.Event()
+        sandbox=FakeSandbox()
+        async def factory():
+            entered.set(); await release.wait(); return sandbox
+        service=runner.Runner(factory,'image-fixture')
+        service._admission=service._binding(); service._verified_at=service.clock()
+        cancel=asyncio.Event()
+        task=asyncio.create_task(service.execute(fixture(),cancel))
+        await entered.wait(); cancel.set()
+        await asyncio.sleep(.03)
+        try: self.assertTrue(task.done(),'Cancellation must not wait for a stalled creation')
+        finally:
+            release.set()
+            await asyncio.gather(task,return_exceptions=True)
+            await asyncio.sleep(.03)
+        self.assertEqual(sandbox.terminated,1)
+        self.assertEqual(sandbox.requests,[])
+        self.assertEqual(service.admission()['status'],'unavailable')
+
+    async def test_transport_cancellation_during_filesystem_setup_never_dispatches_source(self):
+        from modal_runner import SandboxTransport
+        release=asyncio.Event(); entered=asyncio.Event(); sent=[]
+        class Method:
+            def __init__(self,method): self.aio=method
+        async def write(*args):
+            entered.set()
+            try: await release.wait()
+            except asyncio.CancelledError: await release.wait()
+        async def execute(*args,**kwargs): sent.append(args); raise AssertionError('No source dispatch after cancellation')
+        class Filesystem: pass
+        class Handle: pass
+        handle=Handle(); handle.filesystem=Filesystem()
+        handle.filesystem.write_text=Method(write); handle.exec=Method(execute)
+        transport=SandboxTransport(handle)
+        cancel=asyncio.Event()
+        task=asyncio.create_task(transport.run('execute',fixture(),10,cancel))
+        await entered.wait(); cancel.set(); await asyncio.sleep(.03)
+        try: self.assertTrue(task.done(),'Cancellation must race the complete setup phase')
+        finally:
+            release.set(); await asyncio.gather(task,return_exceptions=True); await asyncio.sleep(.03)
+        self.assertEqual(sent,[])
+
+    async def test_dependency_digest_sorts_paths_by_utf16_for_cross_runtime_binding(self):
+        value=fixture()
+        template=value['files'][0]
+        value['files']=[{**template,'path':'\ue000.mjs'},{**template,'path':'😀.mjs'}]
+        value['checks'][0]['path']='😀.mjs'
+        sandbox=FakeSandbox({'controls':{key:True for key in runner.PROBE_CONTROLS}})
+        async def factory(): return sandbox
+        service=runner.Runner(factory,'image-fixture'); await service.verify()
+        sandbox.response={'results':[{'checkId':'value-check','status':'completed','result':'passed','exitCode':0,'executedTests':1}]}
+        report=await service.execute(value)
+        expected=runner.digest([{'path':path,'blobSha':template['blobSha']} for path in ['😀.mjs','\ue000.mjs']])
+        self.assertEqual(report['checks'][0]['dependencyDigest'],expected)
 
     def test_supervisor_never_imports_candidate_into_trusted_oracle_process(self):
         source=(Path(__file__).resolve().parents[1]/'runner_supervisor.py').read_text()
