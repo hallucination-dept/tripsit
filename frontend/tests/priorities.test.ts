@@ -77,3 +77,10 @@ test('rejects malformed inputs and positive/nonfinite raw logprobs instead of in
   }
   assert.deepEqual(prioritizeChecks([], comparison).selected, []);
 });
+
+test('sparse input arrays cannot hide checks or produce nonfinite numerical values', () => {
+  assert.throws(() => prioritizeChecks(new Array(1), comparison));
+  assert.throws(() => prioritizeChecks([check('sparse', { signal: signal(new Array(1)) })], comparison));
+  const result = prioritizeChecks([check('finite', { signal: signal([-Number.MAX_VALUE, -Number.MAX_VALUE]) })], comparison);
+  assert(Number.isFinite(result.selected[0].meanNegativeLogprob));
+});
