@@ -31,7 +31,7 @@ test('generates inert exact bytes, blob identity and unavailable mapping, then r
   assert.equal(result.candidate.outputDigest, createHash('sha256').update(result.candidate.rawOutput).digest('hex'));
   assert.equal(result.candidate.mapping.status, 'unavailable');
   assert.equal((await f.service.get('owner', 'item', 'candidate', f.signal)).id, 'candidate');
-  assert.deepEqual(f.calls, { intake: 3, github: 1, model: 1, store: 1 });
+  assert.deepEqual(f.calls, { intake: 4, github: 1, model: 1, store: 1 });
 });
 
 test('denies unauthorized, private, expired and invalid selection before any model or storage', async () => {
@@ -91,4 +91,11 @@ test('read rejects missing, unauthorized and stale candidates', async () => {
   await assert.rejects(() => f.service.get('other', 'item', 'candidate', f.signal));
   f.item.snapshot.baseSha = 'b'.repeat(40);
   await assert.rejects(() => f.service.get('owner', 'item', 'candidate', f.signal));
+});
+
+test('revalidates public frozen intake after context and before model dispatch', async () => {
+  const f = fixture(); const context = f.dependencies.github.context;
+  f.dependencies.github.context = async () => { const result = await context(); f.item.snapshot.private = true; return result; };
+  await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal));
+  assert.equal(f.calls.model, 0); assert.equal(f.calls.store, 0);
 });
