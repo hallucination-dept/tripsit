@@ -1,0 +1,14 @@
+# Plan dependency and external-contract review
+
+type: feat
+context: domain
+
+[OK] Reuse installed Svelte/SvelteKit, Better Auth, pg and TypeScript at locked versions; no package changes proposed. [OK] Reuse existing Python Modal/FastAPI/httpx/vLLM dependencies; actual image/tool versions and request signatures must be recorded before live gates. [OK] Native Node fetch/crypto/node:test/assert and Python unittest/json/hashlib are sufficient for baseline integration, tests and records. These tags mean appropriate existing scope, not a vulnerability audit or a claim that mutable deployment dependencies are pinned.
+
+No new parser dependency is approved here. Begin with bounded file diff/import analysis and explicit unresolved edges. Before adding a language parser/compiler tool, verify installed tooling and current official API/grammar versions, record fixture accuracy and a dependency slopcheck; [SUS]/[SLOP] requires explicit human approval. Do not claim a grammar establishes semantic resolution. The graph story must publish validated coverage for the target languages even when its result is unsupported/unavailable.
+
+Existing local contract: `modal_gemma.py` forwards a nonstreaming JSON POST to `/v1/chat/completions`, sets `logprobs: true`, `top_logprobs: 0`, and currently strips choice-level logprobs into percentage tokens. Preserve those fields additively; live gate must establish whether provider bytes reconstruct exact output. Existing UI calls `/api/review` and expects review/tokens. GitHub access needs a repository installation token, not the current OAuth identity. Locked official-source research is in PRIOR_ART_LATEST.md; exact REST/Modal/reviewer signatures must be checked against official docs and fixture responses while implementing, before any external API call. Provider/model choice remains deferred; no arbitrary browser URL is accepted.
+
+Reason for depth: owner-scoped records hide SQL/revision/retention invariants; GitHub adapter hides installation authorization and retry reconciliation; decoder hides exact-byte replacement and mapping validation; runner boundary hides untrusted execution admission and result collection. Other proposed module filenames express responsibilities only, and may be combined until their real interfaces justify splitting. No general-purpose abstraction is mandated.
+
+Canonical countable-story-format.md and repository helper scripts referenced by the upstream skills are absent locally. Capsules use 20 explicit numbered sections covering identity, scope, requirements, inputs, outputs, dependencies, architecture/contracts/security, failures/limits, compatibility, steps, fixtures, Gherkin acceptance, UAT, risks and traceability. `specs/experiments/plan_selfcheck.py` validates these invariants in place of unavailable YAML/status/consistency helper scripts. This substitution does not waive independent quality review or human phase confirmation.

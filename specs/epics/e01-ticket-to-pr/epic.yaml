@@ -1,0 +1,32 @@
+id: e01
+title: Issue to Gemma implementation PR
+type: feat
+context: domain
+wsjf: 1.381
+total_bcps: 21
+status: todo
+stories:
+- id: e01s01
+  title: Snapshot an owner-selected GitHub issue
+  bcps: 5
+  delta: ADDED
+  spec: e01s01-issue-intake.md
+  tasks: e01s01-tasks.yaml
+- id: e01s02
+  title: Generate a bounded revision-bound candidate
+  bcps: 8
+  delta: MODIFIED
+  spec: e01s02-candidate-generation.md
+  tasks: e01s02-tasks.yaml
+- id: e01s04
+  title: Review functional and non-functional expectations
+  bcps: 3
+  delta: ADDED
+  spec: e01s04-baseline-policy.md
+  tasks: e01s04-tasks.yaml
+- id: e01s03
+  title: Publish an issue-linked implementation PR safely
+  bcps: 5
+  delta: ADDED
+  spec: e01s03-publish-pr.md
+  tasks: e01s03-tasks.yaml

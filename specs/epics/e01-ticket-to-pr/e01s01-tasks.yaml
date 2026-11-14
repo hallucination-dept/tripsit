@@ -1,0 +1,136 @@
+story_id: e01s01
+title: Snapshot an owner-selected GitHub issue
+type: feat
+context: domain
+spec: e01s01-issue-intake.md
+status: failing
+bcps: 5
+depends_on: []
+tasks:
+- id: 1
+  description: 'Define RED intake fixtures for account selection, two-owner denials,
+    revoked permissions, malformed/oversized JSON, hostile issue text, null body,
+    PR-as-issue rejection, upstream timeout/cancellation and immutable provenance.
+    Use injected pure TypeScript boundaries without Svelte runtime imports. Ref: ADR
+    0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts
+  risk: P0
+  security: high
+  status: passing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 2
+  description: 'Reuse existing Better Auth GitHub OAuth login: listUserAccounts with
+    session headers, choose exactly one owned github record, getAccessToken with its
+    LOCAL id, and compare GET /user id to its external accountId. Verify user repository
+    access separately from the configured App installation. Resolve installation on
+    server, mint a repository-scoped read-only token; fixed GitHub origin, bounded
+    response reads, timeout, cancellation, no automatic retries or token persistence.
+    Ref: ADR 0003 and e01s01-implementation.md.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts
+  risk: P0
+  security: high
+  status: passing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 3
+  description: 'Export the existing pg pool from auth.ts without changing auth behavior.
+    Add app-owned versioned SQL migration and records module: immutable owner-scoped
+    snapshot, source-free digest/status metadata, separate seven-day expiring raw
+    payload and references, parameterized queries and transactional purge. Add disposable
+    PostgreSQL test and purge command; missing test configuration fails. Ref: ADR
+    0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e01s01-db.test.ts
+  risk: P0
+  security: high
+  status: passing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 4
+  description: 'Implement authenticated POST/GET /api/work-items and GET /api/work-items/[id]
+    through thin routes and testable intake helpers. Check ownership before external
+    calls, revalidate user plus installation repository access before every retained-source
+    read/create, reject expired source, freeze repository ID/base SHA/issue snapshot.
+    Do not trust browser installation IDs, owner IDs, upstream URLs or model instructions.
+    Ref: ADR 0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts
+  risk: P0
+  security: high
+  status: passing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 5
+  description: 'Extend the signed-in page with repository full-name and issue-number
+    selection, create/reload/detail controls and escaped immutable snapshot display.
+    Show supplied issue text separately from empty inferred and owner-confirmed expectations,
+    missing criteria, expiry and unavailable states; labels, alert/live regions and
+    finally cleanup. Preserve current OAuth and code review UI. Document server-only
+    App configuration, development migration and verified retention purge invocation.
+    Ref: ADR 0003.'
+  verify: (cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts)
+    && (cd frontend && npm run check && npm run build)
+  risk: P0
+  security: high
+  status: passing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 6
+  description: 'Integrate focused tests, real disposable PostgreSQL two-owner/concurrency/expiry/reference-deletion
+    checks, frontend diagnostics/build and security inspection: no new security findings
+    in affected paths. No production database or auth schema mutation. Ref: ADR 0003.'
+  verify: (cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts)
+    && (cd frontend && node --experimental-strip-types --test tests/e01s01-db.test.ts)
+    && (cd frontend && npm run check && npm run build)
+  risk: P0
+  security: high
+  status: passing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 7
+  description: 'Implement fail-closed configured live gate: actual linked user access
+    and repository-scoped installation read; revoked access/second-owner denial; real
+    disposable PostgreSQL deletion and verified purge invocation. Bind gate evidence
+    to code/config/migration revisions; missing credentials or unverified controls
+    fail. No private persistence before admission; no production mutations. Ref: ADR
+    0003.'
+  verify: python3 specs/experiments/live_gates.py e01s01 --require-configured
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01
+- id: 8
+  description: 'Exercise authenticated browser create/reload/detail flow against an
+    authorized development issue; inspect database, live-gate and hostile-input evidence.
+    Save actual revision/fixture/commands/exits/results/limitations in e01s01.md;
+    file presence alone cannot pass UAT. Ref: ADR 0003.'
+  verify: cd frontend && node scripts/intake-browser.mjs
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s01

@@ -1,0 +1,170 @@
+import importlib.util
+from pathlib import Path
+import unittest
+
+spec = importlib.util.spec_from_file_location('live_gates', Path(__file__).resolve().parents[1] / 'live_gates.py')
+gates = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(gates)
+
+
+class ConfigurationTests(unittest.TestCase):
+    def test_explicit_local_fixture_and_distinct_sessions_are_required(self):
+        env = {
+            'TRIPSIT_LIVE_ORIGIN': 'http://127.0.0.1:5173',
+            'TRIPSIT_LIVE_OWNER_COOKIE': 'session=owner',
+            'TRIPSIT_LIVE_OTHER_COOKIE': 'session=other',
+            'TRIPSIT_LIVE_REPOSITORY': 'team/repo',
+            'TRIPSIT_LIVE_ISSUE_NUMBER': '2',
+            'TRIPSIT_LIVE_REPOSITORY_ID': '5',
+            'TRIPSIT_LIVE_BASE_SHA': 'a' * 40,
+            'TRIPSIT_LIVE_REVOKED_ITEM_ID': '11111111-1111-4111-8111-111111111111',
+        }
+        self.assertEqual(gates.configuration_errors(env), [])
+        self.assertTrue(gates.configuration_errors({**env, 'TRIPSIT_LIVE_OWNER_COOKIE': 'x\r\nInjected: secret'}))
+        self.assertTrue(gates.configuration_errors({**env, 'TRIPSIT_LIVE_OTHER_COOKIE': 'session=owner'}))
+        for origin in ['https://example.com', 'http://user:secret@localhost', 'http://127.0.0.1:5173/path', 'http://localhost:0']:
+            self.assertTrue(gates.configuration_errors({**env, 'TRIPSIT_LIVE_ORIGIN': origin}))
+
+import contextlib
+import http.server
+import json
+import threading
+import time
+from datetime import datetime, timedelta, timezone
+
+ITEM_ID = '22222222-2222-4222-8222-222222222222'
+REVOKED_ID = '11111111-1111-4111-8111-111111111111'
+SNAPSHOT = {'repositoryId': 5, 'repository': 'team/repo', 'private': False, 'issueNumber': 2,
+            'issueId': 20, 'baseSha': 'a' * 40, 'supplied': {'title': 'source-secret', 'body': 'raw-source', 'provenance': 'supplied'},
+            'inferred': [], 'ownerConfirmed': []}
+CREATED = datetime.now(timezone.utc)
+ITEM = {'id': ITEM_ID, 'snapshot': SNAPSHOT, 'createdAt': CREATED.isoformat(), 'expiresAt': (CREATED + timedelta(days=7)).isoformat()}
+
+
+@contextlib.contextmanager
+def api(mode='ok'):
+    calls = []
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+        def do_GET(self):
+            self.respond()
+        def do_POST(self):
+            self.respond()
+        def respond(self):
+            cookie = self.headers.get('Cookie')
+            calls.append((self.command, self.path, cookie))
+            if mode == 'slow-headers':
+                try:
+                    for byte in b'HTTP/1.1 200 OK\r\nX-Drip: ' + b'x' * 30 + b'\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}':
+                        self.connection.sendall(bytes([byte]))
+                        time.sleep(.01)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
+            if self.command == 'POST':
+                selected = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                assert selected == {'repository': 'team/repo', 'issueNumber': 2}
+                assert self.headers['Origin'] == 'http://' + self.headers['Host']
+            status, data = 200, {}
+            if mode == 'redirect':
+                self.send_response(302)
+                self.send_header('Location', 'http://example.invalid/secret')
+                self.end_headers()
+                return
+            if mode == 'slow':
+                time.sleep(.15)
+            if self.path == '/api/auth/get-session':
+                data = {'user': {'id': 'owner' if mode == 'same-user' or cookie == 'session=owner' else 'other'}}
+            elif not cookie:
+                status, data = 401, {'message': 'sign in'}
+            elif self.path.endswith(REVOKED_ID):
+                status = 404 if mode == 'missing-revoked' else 403
+                data = {'message': 'upstream-secret'}
+            elif cookie == 'session=other':
+                status, data = (200, {'item': ITEM}) if mode == 'leak' else (404, {'message': 'denied'})
+            elif self.path == '/api/work-items' and self.command == 'GET':
+                data = {'items': [ITEM]}
+            else:
+                data = {'item': ITEM}
+                if mode == 'wrong-sha':
+                    data = {'item': {**ITEM, 'snapshot': {**SNAPSHOT, 'baseSha': 'b' * 40}}}
+            raw = (b'x' * (1024 * 1024 + 1)) if mode == 'oversized' else json.dumps(data).encode()
+            self.send_response(status)
+            self.send_header('Content-Type', 'application/json')
+            self.send_header('Cache-Control', 'no-store')
+            self.send_header('Content-Length', str(len(raw)))
+            self.end_headers()
+            try:
+                self.wfile.write(raw)
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+    server = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    env = {'TRIPSIT_LIVE_ORIGIN': f'http://127.0.0.1:{server.server_port}',
+           'TRIPSIT_LIVE_OWNER_COOKIE': 'session=owner', 'TRIPSIT_LIVE_OTHER_COOKIE': 'session=other',
+           'TRIPSIT_LIVE_REPOSITORY': 'team/repo', 'TRIPSIT_LIVE_ISSUE_NUMBER': '2',
+           'TRIPSIT_LIVE_REPOSITORY_ID': '5', 'TRIPSIT_LIVE_BASE_SHA': 'a' * 40,
+           'TRIPSIT_LIVE_REVOKED_ITEM_ID': REVOKED_ID}
+    try:
+        yield env, calls
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+class HttpProbeTests(unittest.TestCase):
+    def test_real_http_roundtrip_checks_sessions_denials_and_exact_provenance(self):
+        with api() as (env, calls):
+            report = gates.run_probes(env)
+        self.assertEqual(report['public_api']['status'], 'passed')
+        self.assertFalse(report['accepted'])
+        self.assertEqual(report['private_admission']['status'], 'unverified')
+        self.assertEqual(len(calls), 8)
+        serialized = json.dumps(report)
+        for private in ['session=owner', 'session=other', 'source-secret', 'raw-source', 'team/repo', ITEM_ID, REVOKED_ID]:
+            self.assertNotIn(private, serialized)
+        self.assertIn('sha256', serialized)
+
+    def test_denials_are_not_counted_as_pass_for_missing_revoked_fixture(self):
+        for mode in ['leak', 'same-user', 'missing-revoked', 'wrong-sha']:
+            with self.subTest(mode=mode), api(mode) as (env, _):
+                report = gates.run_probes(env)
+                self.assertEqual(report['public_api']['status'], 'failed')
+                self.assertFalse(report['accepted'])
+                self.assertNotIn('upstream-secret', json.dumps(report))
+
+    def test_redirect_oversized_and_timed_out_responses_fail_without_source(self):
+        for mode in ['redirect', 'oversized', 'slow']:
+            with self.subTest(mode=mode), api(mode) as (env, calls):
+                report = gates.run_probes(env, timeout=.03)
+                self.assertEqual(report['public_api']['status'], 'failed')
+                self.assertEqual(len(calls), 1)
+                self.assertNotIn('secret', json.dumps(report))
+
+    def test_localhost_alias_keeps_browser_origin_while_connecting_to_loopback(self):
+        with api() as (env, _):
+            env['TRIPSIT_LIVE_ORIGIN'] = env['TRIPSIT_LIVE_ORIGIN'].replace('127.0.0.1', 'localhost')
+            report = gates.run_probes(env)
+        self.assertEqual(report['public_api']['status'], 'passed')
+
+    def test_dripping_headers_cannot_extend_absolute_deadline(self):
+        with api('slow-headers') as (env, calls):
+            start = time.monotonic()
+            report = gates.run_probes(env, timeout=.08)
+            elapsed = time.monotonic() - start
+        self.assertEqual(report['public_api']['status'], 'failed')
+        self.assertEqual(len(calls), 1)
+        self.assertLess(elapsed, .3, 'Dripped bytes must not reset the total request deadline')
+        self.assertNotIn('secret', json.dumps(report))
+
+    def test_missing_configuration_never_sends_requests(self):
+        report = gates.run_probes({})
+        self.assertEqual(report['public_api']['status'], 'unavailable')
+        self.assertFalse(report['accepted'])
+
+
+if __name__ == '__main__':
+    unittest.main()

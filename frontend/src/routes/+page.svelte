@@ -1,12 +1,23 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
+	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { authClient } from '#lib/auth-client.js';
+	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
 	type Token = { token: string; probability_percent: number };
 	type Project = { id: string; fullName: string; owner: string; repository: string; defaultBranch: string };
 	type Issue = { id: number; number: number; title: string; htmlUrl: string; state: string };
 
 	const session = authClient.useSession();
+	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
+		repositoryId: number; repository: string; issueNumber: number; baseSha: string;
+		supplied: { title: string; body: string }; inferred: string[]; ownerConfirmed: string[];
+	} };
+	let issueItems = $state<IssueItem[]>([]);
+	let selectedIssue = $state<IssueItem | null>(null);
+	let intakeOwner = $state('');
+	let issueBusy = $state(false);
+	let issueError = $state('');
 	let code = $state('');
 	let tokens = $state<Token[]>([]);
 	let review = $state('');
@@ -31,6 +42,60 @@
 	let loadedUserId = '';
 
 	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
+
+	let intakeRequest = 0;
+	let intakeAbort: AbortController | undefined;
+	const discoveryController = createIssueDiscovery({ onChange: next => {
+		discovery = next;
+		const accessible = (item: IssueItem) => !next.error && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
+		issueItems = issueItems.filter(accessible);
+		if (selectedIssue && !accessible(selectedIssue)) selectedIssue = null;
+	} });
+	let discovery = $state(discoveryController.state);
+
+	$effect(() => {
+		const owner = $session.data?.user.id ?? '';
+		untrack(() => {
+			intakeRequest++;
+			intakeAbort?.abort();
+			issueItems = []; selectedIssue = null; issueError = ''; issueBusy = false; intakeOwner = '';
+			void discoveryController.start(owner);
+		});
+		return () => untrack(() => { intakeRequest++; intakeAbort?.abort(); discoveryController.stop(); });
+	});
+
+	async function issueRequest(action: 'create' | 'list' | 'detail', id?: string) {
+		const owner = $session.data?.user.id;
+		if (!owner) return;
+		const requestId = ++intakeRequest;
+		intakeAbort?.abort();
+		intakeAbort = new AbortController();
+		const repository = discovery.repository;
+		const issueNumber = discovery.issueNumber;
+		issueBusy = true;
+		issueError = '';
+		try {
+			const response = await fetch(`/api/work-items${action === 'detail' ? `/${id}` : ''}`, {
+				...(action === 'create' ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository, issueNumber }) } : {}),
+				signal: AbortSignal.any([intakeAbort.signal, AbortSignal.timeout(30_000)])
+			});
+			const data = await response.json();
+			if ($session.data?.user.id !== owner || requestId !== intakeRequest || (action === 'create' && repository !== discovery.repository)) return;
+			intakeOwner = owner;
+			if (!response.ok) throw new Error(data.message ?? 'Issue intake failed.');
+			if (action === 'list') {
+				issueItems = data.items.filter((item: IssueItem) => discovery.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository));
+				selectedIssue = selectedAfterReload(selectedIssue, issueItems);
+			}
+			else selectedIssue = discovery.repositories.some(repo => repo.id === data.item.snapshot.repositoryId && repo.fullName === data.item.snapshot.repository) ? data.item : null;
+		} catch (error) {
+			if ($session.data?.user.id === owner && requestId === intakeRequest) {
+				issueError = error instanceof Error ? error.message : 'Issue intake failed.';
+				selectedIssue = null;
+				issueItems = [];
+			}
+		} finally { if (requestId === intakeRequest) issueBusy = false; }
+	}
 
 	function opacity(probability: number) {
 		return Math.max(0.1, Math.min(0.9, probability / 100));
@@ -219,6 +284,48 @@
 			<section class="empty-projects"><h2>Connect a GitHub repository</h2><p>Select exactly the repositories tripsit.dev may read, inspect for issues, and create pull requests in.</p><button onclick={connectProject}>Add project</button></section>
 		{/if}
 
+		<section aria-labelledby="issue-heading">
+			<h2 id="issue-heading">Select a GitHub issue</h2>
+			<p>Use your existing GitHub sign-in. Repository access and a TripSit GitHub App installation are required. Private issue storage is awaiting verification.</p>
+			{#if discovery.owner === $session.data.user.id}
+			<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
+				<label for="repository">Repository</label>
+				<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
+					<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
+					{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
+				</select>
+				<label for="issue-number">Open issue</label>
+				<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || discovery.loading || !discovery.issues.length}>
+					<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
+					{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
+				</select>
+				<button type="submit" disabled={issueBusy || discovery.loading || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+			</form>
+			<p aria-live="polite">{discovery.loading ? 'Refreshing repositories and issues…' : 'Repositories and open issues refresh automatically every minute. Select a ticket to snapshot it; work does not start automatically.'}</p>
+			{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
+			{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p>No accessible repositories found. Check the TripSit App installation and repository access.</p>{/if}
+			{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p>No open issues in this repository.</p>{/if}
+			{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p>Only part of the available list was returned. Automatic refresh will check again.</p>{/if}
+			<button type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button>
+			{:else}<p aria-live="polite">Discovering repositories and issues…</p>{/if}
+			<button type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button>
+			{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
+			{#if intakeOwner === $session.data.user.id}
+				<ul>{#each issueItems as item (item.id)}<li><button type="button" disabled={issueBusy} onclick={() => issueRequest('detail', item.id)}>{item.snapshot.repository} #{item.snapshot.issueNumber}</button></li>{/each}</ul>
+				{#if selectedIssue}
+					<div aria-live="polite">
+						<h3>{selectedIssue.snapshot.supplied.title}</h3>
+						<p>{selectedIssue.snapshot.repository} #{selectedIssue.snapshot.issueNumber}</p>
+						<p>Frozen base: <code>{selectedIssue.snapshot.baseSha}</code></p>
+						<h4>Supplied issue text (unconfirmed)</h4>
+						<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
+						<p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p>
+						<p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Scheduled deletion is not yet verified.</p>
+					</div>
+				{/if}
+			{/if}
+		</section>
+
 		<form onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
 			<label for="code">Code to review</label>
 			<textarea id="code" bind:value={code} required spellcheck="false" placeholder="Paste code here..."></textarea>
@@ -251,15 +358,33 @@
 </main>
 
 <style>
-	:global(*) { box-sizing: border-box; } :global(body) { margin: 0; background: #09111f; color: #edf3ff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
-	main { width: min(100% - 32px, 960px); margin: 0 auto; padding: 56px 0 72px; } header { margin-bottom: 36px; } header.signed-in { display: flex; justify-content: space-between; align-items: end; gap: 24px; }
-	.eyebrow { margin: 0; color: #62d8ff; font-size: .78rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; } h1 { margin: 8px 0; font-size: clamp(2.6rem, 7vw, 4.8rem); letter-spacing: -.06em; } .intro { margin: 0; color: #9badcb; font-size: 1.15rem; }
-	.project-controls { display: flex; align-items: end; gap: 8px; } .project-controls label { margin: 0 0 8px; position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); } .project-controls select { width: min(240px, 42vw); }
-	form, section, .account-bar { padding: 24px; border: 1px solid #263958; border-radius: 16px; background: #101b30; } .account-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding: 14px 18px; color: #bed1ef; }
-	label { display: block; margin: 14px 0 8px; color: #bdd1f3; font-size: .9rem; font-weight: 650; } textarea, input, select { display: block; width: 100%; padding: 12px 14px; border: 1px solid #30496f; border-radius: 9px; background: #091322; color: #edf3ff; } textarea { min-height: 280px; resize: vertical; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; } .pull-request-form textarea { min-height: 92px; }
-	button { margin-top: 16px; padding: 11px 17px; border: 0; border-radius: 8px; background: #68d9ff; color: #06101c; font-weight: 800; cursor: pointer; } .project-controls button { margin-top: 0; white-space: nowrap; } button:disabled { opacity: .5; cursor: wait; } .quiet, .text-button { margin: 0; color: #b9d2fa; background: transparent; font-weight: 650; }
-	.error { margin: 16px 0; color: #ff9fac; } .notice { margin: 0 0 18px; color: #84f0b0; } section { margin-bottom: 28px; } .auth-card { width: min(100%, 480px); margin: 0 auto; } .auth-card h2 { margin-top: 0; } .auth-card > p, .muted { color: #9badcb; } .github { width: 100%; background: #edf3ff; color: #0b1424; }
-	.divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 6px; color: #8fa4c7; font-size: .85rem; } .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #30496f; } .text-button { width: 100%; margin-top: 18px; text-align: center; } .section-heading { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; } h2 { margin: 0; font-size: 1.2rem; } h3 { margin: 0 0 8px; font-size: 1rem; } .section-heading p, .legend { color: #96aacc; font-size: .86rem; } .section-heading a, .issue-list a { color: #80dbff; }
-	.project-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 28px; margin-top: 22px; } .issue-list { margin: 12px 0 0; padding-left: 20px; } .issue-list li { margin: 8px 0; } .pull-request-form { padding: 0; border: 0; background: none; } .empty-projects p { color: #9badcb; max-width: 580px; } .review { margin-top: 16px; white-space: pre-wrap; line-height: 1.7; } .token { border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; } .low, .high { display: inline-block; width: 12px; height: 12px; margin: 0 6px 0 12px; border-radius: 3px; background: #38bdf8; vertical-align: -1px; } .low { opacity: .18; margin-left: 0; } .high { opacity: .9; }
-	@media (max-width: 680px) { main { width: min(100% - 24px, 960px); padding-top: 32px; } header.signed-in, .project-grid { display: block; } .project-controls { margin-top: 22px; } .project-grid > * + * { margin-top: 28px; } .section-heading { align-items: start; flex-direction: column; } }
+	:global(*) { box-sizing: border-box; }
+	:global(body) { margin: 0; background: #09111f; color: #edf3ff; font-family: Inter, ui-sans-serif, system-ui, sans-serif; }
+	main { width: min(100% - 32px, 960px); margin: 0 auto; padding: 72px 0; }
+	.eyebrow { margin: 0; color: #62d8ff; font-size: .78rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+	h1 { margin: 8px 0; font-size: clamp(2.6rem, 7vw, 4.8rem); letter-spacing: -.06em; }
+	.intro { margin: 0 0 36px; color: #9badcb; font-size: 1.15rem; }
+	form, section, .account-bar { padding: 24px; border: 1px solid #263958; border-radius: 16px; background: #101b30; }
+	.account-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding: 14px 18px; color: #bed1ef; }
+	label { display: block; margin: 14px 0 8px; color: #bdd1f3; font-size: .9rem; font-weight: 650; }
+	textarea, input, select { display: block; width: 100%; padding: 12px 14px; border: 1px solid #30496f; border-radius: 9px; background: #091322; color: #edf3ff; }
+	textarea { min-height: 280px; resize: vertical; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
+	button { margin-top: 16px; padding: 11px 17px; border: 0; border-radius: 8px; background: #68d9ff; color: #06101c; font-weight: 800; cursor: pointer; }
+	button:disabled { opacity: .5; cursor: wait; }
+	.quiet, .text-button { margin: 0; color: #b9d2fa; background: transparent; font-weight: 650; }
+	.error { margin: 16px 0; color: #ff9fac; }
+	section { margin-top: 28px; }
+	.auth-card { width: min(100%, 480px); margin: 0 auto; }
+	.auth-card h2 { margin-top: 0; } .auth-card > p { color: #9badcb; }
+	.github { width: 100%; background: #edf3ff; color: #0b1424; }
+	.divider { display: flex; align-items: center; gap: 12px; margin: 20px 0 6px; color: #8fa4c7; font-size: .85rem; }
+	.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: #30496f; }
+	.text-button { width: 100%; margin-top: 18px; text-align: center; }
+	.section-heading { display: flex; justify-content: space-between; gap: 16px; align-items: baseline; }
+	h2 { margin: 0; font-size: 1.2rem; } .section-heading p, .legend { color: #96aacc; font-size: .86rem; }
+	.issue-body { white-space: pre-wrap; overflow-wrap: anywhere; }
+	.review { margin-top: 16px; white-space: pre-wrap; line-height: 1.7; }
+	.token { border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+	.low, .high { display: inline-block; width: 12px; height: 12px; margin: 0 6px 0 12px; border-radius: 3px; background: #38bdf8; vertical-align: -1px; }
+	.low { opacity: .18; margin-left: 0; } .high { opacity: .9; }
 </style>

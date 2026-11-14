@@ -1,0 +1,20 @@
+id: e04
+title: Review packet and human decisions
+type: feat
+context: domain
+wsjf: 4.667
+total_bcps: 6
+status: todo
+stories:
+- id: e04s01
+  title: Show revision-bound evidence and gaps
+  bcps: 3
+  delta: ADDED
+  spec: e04s01-review-packet.md
+  tasks: e04s01-tasks.yaml
+- id: e04s02
+  title: Record accountable human inspection decisions
+  bcps: 3
+  delta: ADDED
+  spec: e04s02-human-decision.md
+  tasks: e04s02-tasks.yaml

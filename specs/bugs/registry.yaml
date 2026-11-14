@@ -1,1 +1,16 @@
-bugs: []
+bugs:
+- bug_id: BUG-001
+  date: '2026-11-14'
+  severity: medium
+  priority: P1
+  scope: development-database
+  status: fixed
+  summary: URL query overrides bypass disposable database guard
+  file: specs/bugs/BUG-001-local-database-url.md
+  files_changed:
+  - frontend/src/lib/server/records.ts
+  - frontend/tests/local-database-url.test.ts
+  approach: Reject URL query and fragment driver overrides before pg construction
+  risk_level: medium
+  commit_message: 'fix(database): refuse query overrides in disposable targets'
+  commit: 1018f50

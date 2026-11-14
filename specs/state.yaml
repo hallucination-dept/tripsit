@@ -1,21 +1,133 @@
 workflow_mode: solo-git
 project: TripSit
-active_flow: orchestrate_project
+active_flow: build_epic
 project_cycle:
   mode: standard
-  current_phase: 3
-  completed_phases: [1, 2]
+  current_phase: 4
+  completed_phases:
+  - 1
+  - 2
+  - 3
   transition:
-    to_phase: 3
+    to_phase: 4
     status: authorized
 handoff:
-  next_skill: plan-release
-  summary: "Elaborate complete: ADR 0003 consolidates architecture and deferred implementation gates; saved synthetic self-check passed. Dual independent design review round 2 passed 20/20 each (100%), no must-fix or should-fix findings. Evidence: tech-architecture/ELABORATE_REVIEW_LATEST.md. User authorized entry to Plan and requested commit/push for a clean-session handoff. Next run plan-release, then plan-work; schedule fail-closed live gates. No application, infrastructure, live language coverage or calibration is certified."
+  next_skill: develop-tdd
+  summary: 'Automatic discovery/refresh implemented and tested in e01s01: user/App-authorized
+    repositories and open issue metadata endpoints, select controls, initial loading
+    +60s polling with owner/repo cancellation, selection preservation, PR exclusion
+    and explicit partiallists. Userconfirmed auto-start later; no automatic work.
+    Two coding agents used separate worktrees; review A96/B96 no mustfix. Four discovery+four
+    controller+19intake+one auth tests pass, Chrome fixture2pass, check/build0 Svelte0/0.
+    Local server session69655 on localhost5173 serves changes. GitHub App Email addresses
+    read permission confirmed after userupdate. Fullstory live/private/deployed retention
+    stillnotcertified. No routine MD.'
 integration:
-  hands_free: "Open a PR and obtain human approval before merging."
-  interactive: "No blanket human-approval requirement; follow explicit user authorization."
-
+  hands_free: Open a PR and obtain human approval before merging.
+  interactive: No blanket human-approval requirement; follow explicit user authorization.
+  draft_pr: https://github.com/hallucination-dept/tripsit/pull/1
 user_constraints:
-  build_window: "Roughly 24 hours of agent build work for the hackathon; exact timeframe is not a gate."
-  resources: "Use the already supplied stack and resources; do not require an additional resource inventory or budget to finish Elaborate."
-  reviewer: "Configurable OpenAI-compatible API; provider/model selection explicitly deferred until later, not an Elaborate blocker."
+  build_window: Roughly 24 hours of agent build work for the hackathon; exact timeframe
+    is not a gate.
+  resources: Use the already supplied stack and resources; do not require an additional
+    resource inventory or budget to finish Elaborate.
+  reviewer: Configurable OpenAI-compatible API; provider/model selection explicitly
+    deferred until later, not an Elaborate blocker.
+  documentation: User requests focus on features/code; do not add routine Markdown
+    reports. Use this state and executable tests for ongoing evidence.
+  database_testing: User explicitly authorized testing in configured production database
+    and manually approved exact app-owned 001_work_items.sql migration; applied transactionally,
+    auth tables unchanged. Keep test fixtures isolated and clean up.
+active_epic: e01
+active_story: e01s01
+epic_cycle:
+  step: 4
+  story_bcps: 5
+  completed_steps:
+  - 0
+  - 1
+  - 2
+  - 3
+metrics:
+  story_start: '2026-11-14T19:06:28.446784+00:00'
+environment:
+  node: 22.23.4
+  npm: 10.9.9
+  dependencies: npm ci passed after escalated retry; lockfile unchanged
+  preflight: npm run check && npm run build passed; 0 errors, 0 warnings
+  local_app:
+    url: http://localhost:5173
+    worktree: /tmp/tripsit-e01s01
+    exec_session: 69655
+    checks: GET /200, GET /api/auth/get-session200, anonymous GET /api/work-items401
+    env_source: user-provided primary frontend/.env; values not printed/copied
+    oauth_client_id: Iv23liAX4hdiKcwxPade
+    oauth_check: Code selects GITHUB_APP_CLIENT_ID/SECRET exclusively, default OAuth
+      scopes disabled. Regression proves selection with distinct legacy credentials
+      and denial when App pair missing. Runtime authorization verified with unused
+      legacy sentinels. User callback now email_not_found; actual App metadata lacks
+      emails permission. Needs Account permissions Email addresses read, then fresh
+      authorization.
+vcs:
+  kind: git
+  branch: feat/e01s01-issue-intake
+  worktree: /tmp/tripsit-e01s01
+  primary_root: /home/u786288/projects/ohjunction/tripsit
+  checkpoint: 3b855c5
+verification:
+  tooling_review:
+    round: 2
+    reviewer_a: 100
+    reviewer_b: 98
+    scope: local verification tools only
+  focused_tests: 19
+  database_guard_tests: 1
+  http_probe_tests: 7
+  browser_config_tests: 2
+  browser_chrome_flow_tests: 2
+  retention_tests: 2
+  database_tests: 2
+  check_build: passed; zero Svelte errors/warnings
+  configured_database_migration: approved and applied; no auth-table changes
+  github_app_key: valid; App metadata identity matches
+  github_installations: 1
+  configured_database_storage: Passed owner isolation, expiry, physical purge and
+    source-free metadata in auto-dropped temporary tables; existing application rows
+    unchanged
+  github_discovery_tests: 4
+  issue_polling_tests: 4
+  auth_config_tests: 1
+  discovery_review:
+    reviewer_a: 96
+    reviewer_b: 96
+    must_fix: 0
+    scope: local implementation, not full story acceptance
+  github_app_email_permission: read confirmed
+active_work: Automatic repository/issue discovery and refresh; explicit user selection
+  starts no automatic work
+implementation_plan:
+  scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
+    and open issues; refresh every60s; auto-start is deferred by user.
+  contracts:
+    GET /api/github/repositories: '{repositories:[{id,fullName,private}],complete:boolean}'
+    GET /api/github/issues?repository=owner/name: '{issues:[{id,number,title,updatedAt}],complete:boolean}'
+  tasks:
+  - owner: backend worktree
+    changes: Bounded authenticated discovery on existing GitHub adapter; user/App
+      intersection, explicit pagination limits/completeness, exclude PRs; thin protected
+      routes
+    verify: cd frontend && node --experimental-strip-types tests/github-discovery.test.ts
+      && npm run check && npm run build
+  - owner: frontend worktree
+    changes: Select controls for discovered repo and open issue, first load and60s
+      polling, cancellation and session/repo change stale-response guards; update
+      browser harness selectors
+    verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts
+      && npm run check && npm run build
+  - owner: parent
+    changes: Integrate isolated commits, review and run full relevant regression/build
+      plus live local flow, push interim PR
+    verify: Actual authenticated GET discovery routes; native tests; check/build
+  bounds: No automatic ticket execution, no private-persistence bypass, no new dependencies,
+    no routine Markdown reports
+  status: implemented; local verification passed; automatic-start explicitly deferred

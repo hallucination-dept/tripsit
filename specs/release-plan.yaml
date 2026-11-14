@@ -1,0 +1,100 @@
+type: feat
+context: domain
+release:
+  version: null
+  codename: Revision-bound issue implementation pilot
+  status: planning
+  bump_hint: minor
+  semantic_release: false
+  version_note: No authoritative release/tag checked; semantic-release is not configured
+    in this repository.
+epics:
+- id: e04
+  title: Review packet and human decisions
+  capsule_dir: epics/e04-accountability
+  wsjf: 4.667
+  bcps: 6
+  wsjf_inputs:
+    business_value: 10
+    time_criticality: 8
+    risk_reduction: 10
+    job_size: 6
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
+    No threat-model security boost applied.
+- id: e05
+  title: Comparative evaluation and outcome feedback
+  capsule_dir: epics/e05-evaluation
+  wsjf: 2.875
+  bcps: 8
+  wsjf_inputs:
+    business_value: 8
+    time_criticality: 7
+    risk_reduction: 8
+    job_size: 8
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
+    No threat-model security boost applied.
+- id: e03
+  title: Prioritized controlled verification
+  capsule_dir: epics/e03-verification
+  wsjf: 2.636
+  bcps: 11
+  wsjf_inputs:
+    business_value: 10
+    time_criticality: 9
+    risk_reduction: 10
+    job_size: 11
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
+    No threat-model security boost applied.
+- id: e02
+  title: Downstream impact and independent review
+  capsule_dir: epics/e02-impact-and-review
+  wsjf: 2.0
+  bcps: 13
+  wsjf_inputs:
+    business_value: 9
+    time_criticality: 8
+    risk_reduction: 9
+    job_size: 13
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
+    No threat-model security boost applied.
+- id: e01
+  title: Issue to Gemma implementation PR
+  capsule_dir: epics/e01-ticket-to-pr
+  wsjf: 1.381
+  bcps: 21
+  wsjf_inputs:
+    business_value: 10
+    time_criticality: 9
+    risk_reduction: 10
+    job_size: 21
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
+    No threat-model security boost applied.
+story_queue:
+- e01s01
+- e01s02
+- e01s04
+- e02s01
+- e02s02
+- e03s01
+- e03s02
+- e04s01
+- e04s02
+- e01s03
+- e05s01
+- e05s02
+sizing:
+  method: "Relative 1\u20138 BCP estimate by number of trust boundaries, integrations\
+    \ and observable cases; sum is planning size, not hours."
+  total_bcps: 59
+bugs:
+  total: 1
+  fixed: 1
+  deferred: 0
+  wontfix: 0
+  open: 0
+  registry: specs/bugs/registry.yaml
+gates:
+  plan: Independent review >=94%, no unresolved high findings, human phase confirmation.
+  live: ADR 0003 gates are not passed by planning; dependent features fail closed.
+  merge: Hands-free PR requires human approval. Production data/infrastructure changes
+    require explicit authorization.

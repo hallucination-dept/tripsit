@@ -1,0 +1,62 @@
+story_id: e05s02
+title: Record escapes and increase area scrutiny
+type: feat
+context: domain
+spec: e05s02-outcome-feedback.md
+status: failing
+bcps: 3
+depends_on:
+- e04s02
+tasks:
+- id: 1
+  description: Define regression fixtures and assert the happy path, edge cases and
+    security denials below before implementation.
+  verify: cd frontend && node --experimental-strip-types --test tests/e05s02.test.ts
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e05s02
+- id: 2
+  description: 'Implement bounded area identifiers, spot-check selection/results and
+    monotonic inspection-required feedback with owner-scoped persistence. Connect
+    the owner UI/API path and fail-closed errors; retain revision provenance. Ref:
+    ADR 0003.'
+  verify: cd frontend && node --experimental-strip-types --test tests/e05s02.test.ts
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e05s02
+- id: 3
+  description: "Integrate all affected contracts and run frontend diagnostics/build;\
+    \ include no new security findings in affected paths in focused assertions. Ref:\
+    \ ADRs 0001\u20130003."
+  verify: (cd frontend && node --experimental-strip-types --test tests/e05s02.test.ts)
+    && (cd frontend && npm run check && npm run build)
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e05s02
+- id: 4
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
+    statuses and limitations; reject an empty evidence record.
+  verify: test -s specs/verifications/e05s02.md
+  risk: P1
+  security: medium
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e05s02

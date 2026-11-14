@@ -19,7 +19,7 @@ these values there:
 - `MODAL_API_URL` and `MODAL_PROXY_TOKEN` for the deployed Gemma API.
 - `DATABASE_URL` for the managed PostgreSQL database.
 - `BETTER_AUTH_URL`, which is `http://localhost:5173` during local development.
-- `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET` from a GitHub OAuth App.
+- `GITHUB_APP_CLIENT_ID` and `GITHUB_APP_CLIENT_SECRET` from a GitHub App.
 
 Register this GitHub OAuth callback URL locally:
 
@@ -80,8 +80,8 @@ Open `http://localhost:8080` to test it.
 | `DATABASE_URL` | Connected-service value | PostgreSQL connection URL supplied by the Aiven integration |
 | `BETTER_AUTH_SECRET` | Secret | A long random secret, e.g. `npx auth@latest secret` |
 | `MODAL_PROXY_TOKEN` | Secret | Modal web/proxy token |
-| `GITHUB_CLIENT_ID` | Variable | GitHub OAuth App client ID |
-| `GITHUB_CLIENT_SECRET` | Secret | GitHub OAuth App client secret |
+| `GITHUB_APP_CLIENT_ID` | Variable | GitHub App client ID |
+| `GITHUB_APP_CLIENT_SECRET` | Secret | GitHub App client secret |
 
 The Aiven PostgreSQL integration can inject its connection string directly as
 `DATABASE_URL`; do not commit that URL to the repository. If PostgreSQL is not
@@ -94,7 +94,7 @@ For an Aiven URL using `sslmode=require`, the app enables
 Once the public Aiven URL is known:
 
 1. Set both `BETTER_AUTH_URL` and `ORIGIN` to that URL in Aiven Runtime.
-2. In the GitHub OAuth App settings, add this exact callback URL:
+2. In the GitHub App settings, add this exact callback URL:
 
    ```text
    https://YOUR-AIVEN-DOMAIN/api/auth/callback/github
@@ -103,7 +103,7 @@ Once the public Aiven URL is known:
 3. Run the Better Auth migration once against the production database. From a
    machine that can reach the database, use the production values for
    `DATABASE_URL`, `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`,
-   `GITHUB_CLIENT_ID`, and `GITHUB_CLIENT_SECRET`, then run:
+   `GITHUB_APP_CLIENT_ID`, and `GITHUB_APP_CLIENT_SECRET`, then run:
 
    ```bash
    cd frontend
@@ -113,73 +113,67 @@ Once the public Aiven URL is known:
 4. Redeploy the Runtime application after changing its environment variables.
 
 Aiven Runtime builds the selected Git commit, but Git pushes do not themselves
-trigger redeployments by default. This repository includes a GitHub Action that
-redeploys the Aiven Runtime application after each push to `main`. Add these
-GitHub repository secrets before relying on it:
+trigger redeployments. Use **Redeploy** in the Aiven Runtime UI for later
+commits, or add a separate CI deployment step with an Aiven API token.
 
-| Secret | Value |
-| --- | --- |
-| `AIVEN_TOKEN` | Aiven API token with permission to deploy the Runtime app |
-| `AIVEN_PROJECT` | Aiven project name |
-| `AIVEN_APP_NAME` | Aiven Runtime application service name |
+## GitHub issue intake (development slice)
 
-The workflow triggers Aiven's **Deploy latest commit** operation, so Aiven
-builds the newest commit from the Runtime app's configured branch.
+Better Auth GitHub sign-in uses `GITHUB_APP_CLIENT_ID` and
+`GITHUB_APP_CLIENT_SECRET`; the legacy `GITHUB_CLIENT_*` pair is not used for login.
+Issue intake separately
+requires `GITHUB_APP_ID` and a PEM `GITHUB_APP_PRIVATE_KEY`, server-side only, for a
+GitHub App installed on the selected repository with Contents/Issues read access.
+The logged-in user's OAuth token must independently access the repository; the
+app installation does not grant that user access. Missing configuration disables
+intake without changing the existing code review flow. No merge/publish operation
+is added by this slice.
 
-## Connect GitHub repositories
-
-tripsit.dev uses a **GitHub App** for repositories, issues, and pull requests. This
-is intentionally separate from the GitHub OAuth App used to sign users in: each
-person chooses the exact repositories to install the app on, and tripsit.dev uses a
-short-lived installation token rather than a personal access token.
-
-Create a GitHub App at **GitHub → Settings → Developer settings → GitHub Apps
-→ New GitHub App** with these production settings:
-
-| GitHub App field | Value |
-| --- | --- |
-| Homepage URL | `https://tripsit.dev` |
-| Callback URL | `https://tripsit.dev/api/github/app/callback` |
-| Setup URL | `https://tripsit.dev/api/github/app/callback` |
-| Request user authorization (OAuth) during installation | Disabled |
-| Webhook | Disabled (not used yet) |
-| Where can this GitHub App be installed? | Any account, unless it is only for your own account |
-| Repository metadata | Read-only |
-| Repository contents | Read-only |
-| Issues | Read-only |
-| Pull requests | Read and write |
-
-Do not grant Administration, Actions, or organization permissions. Generate a
-private key for the App and save the downloaded PEM file; GitHub only shows the
-private key at creation time.
-
-Set these in Aiven Runtime after creating the App:
-
-| Key | Aiven type | Source |
-| --- | --- | --- |
-| `GITHUB_APP_ID` | Variable | The numeric App ID |
-| `GITHUB_APP_CLIENT_ID` | Variable | GitHub App client ID |
-| `GITHUB_APP_SLUG` | Variable | The app's URL slug (`github.com/apps/<slug>`) |
-| `GITHUB_APP_CLIENT_SECRET` | Secret | Generated GitHub App client secret |
-| `GITHUB_APP_PRIVATE_KEY` | Secret | Full PEM private key, including BEGIN/END lines |
-
-tripsit.dev uses the setup callback to start GitHub's normal user-authorization
-flow, then verifies the user can access the selected installation. These values
-are different from `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, which remain
-the credentials for the existing sign-in OAuth App. For local development,
-create a second GitHub App with callback and setup URL
-`http://localhost:5173/api/github/app/callback` and put its distinct values in
-`frontend/.env`.
-
-Create the project table once against the production database (using a local
-`frontend/.env` that contains the production `DATABASE_URL`):
+For an explicitly disposable **local** PostgreSQL database named
+`tripsit_e01s01_test`, set `TRIPSIT_TEST_DATABASE_URL` and run from `frontend/`:
 
 ```bash
-cd frontend
-npm run projects:migrate
+node --experimental-strip-types scripts/work-items.ts migrate
+node --experimental-strip-types --test tests/e01s01.test.ts
+node --experimental-strip-types --test tests/e01s01-db.test.ts
+node --experimental-strip-types scripts/work-items.ts purge
+npm run check && npm run build
 ```
 
-After deployment, a signed-in user can choose **Add project**, select the
-allowed repositories on GitHub, and return to tripsit.dev. The project switcher
-lists the connected repositories; the selected project shows open issues and
-can create a pull request from an existing branch.
+The app-owned SQL is `frontend/migrations/001_work_items.sql`; it does not alter
+Better Auth tables. The development script refuses non-local or differently named
+databases and never falls back to `DATABASE_URL`. Applying a production migration
+or configuring a production purge schedule requires explicit authorization.
+
+The signed-in page accepts `owner/repository` and an issue number. It snapshots
+supplied issue text and an immutable base SHA; it does not infer or confirm
+acceptance criteria. Reads recheck owner and repository access. The latest 20
+retained snapshots can be reloaded. Seven-day expiry blocks reads, and the purge
+command physically removes raw snapshots and their repository/issue references,
+retaining source-free digest/status metadata.
+
+**Incomplete live gates:** private snapshot creation/read remains refused. Real
+GitHub integration, authenticated browser UAT, and a periodic purge invocation
+have not been certified. A manual purge test is not a verified retention schedule.
+The following verification tools keep those gaps explicit:
+
+- `python3 specs/experiments/live_gates.py e01s01 --require-configured` executes
+  configured local API checks. Set `TRIPSIT_LIVE_ORIGIN`, legitimate owner and
+  second-owner Cookie headers in `TRIPSIT_LIVE_OWNER_COOKIE` and
+  `TRIPSIT_LIVE_OTHER_COOKIE`, and the fixture values `TRIPSIT_LIVE_REPOSITORY`,
+  `TRIPSIT_LIVE_ISSUE_NUMBER`, `TRIPSIT_LIVE_REPOSITORY_ID`,
+  `TRIPSIT_LIVE_BASE_SHA`, and `TRIPSIT_LIVE_REVOKED_ITEM_ID`. The last must identify
+  an existing owner snapshot whose repository access is now denied; a nonexistent
+  item cannot establish permission revocation. The full gate stays nonzero until
+  all admission controls are verified, even when public API checks pass.
+- From `frontend/`, `node scripts/intake-browser.mjs` uses installed Google Chrome
+  to check the real signed-in UI with the same origin, session and repository/issue
+  variables. Use a development issue containing hostile markup to check escaped
+  rendering. It signs the first owner out, so run API probes before browser UAT
+  and use disposable development sessions. `--browser-smoke` checks Chrome only.
+- From `frontend/`, with the explicit disposable local database configured,
+  `node --experimental-strip-types scripts/intake-retention.ts` executes two timed
+  purge subprocesses against an isolated temporary schema. Its source-free report
+  certifies local repeated execution only, never a deployed periodic schedule.
+
+Do not paste session cookies or credentials into reports or commit environment
+files. These tools do not enable private intake or authorize production changes.
