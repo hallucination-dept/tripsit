@@ -62,3 +62,36 @@ test('missing migration, database failures and malformed persisted bytes fail wi
   await assert.rejects(() => absent.create(owner, itemId, { ...candidate(), outputDigest: 'f'.repeat(64) }), failure(400));
   await assert.rejects(() => absent.create(owner, itemId, { ...candidate(), expiresAt: now.toISOString() }), failure(404));
 });
+
+test('validated observations retain Unicode, raw token bytes and logprobs within the total payload bound', async () => {
+  let payload: string;
+  let queries = 0;
+  const store = createCandidateRecords({ async query(sql, values = []) {
+    queries++;
+    if (sql.includes('INSERT INTO')) { payload = values[7] as string; return { rows: [{ id }] }; }
+    return { rows: [{ id, payload: JSON.parse(payload) }] };
+  } }, () => now);
+  const observations = { status: 'observed' as const, tokens: [
+    { token: '雪\r\n', bytes: [233, 155, 170, 13, 10], logprob: -0.123456789 },
+    { token: 'split byte', bytes: [255, 0, 128], logprob: -99 },
+    { token: 'no bytes', bytes: null, logprob: 0 }
+  ] };
+  const created = await store.create(owner, itemId, { ...candidate(), observations });
+  assert.deepEqual(created.candidate.observations, observations);
+  assert.deepEqual((await store.get(owner, itemId, id))!.candidate.observations, observations);
+  const before = queries;
+  await assert.rejects(() => store.create(owner, itemId, { ...candidate(), observations: {
+    status: 'observed', tokens: [{ token: 'secret-token-text', bytes: [999], logprob: 1 }]
+  } }), error => error.status === 400 && !error.message.includes('secret-token-text'));
+  assert.equal(queries, before);
+  const tampered = JSON.parse(payload);
+  tampered.observations.tokens[0].logprob = 1;
+  payload = JSON.stringify(tampered);
+  await assert.rejects(() => store.get(owner, itemId, id), error => error.status === 503 && !error.message.includes('雪'));
+  const largeBytes = new Uint8Array(1_048_576);
+  const oversized = { ...candidate(), rawOutput: largeBytes, outputDigest: createHash('sha256').update(largeBytes).digest('hex'),
+    files: [{ ...candidate().files[0], content: largeBytes,
+      blobSha: createHash('sha1').update(`blob ${largeBytes.byteLength}\0`).update(largeBytes).digest('hex') }],
+    observations: { status: 'observed' as const, tokens: Array.from({ length: 100 }, () => ({ token: 'a'.repeat(16_000), bytes: null, logprob: -1 })) } };
+  await assert.rejects(() => store.create(owner, itemId, oversized), error => error.status === 400);
+});
