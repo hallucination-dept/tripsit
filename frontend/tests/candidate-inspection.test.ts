@@ -115,3 +115,15 @@ test('malformed identities, failed review and failed refresh preserve honest bus
     assert.equal(inspection.state.assessment?.reviews.length, 0);
   }
 });
+
+test('missing renderable coverage or budget structures cannot publish a partial assessment', async () => {
+  for (const malformed of [
+    { ...assessment(), impact: { ...assessment().impact, impact: { ...assessment().impact.impact, coverage: null } } },
+    { ...assessment(), packet: { ...assessment().packet, checkPlan: { ...assessment().packet.checkPlan, budget: null } } }
+  ]) {
+    const inspection = createCandidateInspection({ fetcher: async () => response(malformed) });
+    await inspection.select('owner', item, candidate, baseSha, candidateDigest);
+    assert.equal(inspection.state.assessment, null);
+    assert(inspection.state.error);
+  }
+});
