@@ -96,5 +96,8 @@ test('owner filtering precedes GitHub and private storage requires verified admi
 
 test('JSON body reading is cancelled by its deadline',async()=>{
  const response=new Response(new ReadableStream({start(){},cancel(){}}));
- await assert.rejects(()=>readJson(response,4096,AbortSignal.timeout(10)),IntakeError);
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),10);
+ try { await assert.rejects(()=>readJson(response,4096,controller.signal),IntakeError); }
+ finally {clearTimeout(timer);}
 });

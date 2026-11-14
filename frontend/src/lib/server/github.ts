@@ -35,9 +35,10 @@ export function createGitHub(options: Options) {
   async function request(path: string, token: string, signal: AbortSignal, body?: unknown): Promise<ObjectValue> {
     try {
       signal.throwIfAborted();
+      const deadline = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
       const response = await (options.fetcher ?? fetch)(`https://api.github.com${path}`, {
         method: body ? 'POST' : 'GET', redirect: 'error',
-        signal: AbortSignal.any([signal, AbortSignal.timeout(10_000)]),
+        signal: deadline,
         headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2026-03-10', 'Content-Type': 'application/json' },
         ...(body ? { body: JSON.stringify(body) } : {})
       });
@@ -45,7 +46,7 @@ export function createGitHub(options: Options) {
         await response.body?.cancel();
         throw new IntakeError([401,403,404].includes(response.status) ? 403 : 502, 'GitHub access is unavailable or no longer authorized.');
       }
-      return object(await readJson(response, 1024 * 1024));
+      return object(await readJson(response, 1024 * 1024, deadline));
     } catch (cause) {
       if (cause instanceof IntakeError && cause.status === 403) throw cause;
       throw new IntakeError(502, 'GitHub did not complete a valid bounded request.');
