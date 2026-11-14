@@ -1,10 +1,10 @@
-# TripSit
+# tripsit.dev
 
-TripSit is a code review tool powered by Gemma 4 31B running on Modal.
+tripsit.dev is a code review tool powered by Gemma 4 31B running on Modal.
 
 ## Configure the web app
 
-TripSit uses Better Auth with PostgreSQL. It supports GitHub OAuth and
+tripsit.dev uses Better Auth with PostgreSQL. It supports GitHub OAuth and
 email/password accounts. The review API requires a signed-in user.
 
 ```bash

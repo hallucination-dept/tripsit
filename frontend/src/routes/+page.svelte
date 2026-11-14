@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { authClient } from '#lib/auth-client.js';
 	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
 	type Token = { token: string; probability_percent: number };
+	type Project = { id: string; fullName: string; owner: string; repository: string; defaultBranch: string };
+	type Issue = { id: number; number: number; title: string; htmlUrl: string; state: string };
 
 	const session = authClient.useSession();
 	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
@@ -27,6 +29,19 @@
 	let password = $state('');
 	let authError = $state('');
 	let isAuthenticating = $state(false);
+	let projects = $state<Project[]>([]);
+	let selectedProjectId = $state('');
+	let projectMessage = $state('');
+	let issues = $state<Issue[]>([]);
+	let issuesError = $state('');
+	let issuesLoading = $state(false);
+	let pullRequestTitle = $state('');
+	let pullRequestBranch = $state('');
+	let pullRequestBody = $state('');
+	let isCreatingPullRequest = $state(false);
+	let loadedUserId = '';
+
+	const selectedProject = $derived(projects.find((project) => project.id === selectedProjectId));
 
 	let intakeRequest = 0;
 	let intakeAbort: AbortController | undefined;
@@ -91,13 +106,8 @@
 		message = '';
 		tokens = [];
 		review = '';
-
 		try {
-			const response = await fetch('/api/review', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ code })
-			});
+			const response = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
 			const data = await response.json();
 			if (!response.ok) throw new Error(data.message ?? data.detail ?? 'Review failed.');
 			tokens = data.tokens;
@@ -112,11 +122,9 @@
 	async function submitEmailAuth() {
 		isAuthenticating = true;
 		authError = '';
-		const result =
-			authMode === 'sign-in'
-				? await authClient.signIn.email({ email, password })
-				: await authClient.signUp.email({ name, email, password });
-
+		const result = authMode === 'sign-in'
+			? await authClient.signIn.email({ email, password })
+			: await authClient.signUp.email({ name, email, password });
 		if (result.error) authError = result.error.message ?? 'Authentication failed.';
 		isAuthenticating = false;
 	}
@@ -130,6 +138,92 @@
 			isAuthenticating = false;
 		}
 	}
+
+	async function loadProjects() {
+		try {
+			const response = await fetch('/api/projects');
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload.message ?? 'Could not load projects.');
+			projects = payload.projects;
+			const savedProjectId = localStorage.getItem('tripsitter-project-id');
+			selectedProjectId = projects.some((project) => project.id === savedProjectId) ? savedProjectId! : projects[0]?.id ?? '';
+		} catch (error) {
+			projectMessage = error instanceof Error ? error.message : 'Could not load projects.';
+		}
+	}
+
+	async function loadIssues(projectId: string) {
+		issuesLoading = true;
+		issuesError = '';
+		issues = [];
+		try {
+			const response = await fetch(`/api/projects/${projectId}/issues`);
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload.message ?? 'Could not load issues.');
+			issues = payload.issues;
+		} catch (error) {
+			issuesError = error instanceof Error ? error.message : 'Could not load issues.';
+		} finally {
+			issuesLoading = false;
+		}
+	}
+
+	function selectProject(projectId: string) {
+		selectedProjectId = projectId;
+		localStorage.setItem('tripsitter-project-id', projectId);
+	}
+
+	function connectProject() {
+		window.location.assign('/api/github/connect');
+	}
+
+	async function createPullRequest() {
+		if (!selectedProject) return;
+		isCreatingPullRequest = true;
+		projectMessage = '';
+		try {
+			const response = await fetch(`/api/projects/${selectedProject.id}/pull-requests`, {
+				method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ title: pullRequestTitle, head: pullRequestBranch, body: pullRequestBody, base: selectedProject.defaultBranch })
+			});
+			const payload = await response.json();
+			if (!response.ok) throw new Error(payload.message ?? 'Could not create the pull request.');
+			projectMessage = `Pull request #${payload.number} created.`;
+			pullRequestTitle = '';
+			pullRequestBranch = '';
+			pullRequestBody = '';
+		} catch (error) {
+			projectMessage = error instanceof Error ? error.message : 'Could not create the pull request.';
+		} finally {
+			isCreatingPullRequest = false;
+		}
+	}
+
+	onMount(() => {
+		const connected = new URLSearchParams(window.location.search).get('github_project_connected');
+		if (connected) {
+			projectMessage = `Connected ${connected} GitHub ${connected === '1' ? 'repository' : 'repositories'}.`;
+			window.history.replaceState({}, '', window.location.pathname);
+		}
+	});
+
+	$effect(() => {
+		const userId = $session.data?.user.id;
+		if (userId && userId !== loadedUserId) {
+			loadedUserId = userId;
+			void loadProjects();
+		}
+		if (!userId) {
+			loadedUserId = '';
+			projects = [];
+			selectedProjectId = '';
+			issues = [];
+		}
+	});
+
+	$effect(() => {
+		if (selectedProjectId) void loadIssues(selectedProjectId);
+	});
 </script>
 
 <svelte:head>
@@ -138,7 +232,7 @@
 </svelte:head>
 
 <header class="appbar"><div class="appbar-inner">
-	<a class="brand" href="/" aria-label="TripSit home"><span class="brand-mark" aria-hidden="true">T</span>TripSit</a>
+	<a class="brand" href="/" aria-label="tripsit.dev home"><span class="brand-mark" aria-hidden="true">T</span>tripsit.dev</a>
 	{#if $session.data}
 		<nav aria-label="Workspace"><a href="#issue-heading">Issues</a><a href="#code-review">Code review</a></nav>
 		<div class="account-bar"><strong title={$session.data.user.email}>{$session.data.user.name || $session.data.user.email}</strong><button class="button-quiet" onclick={() => authClient.signOut()}>Sign out</button></div>
@@ -148,6 +242,42 @@
 <main class:auth-layout={!$session.data}>
 	{#if $session.data}
 		<div class="page-heading"><div><p class="eyebrow">Workspace</p><h1>Review workspace</h1><p class="intro">Capture a GitHub issue or take a closer look at a code change.</p></div></div>
+			<div class="project-controls">
+				<label for="project-switcher">Project</label>
+				<select id="project-switcher" value={selectedProjectId} onchange={(event) => selectProject(event.currentTarget.value)}>
+					<option value="">No connected project</option>
+					{#each projects as project}<option value={project.id}>{project.fullName}</option>{/each}
+				</select>
+				<button class="button-primary" onclick={connectProject}>Add project</button>
+			</div>
+		{#if projectMessage}<p class="notice project-notice" role="status">{projectMessage}</p>{/if}
+		{#if selectedProject}
+			<section class="panel project-panel">
+				<div class="section-heading">
+					<div><p class="eyebrow">Connected repository</p><h2>{selectedProject.fullName}</h2></div>
+					<a href={`https://github.com/${selectedProject.fullName}`} target="_blank" rel="noreferrer">Open on GitHub ↗</a>
+				</div>
+				<div class="project-grid">
+					<div>
+						<h3>Open issues</h3>
+						{#if issuesLoading}<p class="empty-note">Loading issues…</p>{/if}
+						{#if issuesError}<p class="error" role="alert">{issuesError}</p>{/if}
+						{#if !issuesLoading && !issuesError && !issues.length}<p class="empty-note">No open issues.</p>{/if}
+						<ul class="issue-list">{#each issues as issue}<li><a href={issue.htmlUrl} target="_blank" rel="noreferrer">#{issue.number} {issue.title}</a></li>{/each}</ul>
+					</div>
+					<form class="pull-request-form" onsubmit={(event) => { event.preventDefault(); createPullRequest(); }}>
+						<h3>Create pull request</h3>
+						<label for="pr-title">Title</label><input id="pr-title" bind:value={pullRequestTitle} required placeholder="Fix issue #123" />
+						<label for="pr-branch">Source branch</label><input id="pr-branch" bind:value={pullRequestBranch} required placeholder="fix/issue-123" />
+						<label for="pr-body">Description</label><textarea id="pr-body" bind:value={pullRequestBody} placeholder="What changed and why?"></textarea>
+						<button class="button-primary" type="submit" disabled={isCreatingPullRequest}>{isCreatingPullRequest ? 'Creating…' : `Create PR into ${selectedProject.defaultBranch}`}</button>
+					</form>
+				</div>
+			</section>
+		{:else}
+			<section class="panel empty-projects"><h2>Connect a GitHub repository</h2><p>Select exactly the repositories tripsit.dev may read, inspect for issues, and create pull requests in.</p><button class="button-primary" onclick={connectProject}>Add project</button></section>
+		{/if}
+
 		<section aria-labelledby="issue-heading">
 			<div class="section-heading"><div><h2 id="issue-heading">GitHub issues</h2><p>Keep the problem and its code revision together.</p></div><span class="section-label">Issue intake</span></div>
 			<div class="intake-grid">
@@ -341,4 +471,22 @@
 		.panel-footer { gap: 8px; flex-wrap: wrap; }
 	}
 	@media (prefers-reduced-motion: reduce) { :global(html) { scroll-behavior: auto; } }
+
+.project-controls { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+.project-controls label { margin: 0; }
+.project-controls select { width: auto; max-width: 440px; flex: 1; }
+.project-controls button { flex-shrink: 0; }
+.project-notice { margin: 0 0 18px; overflow-wrap: anywhere; }
+.project-panel, .empty-projects { padding: 20px; margin-bottom: 30px; }
+.project-panel a { color: #3158bd; overflow-wrap: anywhere; }
+.project-panel .section-heading h2 { overflow-wrap: anywhere; }
+.project-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 30px; }
+.project-grid h3 { font-size: 14px; margin-bottom: 12px; }
+.issue-list { padding-left: 18px; margin: 0; font-size: 13px; }
+.issue-list li { margin: 9px 0; }
+.pull-request-form label:first-of-type { margin-top: 0; }
+.pull-request-form textarea { min-height: 90px; border: 1px solid #ccd3de; border-radius: 5px; padding: 9px 11px; }
+.pull-request-form button { margin-top: 14px; }
+.empty-projects p { color: #5f6b7a; font-size: 13px; }
+@media (max-width: 760px) { .project-grid { grid-template-columns: minmax(0, 1fr); gap: 24px; } .project-controls { flex-wrap: wrap; } .project-controls select { max-width: none; min-width: 0; } }
 </style>
