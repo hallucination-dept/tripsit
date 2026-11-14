@@ -1,6 +1,6 @@
 e01s01: blocked
-e01s02: todo
-e01s04: todo
+e01s02: in_progress
+e01s04: in_progress
 e02s01: todo
 e02s02: todo
 e03s01: todo
@@ -35,20 +35,23 @@ stories:
       focused_tests: 34
       scope: Local regressions and synthetic browser fixtures; not full live acceptance.
   e01s02:
-    status: todo
-    preparation_status: held at user cleanup checkpoint; not integrated or pushed
-    worktree: /tmp/tripsit-candidate-decoder
-    branch: feat/e01s02-candidate-decoder
-    checkpoint: bc2672b
-    preparation: Plan and five decoder tests committed; decoder implementation absent.
-    verification: 'RED: missing candidate-output.ts; no check/build on this branch.'
-    remaining: Full story tasks, integration and acceptance remain incomplete.
+    status: in_progress
+    worktree: /tmp/tripsit-e01s01
+    branch: feat/candidate-and-policy-workflow
+    checkpoint: 2da144e
+    verification: Native focused tests and frontend check/build pass; synthetic presentation only,
+      full live UAT incomplete.
+    remaining: Production migration002, isolated Git commit staging, exact byte-span mapping and
+      full live acceptance.
+    implementation: Public frozen-file candidate generation, expiring byte-exact storage, owner-scoped
+      APIs and manual preview UI implemented.
   e01s04:
-    status: todo
-    preparation_status: held at user cleanup checkpoint; not integrated or pushed
-    worktree: /tmp/tripsit-baseline-policy
-    branch: feat/e01s04-baseline-policy
-    checkpoint: 33ea3e8
-    preparation: Partial offline policy module for web_ui only; applicability/gaps unfinished.
-    verification: 2 native tests passed; no check/build on this branch.
-    remaining: Full story tasks, integration and acceptance remain incomplete.
+    status: in_progress
+    worktree: /tmp/tripsit-e01s01
+    branch: feat/candidate-and-policy-workflow
+    checkpoint: 2da144e
+    verification: Native focused tests and frontend check/build pass; synthetic presentation only,
+      full live UAT incomplete.
+    remaining: Real authenticated owner-flow UAT; no compliance claims or owner-confirmation records.
+    implementation: Versioned trusted controls, provenance, applicability/gaps, authorized snapshot
+      policy endpoint and UI implemented.

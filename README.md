@@ -141,8 +141,9 @@ node --experimental-strip-types scripts/work-items.ts purge
 npm run check && npm run build
 ```
 
-The app-owned SQL is `frontend/migrations/001_work_items.sql`; it does not alter
-Better Auth tables. The development script refuses non-local or differently named
+The app-owned SQL is `frontend/migrations/001_work_items.sql` and
+`frontend/migrations/002_candidates.sql`; the local migrate command applies both.
+Neither alters Better Auth tables. The development script refuses non-local or differently named
 databases and never falls back to `DATABASE_URL`. Applying a production migration
 or configuring a production purge schedule requires explicit authorization.
 
@@ -179,3 +180,16 @@ The following verification tools keep those gaps explicit:
 
 Do not paste session cookies or credentials into reports or commit environment
 files. These tools do not enable private intake or authorize production changes.
+
+Public snapshot candidates can now be generated explicitly from selected files at
+the frozen revision. The workspace shows versioned baseline requirements, unresolved
+quality gaps and inert replacement previews. Candidate artifacts require migration
+`002_candidates.sql`, retain exact output/file bytes and raw token observations when
+available, and expire with their parent snapshot. The existing snapshot purge cascades
+their raw-data deletion. Candidate generation is limited to three requests per owner
+per 15 minutes and one active request per server process.
+
+Candidate code is not executed, committed or published by this increment. Exact
+output-to-code token mapping remains unavailable. Applying migration 002 to a
+configured production database requires explicit authorization; the runtime refuses
+generation before its storage tables exist.
