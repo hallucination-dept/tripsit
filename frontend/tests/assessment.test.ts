@@ -102,9 +102,19 @@ test('review dispatch excludes generation signals and retains prior conflicting/
   const f = fixture();
   const first = await f.service.review('owner', itemId, candidateId, f.signal);
   assert.equal(first.result.status, 'unavailable');
-  await f.service.review('owner', itemId, candidateId, f.signal);
+  for (const stance of ['supports', 'contradicts'] as const) {
+    f.deps.reviewer.review = async input => {
+      f.calls.reviewer++;
+      assert(!JSON.stringify(input).includes('SECRET_CONFIDENCE'));
+      return { status: 'completed', baseSha: input.baseSha, candidateDigest: input.candidateDigest, model: 'independent',
+        destination: 'https://review.example', retentionDisclosure: 'No retention.', promptDigest: 'd'.repeat(64), responseDigest: 'e'.repeat(64),
+        claims: [{ id: 'C1', requirementIds: [input.requirements[0].id], nodeIds: [], statement: 'Conflicting proposal.', stance, counterexample: stance === 'contradicts' ? 'Counterexample proposal.' : null }], checks: [] };
+    };
+    await f.service.review('owner', itemId, candidateId, f.signal);
+  }
   const loaded = await f.service.load('owner', itemId, candidateId, f.signal);
-  assert.equal(loaded.reviews.length, 2); assert.equal(f.calls.reviewer, 2);
+  assert.equal(loaded.reviews.length, 3); assert.equal(f.calls.reviewer, 3);
+  assert.deepEqual(loaded.reviews.map(review => review.result.status === 'completed' ? review.result.claims[0].stance : review.result.status), ['unavailable', 'supports', 'contradicts']);
 });
 
 test('cancellation bounds noncooperative source dependencies and never dispatches review', async () => {
