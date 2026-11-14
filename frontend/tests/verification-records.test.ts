@@ -84,3 +84,11 @@ test('unrelated existing review payload cannot deny bounded verification history
     assert.deepEqual(await history.list('owner', identity), verifications.length ? [created] : []);
   }
 });
+
+test('execution history accepts graph-wide 2000-node references and rejects 2001', async () => {
+ const {records}=fixture();
+ const expanded={...result,checks:[{...result.checks[0],nodeIds:Array.from({length:2000},(_,index)=>'node'+index)}]};
+ await records.append('owner',identity,expanded);
+ expanded.checks[0].nodeIds.push('node2000');
+ await assert.rejects(records.append('owner',identity,expanded),{status:400});
+});

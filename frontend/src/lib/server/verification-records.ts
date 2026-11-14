@@ -21,8 +21,8 @@ function validIdentity(owner: string, value: ReviewIdentity) {
     || typeof value.baseSha !== 'string' || !/^[a-f0-9]{40}$/.test(value.baseSha)
     || !hash(value.candidateDigest) || !hash(value.snapshotDigest) || !text(value.policyVersion)) throw invalid();
 }
-function references(value: unknown): value is string[] {
-  return Array.isArray(value) && value.length <= 256 && value.every(id => text(id)) && new Set(value).size === value.length;
+function references(value: unknown, maximum = 256): value is string[] {
+  return Array.isArray(value) && value.length <= maximum && value.every(id => text(id)) && new Set(value).size === value.length;
 }
 function validateResult(result: VerificationEvidence) {
   if (!object(result) || Object.keys(result).some(key => !['checks', 'executions', 'admission', 'dispatchPlan'].includes(key))
@@ -37,7 +37,7 @@ function validateResult(result: VerificationEvidence) {
       || !Number.isSafeInteger(check.timeoutMs) || check.timeoutMs < 1 || check.timeoutMs > 3_600_000
       || !['trusted_policy', 'trusted_repository', 'owner_defined'].includes(check.provenance)
       || hashFields.some(key => !hash(check[key])) || check.environmentDigest !== result.admission.environmentDigest
-      || !references(check.requirementIds) || !check.requirementIds.length || !references(check.nodeIds)) throw invalid();
+      || !references(check.requirementIds) || !check.requirementIds.length || !references(check.nodeIds, 2000)) throw invalid();
     ids.add(check.id);
   }
   const executions = new Set<string>();
