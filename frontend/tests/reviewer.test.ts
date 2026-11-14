@@ -105,3 +105,30 @@ test('cancellation is observable even when provider ignores abort and HTTP loopb
   assert.equal((await createReviewer({ ...configuration, url: 'http://localhost:1234' }).review(input(), new AbortController().signal)).status, 'unavailable');
   assert.equal((await createReviewer({ ...configuration, url: 'http://localhost:1234', fetcher: async () => response(body()) }).review(input(), new AbortController().signal)).status, 'completed');
 });
+
+test('missing array entries and total prompt overflow are denied before any dispatch', async () => {
+  let calls = 0;
+  const reviewer = createReviewer({ ...configuration, fetcher: async () => { calls++; return response(body()); } });
+  for (const invalid of [{ ...input(), requirements: new Array(1) }, { ...input(), nodes: new Array(1) }, { ...input(), files: new Array(1) },
+    { ...input(), files: [{ path: 'x', original: 'a'.repeat(131072), replacement: 'b'.repeat(131072) }] }]) {
+    assert.equal((await reviewer.review(invalid, new AbortController().signal)).status, 'unavailable');
+  }
+  assert.equal(calls, 0);
+});
+
+test('60-second deadline bounds a non-cooperative provider', async () => {
+  const timeout = AbortSignal.timeout;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  AbortSignal.timeout = delay => {
+    assert.equal(delay, 60_000);
+    const controller = new AbortController();
+    timer = setTimeout(() => controller.abort(), 10);
+    return controller.signal;
+  };
+  try {
+    const reviewer = createReviewer({ ...configuration, fetcher: async () => new Promise<Response>(() => {}) });
+    const result = await reviewer.review(input(), new AbortController().signal);
+    assert.equal(result.status, 'unavailable');
+    if (result.status === 'unavailable') assert.match(result.reason, /timed out/);
+  } finally { AbortSignal.timeout = timeout; clearTimeout(timer); }
+});
