@@ -229,3 +229,36 @@ class AggregationTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class ReviewerGateTests(unittest.TestCase):
+    def test_reviewer_gate_missing_configuration_fails_without_starting_process(self):
+        from unittest.mock import patch
+        with patch.object(gates, 'execute_control') as execute:
+            report = gates.run_reviewer_gate({})
+        execute.assert_not_called()
+        self.assertFalse(report['accepted'])
+        self.assertEqual(report['reviewer']['status'], 'unavailable')
+        self.assertEqual(report['authenticated_owner_uat'], 'unverified')
+        self.assertEqual(report['private_admission']['status'], 'unverified')
+
+    def test_only_expected_bounded_source_free_result_can_pass(self):
+        from unittest.mock import patch
+        environment = {'REVIEWER_API_URL': 'https://example.invalid', 'REVIEWER_API_KEY': 'credential-secret',
+                       'REVIEWER_MODEL': 'configured-model', 'REVIEWER_RETENTION_DISCLOSURE': 'retention-secret'}
+        valid = {'status': 'passed_configured_reviewer', 'scope': 'public_synthetic_provider_contract',
+                 'authenticatedOwnerUat': 'unverified', 'privateAdmission': 'unverified', 'claimCount': 1, 'checkCount': 1,
+                 'fixtureDigest': 'a' * 64, 'promptDigest': 'b' * 64, 'responseDigest': 'c' * 64,
+                 'configurationDigest': 'd' * 64}
+        for result, accepted in [(valid, True), (None, False), ({}, False),
+                                 ({**valid, 'status': 'passed'}, False), ({**valid, 'claimCount': 0}, False),
+                                 ({**valid, 'checkCount': 0}, False), ({**valid, 'raw': 'source-secret'}, False),
+                                 ({**valid, 'promptDigest': 'x'}, False)]:
+            with self.subTest(result=result), patch.object(gates, 'execute_control', return_value=result):
+                report = gates.run_reviewer_gate(environment)
+            self.assertEqual(report['accepted'], accepted)
+            rendered = json.dumps(report)
+            for secret in ['credential-secret', 'retention-secret', 'source-secret', 'configured-model', 'example.invalid']:
+                self.assertNotIn(secret, rendered)
+            self.assertEqual(report['authenticated_owner_uat'], 'unverified')
+            self.assertEqual(report['private_admission']['status'], 'unverified')
