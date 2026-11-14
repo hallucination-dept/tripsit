@@ -115,3 +115,12 @@ test('validates and preserves raw observations while mapping remains unavailable
     }
   }
 });
+
+test('keeps actionable dependency status while sanitizing its error message', async () => {
+  for (const status of [400, 409, 413, 429, 503]) {
+    const f = fixture();
+    f.dependencies.model.generate = async () => { throw new IntakeError(status, 'secret upstream data'); };
+    await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal), (error: IntakeError) => error.status === status && !error.message.includes('secret'));
+    assert.equal(f.calls.store, 0);
+  }
+});
