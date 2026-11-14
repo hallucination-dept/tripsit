@@ -155,3 +155,25 @@ test('configuration readiness matches the dispatch gate without contacting the p
     calls = 0;
   }
 });
+
+test('accepts extractor-sized graphs through 2000 nodes and denies 2001 without a request', async () => {
+  const { buildImpact } = await import('../src/lib/server/impact-extractor.ts');
+  const content = Array.from({ length: 300 }, (_, i) => `function f${i}() { return ${i}; }`).join('\n');
+  const blobSha = createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex');
+  const impact = buildImpact({ baseSha: input().baseSha, candidateDigest: input().candidateDigest, complete: true,
+    repositoryPaths: ['owner.ts'], files: [{ path: 'owner.ts', base: { content, blobSha }, candidate: { content, blobSha } }] });
+  assert.equal(impact.graph.nodes.length, 602);
+  let calls = 0;
+  const reviewer = createReviewer({ ...configuration, fetcher: async (_url, init) => {
+    calls++; assert(Buffer.byteLength(String(init?.body)) <= 262144);
+    return response(body({ claims: [], checks: [] }));
+  } });
+  for (const nodes of [impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })),
+    Array.from({ length: 2000 }, (_, i) => ({ id: `N${i}`, path: 'owner.ts' }))]) {
+    assert.equal((await reviewer.review({ ...input(), nodes }, new AbortController().signal)).status, 'completed');
+  }
+  assert.equal(calls, 2);
+  const nodes = Array.from({ length: 2001 }, (_, i) => ({ id: `N${i}`, path: 'owner.ts' }));
+  assert.equal((await reviewer.review({ ...input(), nodes }, new AbortController().signal)).status, 'unavailable');
+  assert.equal(calls, 2);
+});
