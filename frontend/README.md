@@ -1,51 +1,29 @@
-# sv
+# TripSit frontend
 
-Everything you need to build a Svelte project, powered by [`sv`](https://github.com/sveltejs/cli).
+SvelteKit frontend for TripSit. It uses Better Auth with PostgreSQL and proxies
+authenticated review requests to the Modal-hosted Gemma API.
 
-## Creating a project
+## Setup
 
-If you're seeing this, you've probably already done this step. Congrats!
-
-```sh
-# create a new project
-npx sv create my-app
-```
-
-To recreate this project with the same configuration:
+Create `frontend/.env` from `.env.example`, provide the Modal, PostgreSQL,
+Better Auth, and GitHub OAuth values, then run:
 
 ```sh
-# recreate this project
-npx sv@1.3.0 create --template minimal --types ts --install npm frontend
-```
-
-## Adding features
-
-Add features to your project with `sv add`:
-
-```sh
-npx sv add
-```
-
-For example, to add Tailwind CSS:
-
-```sh
-npx sv add tailwindcss
-```
-
-## Developing
-
-Once you've created a project and installed dependencies with `npm install` (or `pnpm install` or `yarn`), start a development server:
-
-```sh
+npm run auth:migrate
 npm run dev
-
-# or start the server and open the app in a new browser tab
-npm run dev -- --open
 ```
 
-## Building
+Register `http://localhost:5173/api/auth/callback/github` as the GitHub OAuth
+callback URL for local development. See the repository README for the full
+environment-variable list and production callback URL.
 
-To create a production version of your app:
+## Commands
+
+```sh
+npm run check        # Svelte and TypeScript diagnostics
+npm run build        # production build
+npm run auth:check   # validate Better Auth setup after credentials are set
+```
 
 ```sh
 npm run build

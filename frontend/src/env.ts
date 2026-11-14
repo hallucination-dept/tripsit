@@ -3,5 +3,10 @@ import { defineEnvVars } from '@sveltejs/kit/env';
 export const variables = defineEnvVars({
 	MODAL_API_URL: {},
 	MODAL_PROXY_TOKEN: {},
-	MODEL_ID: {}
+	MODEL_ID: {},
+	DATABASE_URL: { schema: (value) => value },
+	BETTER_AUTH_SECRET: { schema: (value) => value },
+	BETTER_AUTH_URL: { schema: (value) => value },
+	GITHUB_CLIENT_ID: { schema: (value) => value },
+	GITHUB_CLIENT_SECRET: { schema: (value) => value }
 });

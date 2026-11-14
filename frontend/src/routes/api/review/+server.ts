@@ -1,7 +1,11 @@
 import { error, json } from '@sveltejs/kit';
 import { MODAL_API_URL, MODAL_PROXY_TOKEN, MODEL_ID } from '$app/env/private';
 
-export async function POST({ request, fetch }) {
+export async function POST({ request, fetch, locals }) {
+	if (!locals.user) {
+		throw error(401, 'Sign in before requesting a code review.');
+	}
+
 	const { code } = (await request.json()) as { code?: string };
 
 	if (!code?.trim()) {
