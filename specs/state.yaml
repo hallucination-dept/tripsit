@@ -13,13 +13,15 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  summary: 'GitHub App login wiring fixed and tested: GITHUB_APP_CLIENT_ID/SECRET
-    for login; App ID/private key for repository operations. User updated .env.example
-    preserved in feature. check/build0 with Svelte0/0; auth regression1 + intake19
-    pass. Local server session69655 on localhost5173. Remaining current login blocker:
-    GitHub App metadata has no emails permission, user must set Email addresses read-only
-    and reauthorize. No auth bypass or fabricated email. Full e01s01 live/private/retention
-    gates remain incomplete. Use existing state, no routine MD.'
+  summary: 'Automatic discovery/refresh implemented and tested in e01s01: user/App-authorized
+    repositories and open issue metadata endpoints, select controls, initial loading
+    +60s polling with owner/repo cancellation, selection preservation, PR exclusion
+    and explicit partiallists. Userconfirmed auto-start later; no automatic work.
+    Two coding agents used separate worktrees; review A96/B96 no mustfix. Four discovery+four
+    controller+19intake+one auth tests pass, Chrome fixture2pass, check/build0 Svelte0/0.
+    Local server session69655 on localhost5173 serves changes. GitHub App Email addresses
+    read permission confirmed after userupdate. Fullstory live/private/deployed retention
+    stillnotcertified. No routine MD.'
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -92,3 +94,40 @@ verification:
   configured_database_storage: Passed owner isolation, expiry, physical purge and
     source-free metadata in auto-dropped temporary tables; existing application rows
     unchanged
+  github_discovery_tests: 4
+  issue_polling_tests: 4
+  auth_config_tests: 1
+  discovery_review:
+    reviewer_a: 96
+    reviewer_b: 96
+    must_fix: 0
+    scope: local implementation, not full story acceptance
+  github_app_email_permission: read confirmed
+active_work: Automatic repository/issue discovery and refresh; explicit user selection
+  starts no automatic work
+implementation_plan:
+  scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
+    and open issues; refresh every60s; auto-start is deferred by user.
+  contracts:
+    GET /api/github/repositories: '{repositories:[{id,fullName,private}],complete:boolean}'
+    GET /api/github/issues?repository=owner/name: '{issues:[{id,number,title,updatedAt}],complete:boolean}'
+  tasks:
+  - owner: backend worktree
+    changes: Bounded authenticated discovery on existing GitHub adapter; user/App
+      intersection, explicit pagination limits/completeness, exclude PRs; thin protected
+      routes
+    verify: cd frontend && node --experimental-strip-types tests/github-discovery.test.ts
+      && npm run check && npm run build
+  - owner: frontend worktree
+    changes: Select controls for discovered repo and open issue, first load and60s
+      polling, cancellation and session/repo change stale-response guards; update
+      browser harness selectors
+    verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts
+      && npm run check && npm run build
+  - owner: parent
+    changes: Integrate isolated commits, review and run full relevant regression/build
+      plus live local flow, push interim PR
+    verify: Actual authenticated GET discovery routes; native tests; check/build
+  bounds: No automatic ticket execution, no private-persistence bypass, no new dependencies,
+    no routine Markdown reports
+  status: implemented; local verification passed; automatic-start explicitly deferred
