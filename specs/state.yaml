@@ -478,3 +478,7 @@ completion_wave:
     scope: Concrete disposable Modal sandbox runner, fixed trusted check definitions, result collector and actual-environment admission verifier; parent adds protected API and packet integration.
     verify: Python runner unit/boundary fixtures plus native coordinator/packet regressions; actual isolation probes must pass before untrusted remote execution.
     authorization: Build and test implementation with trusted fixtures only. Provisioning waits for explicit approval of concrete reviewed implementation; no host fallback.
+  parent_integration_plan:
+    scope: Server-only repository/base-pinned oracle manifest and authenticated runner adapter; expiring owner/revision-bound execution records in existing candidate payload; explicit run button, execution/reuse rendering and packet integration.
+    trust: Browser sends only empty JSON; model proposals never become oracle definitions; actual runner admission must pass before source dispatch. Public frozen source only. No arbitrary host execution.
+    verification: Native adapter/records/route/controller regressions, disposable PostgreSQL ownership/purge test, frontend check/build and synthetic Chrome failure trace; real authenticated UAT remains separately required.
