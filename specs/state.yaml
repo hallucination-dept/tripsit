@@ -12,16 +12,19 @@ project_cycle:
     to_phase: 4
     status: authorized
 handoff:
-  next_skill: verify-work
+  next_skill: develop-tdd
+  last_step_completed: Integrated AST extractor, reviewer client, packet builder, assessment coordinator, controller and component; HTTP integration and rendered checks pending.
   summary: >-
-    Candidate/policy workflow implemented in feat/candidate-and-policy-workflow:
-    frozen public file context, bounded manual generation, inert expiring stored
-    previews, trusted baseline/gaps and owner-safe UI. No execution/publication or
-    exact token mapping. Local schema002 tests passed; user authorized and applied
-    migration002 to configured database; storage readiness verified. Synthetic configured Modal request passed; deployed raw observations
-    remain unavailable until wrapper update. Intake private/retention/two-owner UAT
-    gates remain incomplete. Impact and priority cores developing separately; do
-    not merge disconnected modules as completed features.
+    Candidate workflow PR6 is merged in main74e4573 and migration002 applied by
+    explicit authorization. Current worktree /tmp/tripsit-e01s01 is on
+    feat/impact-review-workflow, source checkpoint15a4c13. Impact/reviewer/packet
+    modules and inspection component are committed here, but the component is
+    not yet embedded in the shared page. Assessment HTTP changes remain in
+    isolated /tmp/tripsit-assessment-http, final preflight/commit pending.
+    Do not claim end-to-end inspection ready. First fix older-policy review
+    handling without relabeling evidence, then integrate HTTP, embed component,
+    run full preflight/native/DB/browser checks and open PR. No current-wave
+    production changes, untrusted execution, publication or auto start.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -42,8 +45,8 @@ user_constraints:
   database_testing: User explicitly authorized testing in configured production database
     and manually approved exact app-owned 001_work_items.sql migration; applied transactionally,
     auth tables unchanged. Keep test fixtures isolated and clean up.
-active_epic: e01
-active_story: e01s01
+active_epic: e02
+active_story: e02s01
 epic_cycle:
   step: 4
   story_bcps: 5
@@ -58,7 +61,7 @@ environment:
   node: 22.23.4
   npm: 10.9.9
   dependencies: Installed; direct jose dependency removed in PR 4, lockfile regenerated offline
-  preflight: npm run check && npm run build passed; 0 errors, 0 warnings
+  preflight: Last candidate baseline passed; full current impact/review integration preflight pending.
   local_app:
     url: http://localhost:5173
     worktree: /tmp/tripsit-e01s01
@@ -70,10 +73,10 @@ environment:
       confirmed. Prior email_not_found issue resolved; no current OAuth blocker recorded.
 vcs:
   kind: git
-  branch: feat/candidate-and-policy-workflow
+  branch: feat/impact-review-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: d5c40ab
+  checkpoint: 15a4c13
 verification:
   tooling_review:
     round: 2
@@ -103,7 +106,7 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Candidate/policy workflow implemented and verified; next impact/priority cores developing in isolated worktrees
+active_work: Checkpoint current central state, then finish impact/review HTTP and page integration
 implementation_plan:
   scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
     and open issues; refresh every60s; auto-start is deferred by user.
@@ -255,7 +258,7 @@ current_feature_verification:
   - e03s01 priority core complete offline; draft PR 8, six tests/check/build pass, not integrated.
 delivery_checkpoint:
   candidate_pr: https://github.com/hallucination-dept/tripsit/pull/6
-  candidate_status: Ready for review; user authorized migration002, applied successfully; candidate storage ready.
+  candidate_status: PR6 merged in main74e4573; migration002 applied successfully; candidate storage ready.
   impact_draft: https://github.com/hallucination-dept/tripsit/pull/7
   priorities_draft: https://github.com/hallucination-dept/tripsit/pull/8
   review_results: Post-read access revocation, disconnected upstream work, missing token bytes, conflicting impact identities and sparse impact inputs fixed with regression tests.
@@ -268,3 +271,78 @@ authorized_migration002:
   application_checks: Local GET /200, auth/session200, anonymous work-items and files401.
   scope: Schema-only transaction; auth tables unchanged, no application rows created or deleted.
   limitation: Full real authenticated snapshot-to-candidate browser flow not rerun after migration; Modal wrapper raw-observation/cancellation changes not deployed by agent.
+impact_review_plan:
+  authorization: User requested maximum parallel implementation of remaining features.
+  source_baseline: main74e4573 after merged candidate workflow PR6.
+  independent_streams:
+  - owner: impact agent
+    files: impact.ts, impact-extractor.ts and focused tests
+    scope: Bounded real JS/TS static import extraction, artifact revision identity and explicit unsupported/unknown gaps.
+    verify: cd frontend && node --experimental-strip-types tests/impact-extractor.test.ts && node --experimental-strip-types tests/impact.test.ts
+  - owner: reviewer agent
+    files: reviewer.ts and focused tests
+    scope: Server-configured public-only independent review with strict linked claims/checks and unavailable states.
+    verify: cd frontend && node --experimental-strip-types tests/reviewer.test.ts
+  - owner: packet agent
+    files: packet.ts, priorities.ts and focused tests
+    scope: Revision-bound packet, truthful evidence gaps and check plan; no fabricated executions.
+    verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types tests/priorities.test.ts
+  - owner: parent
+    files: Candidate analysis acquisition, owner-scoped artifact persistence/runtime/routes, UI/controller, env and package manifests.
+    scope: Integrate actual candidate/policy/impact/review into user workflow with existing expiry cascade; retain immutable generation fields. TypeScript existing dependency becomes runtime for AST extraction.
+    verify: Native integration/controller/storage/route tests, disposable database verification, frontend check/build, synthetic Chrome flow.
+  synchronization: Separate worktrees and file ownership; parent sequentially reviews and integrates commits.
+  bounds: No untrusted execution, private dispatch, automatic work start, merges or unapproved production schema changes. Reviewer absent configuration remains unavailable.
+assessment_coordinator_plan:
+  flow: Authorized frozen candidate -> essential and bounded optional file context -> actual AST impact and stored review history -> fresh revision/access checks.
+  review_flow: Send only issue, requirements, graph references and file text to separately configured reviewer; recheck access before dispatch, after response and around storage.
+  bounds: 24 files,256KiB combined source,90s operation; optional unavailable sources remain gaps, private/revoked access always denies.
+  artifact_storage: Append bounded immutable digest-checked review envelopes inside existing owner-scoped candidate raw payload; snapshot purge already cascades deletion, no new schema.
+  verify: cd frontend && node --experimental-strip-types tests/assessment.test.ts && node --experimental-strip-types tests/review-records.test.ts; disposable PostgreSQL artifact ownership/cascade tests
+
+parallel_continuation:
+  authorization: User invoked orchestrate-project and requested more implementations in parallel.
+  scope: Finish existing public candidate assessment, independent-review and packet workflow; no new story acceptance claims.
+  streams:
+  - owner: assessment_api
+    files: Assessment runtime, protected assessment/reviews routes and focused route tests.
+    verify: cd frontend && node --experimental-strip-types tests/assessment-route.test.ts
+  - owner: inspection_ui
+    files: Existing candidate inspection controller/page integration and controller tests.
+    verify: cd frontend && node --experimental-strip-types tests/candidate-inspection.test.ts
+  - owner: assessment_verify
+    files: Existing assessment/reviewer/record core regressions and minimal fixes.
+    verify: cd frontend && node --experimental-strip-types --test tests/assessment.test.ts tests/reviewer.test.ts tests/review-records.test.ts
+  - owner: parent
+    files: State, integration review and verification.
+    verify: cd frontend && npm run check && npm run build
+  bounds: No production migrations, deployment, private dispatch, untrusted execution, automatic work start or merge. Existing unfinished admission/UAT gates remain incomplete.
+  baseline: Eight native assessment/inspection/impact/packet/priority/reviewer/record test files passed.
+current_workstreams:
+  source_checkpoint: 15a4c13
+  checkpoint_reason: User asked whether central state was consistently recorded before work; synchronize before continuing.
+  state_discipline: Record each new workstream plan, owner, files and verify command here before dispatch; refresh execution ledger before resuming implementation.
+  impact_extractor:
+    status: Committed and integrated in feature branch; not main.
+    verification: 6 extractor and 9 graph native tests pass; isolated check/build pass.
+    scope: JS/TS static file imports only; unresolved/unsupported/semantic coverage remains explicit.
+  reviewer_client:
+    status: Committed and integrated in feature branch; not main.
+    verification: 7 native tests and isolated check/build pass; no configured live provider tested.
+  packet_and_priorities:
+    status: Committed and integrated in feature branch; not main.
+    verification: 11 packet and 7 priority native tests plus isolated check/build pass.
+    limitation: No actual trusted executions; candidateCommit null and acceptanceReady false.
+  assessment_and_storage:
+    status: Committed and integrated in feature branch; not main.
+    verification: 9 assessment and 2 storage native tests; real disposable PostgreSQL history/owner/cap/expiry test passes.
+    pending_fix: Preserve older-policy artifact identity and mark it stale rather than rejecting history or relabeling it current.
+  inspection_controller_component:
+    status: Committed in feature branch; shared page embedding and browser checks pending.
+    verification: 5 controller tests and isolated component check/build pass.
+  assessment_http:
+    status: Isolated worktree changes not integrated; final check and commit pending.
+    worktree: /tmp/tripsit-assessment-http
+    owner: intake_gate_completion
+    verification: View/routing/runtime focused tests pass; final preflight after stale-artifact view filter pending.
+  remaining_validation: Full integrated frontend check/build, retained regressions, native route/controller/storage tests and synthetic Chrome desktop/mobile flow before PR.
