@@ -52,6 +52,7 @@ export function buildImpact(input: ImpactInput) {
   const files = [...input.files].sort((a, b) => compare(a.path, b.path));
   const graph: ImpactGraph = { revision: { baseSha: input.baseSha, headSha: null, candidateDigest: input.candidateDigest }, nodes: [], edges: [], changed: [], unsupportedLanguages: [] };
   const imports: ImportReference[] = [];
+  const moduleTargets = new Map<string, string>();
   const gapMap = new Map<string, Gap>();
   function gap(kind: string, path: string, revision: Side | null, detail: string) {
     gapMap.set(JSON.stringify([kind, path, revision]), { kind, path, revision, detail });
@@ -118,7 +119,7 @@ export function buildImpact(input: ImpactInput) {
           const matches = [...candidates].filter(path => universe.has(path));
           if (matches.length !== 1) reason = matches.length ? 'ambiguous_module' : 'missing_module';
           else if (!loaded.has(matches[0])) reason = 'module_source_unavailable';
-          else target = nodeId(side, matches[0]);
+          else { target = nodeId(side, matches[0]); moduleTargets.set(`${side}:${file.path}:${specifier}`, matches[0]); }
         }
       }
       const edgeId = `${nodeId(side, file.path)}:${start}:${end}`;
@@ -129,11 +130,98 @@ export function buildImpact(input: ImpactInput) {
   }
   try { for (const file of files) for (const side of ['base', 'candidate'] as const) extract(file, side); }
   catch { invalid(); }
+  extractSymbols();
+  function extractSymbols() {
+    const declarations: Array<{ side: Side; key: string; text: string; id: string }> = [];
+    for (const side of ['base', 'candidate'] as const) {
+      const selected = files.filter(file => file[side] && extensions.includes(posix.extname(file.path).toLowerCase()));
+      const sources = new Map(selected.map(file => [`/${file.path}`, ts.createSourceFile(`/${file.path}`, file[side]!.content, ts.ScriptTarget.Latest, true)]));
+      const options: ts.CompilerOptions = { noLib: true, allowJs: true, checkJs: true, module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.Latest };
+      const host: ts.CompilerHost = {
+        getSourceFile: name => sources.get(name), getDefaultLibFileName: () => '', writeFile: () => {},
+        getCurrentDirectory: () => '/', getDirectories: () => [], fileExists: name => sources.has(name),
+        readFile: name => sources.get(name)?.text, getCanonicalFileName: name => name,
+        useCaseSensitiveFileNames: () => true, getNewLine: () => '\n',
+        resolveModuleNames: (names, containing) => names.map(name => {
+          const path = moduleTargets.get(`${side}:${containing.slice(1)}:${name}`);
+          return path ? { resolvedFileName: `/${path}`, extension: posix.extname(path) as ts.Extension } : undefined;
+        })
+      };
+      // No default host: repository code, tsconfig plugins, libraries and package resolution never touch the filesystem.
+      const checker = ts.createProgram([...sources.keys()], options, host).getTypeChecker();
+      const symbols = new Map<ts.Symbol, { id: string; declaration: ts.Node }>();
+      const callableNodes = new Map<ts.Node, string>();
+      const calls: Array<{ expression: ts.CallExpression | ts.NewExpression; source: ts.SourceFile; path: string }> = [];
+      for (const file of selected) {
+        const source = sources.get(`/${file.path}`)!;
+        if ((source as ts.SourceFile & { parseDiagnostics: readonly ts.Diagnostic[] }).parseDiagnostics.length) continue;
+        const queue: ts.Node[] = [source];
+        for (let cursor = 0; cursor < queue.length; cursor++) {
+          const node = queue[cursor];
+          ts.forEachChild(node, child => { queue.push(child); });
+          const declaration = ts.isFunctionDeclaration(node) && node.name && node.body ? node
+            : ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer
+              && (ts.isArrowFunction(node.initializer) || ts.isFunctionExpression(node.initializer))
+              && ts.isVariableDeclarationList(node.parent) && !!(node.parent.flags & ts.NodeFlags.Const) ? node : null;
+          if (declaration) {
+            const name = declaration.name!;
+            const symbol = checker.getSymbolAtLocation(name);
+            if (symbol && symbol.declarations?.length === 1) {
+              const start = encoder.encode(source.text.slice(0, declaration.getStart(source))).byteLength;
+              const end = encoder.encode(source.text.slice(0, declaration.end)).byteLength;
+              const id = `${side}:symbol:${createHash('sha256').update(`${file.path}:${start}:${end}`).digest('hex')}`;
+              graph.nodes.push({ id, kind: 'symbol', extraction: `typescript@${ts.version}:callable_declaration`, language: language(file.path),
+                source: { revision: side, path: file.path, blobSha: file[side]!.blobSha, start, end, byteLength: encoder.encode(source.text).byteLength } });
+              symbols.set(symbol, { id, declaration });
+              callableNodes.set(ts.isVariableDeclaration(declaration) ? declaration.initializer! : declaration, id);
+              const parents: string[] = [];
+              for (let parent = declaration.parent; parent; parent = parent.parent) {
+                if (ts.isFunctionDeclaration(parent)) parents.push(parent.name?.text ?? '?');
+                else if (ts.isClassDeclaration(parent)) parents.push(parent.name?.text ?? '?');
+              }
+              declarations.push({ side, id, key: `${file.path}:${parents.reverse().join('.')}:${name.getText(source)}`, text: declaration.getText(source) });
+            } else gap('ambiguous_symbol', file.path, side, 'Overloaded or ambiguous declarations are not resolved to a unique callable.');
+          }
+          if ((ts.isMethodDeclaration(node) || ts.isConstructorDeclaration(node) || ts.isGetAccessor(node) || ts.isSetAccessor(node)) && node.body) {
+            gap('unsupported_callable', file.path, side, 'Method, accessor and constructor dispatch requires inspection.');
+          }
+          if (ts.isCallExpression(node) || ts.isNewExpression(node)) calls.push({ expression: node, source, path: file.path });
+          if (graph.nodes.length > 2000) invalid();
+        }
+      }
+      for (const { expression, source, path } of calls) {
+        if (expression.expression.kind === ts.SyntaxKind.ImportKeyword || ts.isIdentifier(expression.expression) && expression.expression.text === 'require') continue;
+        let symbol = ts.isCallExpression(expression) && ts.isIdentifier(expression.expression) && !expression.questionDotToken ? checker.getSymbolAtLocation(expression.expression) : undefined;
+        if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
+        const target = symbol && symbols.get(symbol);
+        if (!target || ts.isNewExpression(expression)) {
+          gap('unresolved_call', path, side, 'Call target is dynamic, external, shadowed, overloaded or outside supplied callable coverage.'); continue;
+        }
+        let from = nodeId(side, path);
+        for (let parent = expression.parent; parent; parent = parent.parent) {
+          const callable = callableNodes.get(parent);
+          if (callable) { from = callable; break; }
+          if (ts.isFunctionLike(parent)) break;
+        }
+        const start = encoder.encode(source.text.slice(0, expression.getStart(source))).byteLength;
+        graph.edges.push({ id: `${nodeId(side, path)}:call:${start}`, from, to: target.id, relationship: 'calls_symbol_lexical',
+          resolution: 'observed', provenance: `typescript@${ts.version}:lexical_binding_not_runtime_dispatch` });
+        if (graph.edges.length > 8000) invalid();
+      }
+    }
+    for (const declaration of declarations) {
+      const matching = declarations.filter(other => other.key === declaration.key && other.side !== declaration.side);
+      if (matching.length !== 1 || matching[0].text !== declaration.text) graph.changed.push(declaration.id);
+    }
+  }
   graph.unsupportedLanguages = [...new Set(graph.unsupportedLanguages)].sort(compare);
   if (!graph.changed.length) gap('no_observed_changes', '', null, 'Supplied base and candidate files have identical blob identities.');
   imports.sort((a, b) => compare(a.edgeId, b.edgeId));
   return { graph, impact: analyzeImpact(graph), imports,
     gaps: [...gapMap.values()].sort((a, b) => compare(a.kind, b.kind) || compare(a.path, b.path) || compare(a.revision ?? '', b.revision ?? '')),
-    coverage: { extraction: 'js_ts_static_file_imports' as const, semanticResolution: 'not_performed' as const, executableChecks: 'not_run' as const, complete: input.complete && unloaded.length === 0, typescriptVersion: ts.version }
+    coverage: { extraction: 'js_ts_static_file_imports' as const, semanticResolution: 'not_performed' as const, executableChecks: 'not_run' as const, complete: input.complete && unloaded.length === 0, typescriptVersion: ts.version,
+      ...({ languages: ['javascript', 'typescript', 'python', 'cpp', 'csharp', 'rust'].map(language => ({ language,
+        extraction: ['javascript', 'typescript'].includes(language) ? 'static_imports_and_callable_declarations' : 'file_only',
+        resolution: ['javascript', 'typescript'].includes(language) ? 'lexical_direct_calls_only' : 'unavailable', executableChecks: 'not_run' })) } as { languages?: Array<{ language: string; extraction: string; resolution: string; executableChecks: string }> }) }
   };
 }
