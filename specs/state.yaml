@@ -161,6 +161,22 @@ ui_plan:
     visual_fixtures: Desktop1440, mobile390 and sign-in1440 rendered in real Chrome;
       no horizontal overflow; snapshot and review text fallback exercised using isolated
       synthetic presentation API responses
-    behavior_script: byte-identical to pre-polish page
+    behavior_script: byte-identical to repaired current main (3774b04)
     dependencies_added: 0
     markdown_reports_added: 0
+merge_investigation:
+  baseline: origin/main800094c, tree identical to merged branchfff8b24
+  reproduction: cd /tmp/tripsit-merge-audit/frontend && npm run check ->2 errors0warnings
+  errors:
+  - Dropped onMount import retained by e25b14f parent but missing in mergedpage
+  - GITHUB_APP_SLUG imported by github-app.ts but absent from private env schema
+  plan:
+  - Add only missing import and env declaration on isolated current-main fix branch
+  - Run check/build and existingnative regression tests
+  - Integrate latestmain/fix with isolated UI polish preserving both parents project+discovery
+    functionality; push reviewable follow-up without forcepush or merge tomain
+  verify: npm run check && npm run build; existingnative tests; compare preservedpagehandlers
+    and project controls
+  result: Repair PR 2 merged by user; current main 3774b04 integrated. Check/build
+    pass with Svelte 0 errors/0 warnings; Chrome harness 2 passing. Final project
+    controls preserved; real authenticated project and PR flow not exercised.
