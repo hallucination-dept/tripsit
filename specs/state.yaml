@@ -473,3 +473,8 @@ completion_wave:
   parent_scope: Integrate streams, actual authenticated development UAT, configuration, evidence and acceptance ledger.
   synchronization: Parent reviews each stream before integration; no shared-file edits; commit central state before further dispatch.
   limits: No private dispatch before admission/consent; no untrusted host execution; no infrastructure provisioning or main merge.
+  evidence_prerequisite_plan:
+    reason: e04s01 requires downstream behavioral executions and depends on e03s02; inert parser/blob checks cannot fulfill acceptance.
+    scope: Concrete disposable Modal sandbox runner, fixed trusted check definitions, result collector and actual-environment admission verifier; parent adds protected API and packet integration.
+    verify: Python runner unit/boundary fixtures plus native coordinator/packet regressions; actual isolation probes must pass before untrusted remote execution.
+    authorization: Build and test implementation with trusted fixtures only. Provisioning waits for explicit approval of concrete reviewed implementation; no host fallback.
