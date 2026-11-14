@@ -34,8 +34,8 @@ function text(value: unknown, limit: number, empty = false): value is string {
 function unique(values: string[]) { return new Set(values).size === values.length; }
 function frozenInput(input: ReviewerInput): ReviewerInput {
   valid(record(input, ['baseSha', 'candidateDigest', 'private', 'requirements', 'nodes', 'files', 'issue']));
-  valid(input.private === false && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.baseSha)
-    && /^[a-f0-9]{64}$/.test(input.candidateDigest));
+  valid(input.private === false && typeof input.baseSha === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.baseSha)
+    && typeof input.candidateDigest === 'string' && /^[a-f0-9]{64}$/.test(input.candidateDigest));
   valid(Array.isArray(input.requirements) && input.requirements.length > 0 && input.requirements.length <= 128
     && Array.from(input.requirements).every(requirement => record(requirement, ['id', 'criterion', 'provenance', 'mandatory'])
       && text(requirement.id, 128) && text(requirement.criterion, 8192) && typeof requirement.mandatory === 'boolean'
@@ -68,7 +68,7 @@ function proposals(content: string, input: ReviewerInput): { claims: ReviewClaim
       valid(text(row.id, 128) && !ids.has(row.id) && references(row.requirementIds, requirementIds, true)
         && references(row.nodeIds, nodeIds, false));
       ids.add(row.id);
-      if (kind === 'claims') valid(text(row.statement, 8192) && ['supports', 'contradicts', 'uncertain'].includes(String(row.stance))
+      if (kind === 'claims') valid(text(row.statement, 8192) && typeof row.stance === 'string' && ['supports', 'contradicts', 'uncertain'].includes(row.stance)
         && (row.counterexample === null || text(row.counterexample, 8192)));
       else valid(text(row.description, 8192));
     }
