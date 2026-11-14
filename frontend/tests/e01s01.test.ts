@@ -101,3 +101,25 @@ test('JSON body reading is cancelled by its deadline',async()=>{
  try { await assert.rejects(()=>readJson(response,4096,controller.signal),IntakeError); }
  finally {clearTimeout(timer);}
 });
+
+import { withIntake } from '../src/lib/server/intake-http.ts';
+
+test('HTTP boundary enforces session, same-origin JSON and safe errors',async()=>{
+ const request=(headers:Record<string,string>={})=>new Request('https://tripsit.test/api/work-items',{method:'POST',headers,body:'{}'});
+ let calls=0;
+ const action=async()=>{calls++;return {ok:true};};
+ assert.equal((await withIntake(request(),undefined,action)).status,401);
+ assert.equal((await withIntake(request({'origin':'https://evil.test','content-type':'application/json'}),'owner',action)).status,403);
+ assert.equal((await withIntake(request({'origin':'https://tripsit.test','content-type':'text/plain'}),'owner',action)).status,415);
+ assert.equal(calls,0);
+ const response=await withIntake(request({'origin':'https://tripsit.test','content-type':'application/json'}),'owner',action);
+ assert.equal(response.status,200);
+ assert.equal(response.headers.get('cache-control'),'no-store');
+ const error=await withIntake(new Request('https://tripsit.test/api/work-items'),'owner',async()=>{throw new Error('upstream-token');});
+ assert.equal(error.status,503);
+ assert(!await error.text().then(text=>text.includes('upstream-token')));
+});
+
+test('commit identities accept only complete 40 or 64 hexadecimal characters',async()=>{
+ await assert.rejects(()=>fixture({'/repos/team/repo/commits/main':{sha:'a'.repeat(41)}}).github.snapshot('team/repo',2,new AbortController().signal),IntakeError);
+});
