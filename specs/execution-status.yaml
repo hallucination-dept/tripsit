@@ -41,10 +41,12 @@ stories:
     checkpoint: 2da144e
     verification: Native focused tests and frontend check/build pass; synthetic presentation only,
       full live UAT incomplete.
-    remaining: Production migration002, isolated Git commit staging, exact byte-span mapping and
-      full live acceptance.
+    remaining: Isolated Git commit staging, exact byte-span mapping and full real authenticated live
+      acceptance; migration002 is applied and storage ready.
     implementation: Public frozen-file candidate generation, expiring byte-exact storage, owner-scoped
       APIs and manual preview UI implemented.
+    configured_database: Migration002 authorized and applied transactionally; tables/cascade/runtime
+      readiness verified; auth tables unchanged.
   e01s04:
     status: in_progress
     worktree: /tmp/tripsit-e01s01
