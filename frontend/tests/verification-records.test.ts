@@ -58,7 +58,7 @@ test('invalid collector, digests, orphaned executions and false passing results 
 
 test('stored history/count/total payload and safe database failures are bounded', async () => {
   for (const row of [{ verifications: Array(5).fill({}), payload_bytes: 1024 },
-    { verifications: [], payload_bytes: 4_194_305 }, { verifications: {}, payload_bytes: 1024 }]) {
+    { verifications: {}, payload_bytes: 1024 }]) {
     await assert.rejects(() => createVerificationRecords({ async query() { return { rows: [row] }; } }).list('owner', identity), { status: 503 });
   }
   const { records, unavailable } = fixture(); unavailable();
@@ -71,4 +71,16 @@ test('persisted bytes are checked against result structure even when envelope di
   const invalid = { ...result, executions: [{ ...result.executions[0], collector: 'model' }] };
   artifacts[0].body = JSON.stringify(invalid); artifacts[0].digest = createHash('sha256').update(artifacts[0].body).digest('hex');
   await assert.rejects(() => records.list('owner', identity), { status: 503 });
+});
+
+
+test('unrelated existing review payload cannot deny bounded verification history reads', async () => {
+  const { records, artifacts } = fixture();
+  const created = await records.append('owner', identity, result);
+  for (const verifications of [[], artifacts]) {
+    const history = createVerificationRecords({ async query() {
+      return { rows: [{ verifications, payload_bytes: 8_388_608 }] };
+    } });
+    assert.deepEqual(await history.list('owner', identity), verifications.length ? [created] : []);
+  }
 });
