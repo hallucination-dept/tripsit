@@ -106,8 +106,12 @@ export async function ownerFlow(repository, issueNumber, timeoutMs = 35_000) {
   const section = document.querySelector('[aria-labelledby="issue-heading"]');
   const submit = section.querySelector('button[type="submit"]');
   const reload = [...section.querySelectorAll('button')].find(button => button.textContent === 'Reload my snapshots');
-  const set = (selector, value) => { const input = document.querySelector(selector); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); };
-  set('#repository', repository); set('#issue-number', issueNumber);
+  const set = (selector, value) => { const input = document.querySelector(selector); Object.getOwnPropertyDescriptor(Object.getPrototypeOf(input), 'value').set.call(input, value); input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); };
+  await waitFor(() => !document.querySelector('#repository').disabled && [...document.querySelector('#repository').options].some(option => option.value === repository));
+  set('#repository', repository);
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await waitFor(() => !document.querySelector('#issue-number').disabled && [...document.querySelector('#issue-number').options].some(option => option.value === String(issueNumber)));
+  set('#issue-number', issueNumber);
   await new Promise(resolve => setTimeout(resolve, 0));
   submit.click();
   await new Promise(resolve => setTimeout(resolve, 0));

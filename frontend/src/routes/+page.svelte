@@ -1,4 +1,6 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
+	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { authClient } from '#lib/auth-client.js';
 	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
@@ -6,11 +8,9 @@
 
 	const session = authClient.useSession();
 	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
-		repository: string; issueNumber: number; baseSha: string;
+		repositoryId: number; repository: string; issueNumber: number; baseSha: string;
 		supplied: { title: string; body: string }; inferred: string[]; ownerConfirmed: string[];
 	} };
-	let repository = $state('');
-	let issueNumber = $state(1);
 	let issueItems = $state<IssueItem[]>([]);
 	let selectedIssue = $state<IssueItem | null>(null);
 	let intakeOwner = $state('');
@@ -28,32 +28,58 @@
 	let authError = $state('');
 	let isAuthenticating = $state(false);
 
+	let intakeRequest = 0;
+	let intakeAbort: AbortController | undefined;
+	const discoveryController = createIssueDiscovery({ onChange: next => {
+		discovery = next;
+		const accessible = (item: IssueItem) => !next.error && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
+		issueItems = issueItems.filter(accessible);
+		if (selectedIssue && !accessible(selectedIssue)) selectedIssue = null;
+	} });
+	let discovery = $state(discoveryController.state);
+
+	$effect(() => {
+		const owner = $session.data?.user.id ?? '';
+		untrack(() => {
+			intakeRequest++;
+			intakeAbort?.abort();
+			issueItems = []; selectedIssue = null; issueError = ''; issueBusy = false; intakeOwner = '';
+			void discoveryController.start(owner);
+		});
+		return () => untrack(() => { intakeRequest++; intakeAbort?.abort(); discoveryController.stop(); });
+	});
+
 	async function issueRequest(action: 'create' | 'list' | 'detail', id?: string) {
 		const owner = $session.data?.user.id;
 		if (!owner) return;
+		const requestId = ++intakeRequest;
+		intakeAbort?.abort();
+		intakeAbort = new AbortController();
+		const repository = discovery.repository;
+		const issueNumber = discovery.issueNumber;
 		issueBusy = true;
 		issueError = '';
 		try {
 			const response = await fetch(`/api/work-items${action === 'detail' ? `/${id}` : ''}`, {
 				...(action === 'create' ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository, issueNumber }) } : {}),
-				signal: AbortSignal.timeout(30_000)
+				signal: AbortSignal.any([intakeAbort.signal, AbortSignal.timeout(30_000)])
 			});
 			const data = await response.json();
-			if ($session.data?.user.id !== owner) return;
+			if ($session.data?.user.id !== owner || requestId !== intakeRequest || (action === 'create' && repository !== discovery.repository)) return;
 			intakeOwner = owner;
 			if (!response.ok) throw new Error(data.message ?? 'Issue intake failed.');
 			if (action === 'list') {
-				issueItems = data.items;
+				issueItems = data.items.filter((item: IssueItem) => discovery.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository));
 				selectedIssue = selectedAfterReload(selectedIssue, issueItems);
 			}
-			else selectedIssue = data.item;
+			else selectedIssue = discovery.repositories.some(repo => repo.id === data.item.snapshot.repositoryId && repo.fullName === data.item.snapshot.repository) ? data.item : null;
 		} catch (error) {
-			if ($session.data?.user.id === owner) {
+			if ($session.data?.user.id === owner && requestId === intakeRequest) {
 				issueError = error instanceof Error ? error.message : 'Issue intake failed.';
 				selectedIssue = null;
 				issueItems = [];
 			}
-		} finally { issueBusy = false; }
+		} finally { if (requestId === intakeRequest) issueBusy = false; }
 	}
 
 	function opacity(probability: number) {
@@ -128,12 +154,24 @@
 			<h2 id="issue-heading">Select a GitHub issue</h2>
 			<p>Use your existing GitHub sign-in. Repository access and a TripSit GitHub App installation are required. Private issue storage is awaiting verification.</p>
 			<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
-				<label for="repository">Repository (owner/name)</label>
-				<input id="repository" bind:value={repository} required maxlength="201" placeholder="owner/repository" />
-				<label for="issue-number">Issue number</label>
-				<input id="issue-number" type="number" bind:value={issueNumber} min="1" step="1" required />
-				<button type="submit" disabled={issueBusy}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+				<label for="repository">Repository</label>
+				<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
+					<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
+					{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
+				</select>
+				<label for="issue-number">Open issue</label>
+				<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || discovery.loading || !discovery.issues.length}>
+					<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
+					{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
+				</select>
+				<button type="submit" disabled={issueBusy || discovery.loading || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
 			</form>
+			<p aria-live="polite">{discovery.loading ? 'Refreshing repositories and issues…' : 'Repositories and open issues refresh automatically every minute. Select a ticket to snapshot it; work does not start automatically.'}</p>
+			{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
+			{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p>No accessible repositories found. Check the TripSit App installation and repository access.</p>{/if}
+			{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p>No open issues in this repository.</p>{/if}
+			{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p>Only part of the available list was returned. Automatic refresh will check again.</p>{/if}
+			<button type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button>
 			<button type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button>
 			{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
 			{#if intakeOwner === $session.data.user.id}
@@ -208,7 +246,7 @@
 	form, section, .account-bar { padding: 24px; border: 1px solid #263958; border-radius: 16px; background: #101b30; }
 	.account-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; padding: 14px 18px; color: #bed1ef; }
 	label { display: block; margin: 14px 0 8px; color: #bdd1f3; font-size: .9rem; font-weight: 650; }
-	textarea, input { display: block; width: 100%; padding: 12px 14px; border: 1px solid #30496f; border-radius: 9px; background: #091322; color: #edf3ff; }
+	textarea, input, select { display: block; width: 100%; padding: 12px 14px; border: 1px solid #30496f; border-radius: 9px; background: #091322; color: #edf3ff; }
 	textarea { min-height: 280px; resize: vertical; font: 14px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; }
 	button { margin-top: 16px; padding: 11px 17px; border: 0; border-radius: 8px; background: #68d9ff; color: #06101c; font-weight: 800; cursor: pointer; }
 	button:disabled { opacity: .5; cursor: wait; }
