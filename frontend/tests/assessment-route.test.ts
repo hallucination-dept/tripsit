@@ -69,3 +69,50 @@ test('assessment routes enforce auth, owner, CSRF, exact empty JSON, queries, UU
     assert.equal(cancelled.status, 504); assert.equal(cancelled.headers.get('cache-control'), 'no-store');
   } finally { hooks.deregister(); delete bridge.assessmentRuntimeFixture; }
 });
+
+test('assessment runtime shares candidate admission services and uses only configured server reviewer fields', async () => {
+  const services = { generation: {}, intake: {}, github: {} };
+  const reviewStore = {};
+  let configured = false;
+  let reviewerOptions: unknown;
+  let captured: Record<string, unknown> | undefined;
+  const bridge = globalThis as typeof globalThis & {
+    assessmentServices?: (...args: unknown[]) => unknown;
+    assessmentFactory?: (dependencies: Record<string, unknown>) => unknown;
+    assessmentReviewer?: (options: unknown) => unknown;
+    assessmentReviewStore?: unknown;
+    configureAssessmentReviewer?: (enabled: boolean) => void;
+  };
+  bridge.assessmentServices = async (headers, owner, signal) => { assert(headers instanceof Headers); assert.equal(owner, 'owner'); assert(signal instanceof AbortSignal); return services; };
+  bridge.assessmentFactory = dependencies => { captured = dependencies; return { load() {}, review() {} }; };
+  bridge.assessmentReviewer = options => { reviewerOptions = options; return {}; };
+  bridge.assessmentReviewStore = reviewStore;
+  const hooks = registerHooks({ resolve(specifier, context, next) {
+    const mocks: Record<string, string> = {
+      '$app/env/private': 'export let REVIEWER_API_URL,REVIEWER_API_KEY,REVIEWER_MODEL,REVIEWER_RETENTION_DISCLOSURE;globalThis.configureAssessmentReviewer=enabled=>{REVIEWER_API_URL=enabled?"https://trusted.example":undefined;REVIEWER_API_KEY=enabled?"fixture-key":undefined;REVIEWER_MODEL=enabled?"trusted-model":undefined;REVIEWER_RETENTION_DISCLOSURE=enabled?"Configured retention.":undefined;};',
+      '#lib/auth.js': 'export const database={};',
+      './generation-runtime.ts': 'export const candidateServices=(...args)=>globalThis.assessmentServices(...args);',
+      './assessment.ts': 'export const createAssessment=dependencies=>globalThis.assessmentFactory(dependencies);',
+      './reviewer.ts': 'export const createReviewer=options=>globalThis.assessmentReviewer(options);',
+      './review-records.ts': 'export const createReviewRecords=()=>globalThis.assessmentReviewStore;'
+    };
+    return mocks[specifier] ? { url: `data:text/javascript,${encodeURIComponent(mocks[specifier])}`, shortCircuit: true } : next(specifier, context);
+  } });
+  try {
+    const { assessmentRuntime } = await import('../src/lib/server/assessment-runtime.ts');
+    for (const enabled of [false, true]) {
+      configured = enabled; bridge.configureAssessmentReviewer!(configured);
+      const result = await assessmentRuntime(new Headers(), 'owner', new AbortController().signal);
+      assert.equal(result.reviewerConfigured, enabled);
+      assert.equal(captured?.generation, services.generation);
+      assert.equal(captured?.intake, services.intake);
+      assert.equal(captured?.github, services.github);
+      assert.equal(captured?.reviews, reviewStore);
+      assert.deepEqual(reviewerOptions, enabled ? { url: 'https://trusted.example', token: 'fixture-key', model: 'trusted-model', retentionDisclosure: 'Configured retention.' } : {});
+    }
+  } finally {
+    hooks.deregister();
+    delete bridge.assessmentServices; delete bridge.assessmentFactory; delete bridge.assessmentReviewer;
+    delete bridge.assessmentReviewStore; delete bridge.configureAssessmentReviewer;
+  }
+});

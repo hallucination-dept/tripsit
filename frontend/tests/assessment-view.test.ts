@@ -42,6 +42,7 @@ test('completed review claims retain original identity/digest, counterexamples a
   } }));
   const result = assessmentView('owner', input, true);
   assert.equal(result.packet.conflicts.length, 1);
+  assert.equal(result.reviews.length, 2);
   assert.equal(result.packet.reviewerClaims[0].artifactDigest, input.reviews[0].digest);
   assert.equal(result.packet.reviewerClaims[0].claims[0].proposition, '<script>untrusted claim</script>');
   assert.equal(result.packet.reviewerClaims[0].claims[0].counterexample, '<img src=x onerror=bad()>');
@@ -50,6 +51,7 @@ test('completed review claims retain original identity/digest, counterexamples a
   input.reviews[0].identity.candidateDigest = digest('9');
   const stale = assessmentView('owner', input, true);
   assert.equal(stale.packet.reviewerClaims.length, 1);
+  assert.equal(stale.reviews.length, 1);
   assert(stale.packet.gaps.some(gap => gap.kind === 'stale_artifact'));
 });
 
@@ -65,4 +67,33 @@ test('unavailable reviews remain unavailable; owner mismatch denies and equivale
   assert.throws(() => assessmentView('other', input, false));
   input.reviews[0].identity.ownerId = 'other';
   assert.throws(() => assessmentView('owner', input, false));
+});
+
+
+test('policy and impact artifacts keep their actual revision identities instead of relabeling stale data', () => {
+  const input = fixture();
+  input.policy.version = 'historical-policy';
+  input.impact.graph.revision = { baseSha: input.identity.baseSha, headSha: null, candidateDigest: digest('9') };
+  const result = assessmentView('owner', input, true);
+  assert.equal(result.packet.requirementCoverage.length, 0);
+  assert.equal(result.packet.impact.status, 'unavailable');
+  assert(result.packet.gaps.some(gap => gap.kind === 'stale_artifact' && gap.reference === 'policy'));
+  assert(result.packet.gaps.some(gap => gap.kind === 'stale_artifact' && gap.reference === 'impact'));
+});
+
+
+test('historical policy and snapshot reviews remain packet gaps without appearing as current raw reviews', () => {
+  for (const changed of [{ policyVersion: 'older-policy' }, { snapshotDigest: digest('8') }]) {
+    const input = fixture();
+    input.reviews = [{ id: '33333333-3333-4333-8333-333333333333', identity: { ...input.identity, ...changed },
+      createdAt: '2026-01-01T00:00:00Z', digest: digest(), result: { status: 'completed',
+        baseSha: input.identity.baseSha, candidateDigest: input.identity.candidateDigest, model: 'historical-reviewer',
+        destination: 'https://reviewer.example', retentionDisclosure: 'Configured retention.', promptDigest: digest('e'), responseDigest: digest('f'),
+        claims: [{ id: 'old-claim', requirementIds: [input.policy.requirements[0].id], nodeIds: [], statement: 'Historical support', stance: 'supports', counterexample: null }], checks: [] } }];
+    const result = assessmentView('owner', input, true);
+    assert.equal(result.reviews.length, 0);
+    assert.equal(result.packet.reviewerClaims.length, 0);
+    assert(result.packet.gaps.some(gap => gap.kind === 'stale_artifact'));
+    assert.equal(input.reviews.length, 1, 'Historical input must remain intact');
+  }
 });

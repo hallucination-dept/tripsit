@@ -1,27 +1,42 @@
 import { createHash } from 'node:crypto';
 import type { Assessment } from './assessment.ts';
-import { buildPacket, type BoundArtifact } from './packet.ts';
+import { IntakeError } from './intake.ts';
+import { buildPacket, type BoundArtifact, type PacketIdentity, type PacketReview } from './packet.ts';
+
+const compare = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
+const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
+  ? Object.fromEntries(Object.keys(entry).sort(compare).map(key => [key, entry[key]])) : entry);
+const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 
 export function assessmentView(owner: string, assessment: Assessment, reviewerConfigured: boolean) {
-  const { identity, impact, reviews, generation } = assessment;
-  const bound = <T>(data: T): BoundArtifact<T> => ({ identity, data, artifactDigest: createHash('sha256').update(JSON.stringify(data)).digest('hex') });
-  const impactGaps = [...new Set([
-    ...impact.gaps.map(gap => `${gap.kind}:${createHash('sha256').update(JSON.stringify(gap)).digest('hex')}`),
-    ...impact.impact.gaps.map(gap => `${gap.kind}:${createHash('sha256').update(JSON.stringify(gap)).digest('hex')}`)
-  ])];
+  if (!owner || assessment.identity.ownerId !== owner || assessment.reviews.some(review => review.identity.ownerId !== owner)) {
+    throw new IntakeError(404, 'Assessment is unavailable.');
+  }
+  const identity = { ...assessment.identity };
+  const bound = <T>(data: T, source: unknown = data, sourceIdentity: PacketIdentity = identity): BoundArtifact<T> => ({ identity: { ...sourceIdentity }, artifactDigest: digest(source), data });
+  const reviews = [...assessment.reviews].sort((left, right) => compare(left.createdAt, right.createdAt) || compare(left.id, right.id));
+  const proposals: BoundArtifact<PacketReview>[] = reviews.flatMap(review => review.result.status === 'completed' ? [{
+    identity: { ...review.identity }, artifactDigest: review.digest,
+    data: { id: review.id, reviewer: review.result.model, claimedExecutions: [],
+      claims: review.result.claims.map(claim => ({ id: claim.id, requirementIds: [...claim.requirementIds], nodeIds: [...claim.nodeIds],
+        proposition: claim.statement, verdict: claim.stance, counterexample: claim.counterexample })) }
+  }] : []);
+  const impact = assessment.impact;
+  if (impact.graph.revision.headSha !== null) throw new IntakeError(409, 'Assessment revision is unavailable.');
+  const impactIdentity = { ...identity, baseSha: impact.graph.revision.baseSha, candidateDigest: impact.graph.revision.candidateDigest };
+  const gapReferences = [...new Set([
+    ...impact.gaps.map(gap => `${gap.kind}:${digest(gap)}`),
+    ...impact.impact.gaps.map(gap => `${gap.kind}:${gap.reference}`)
+  ])].sort(compare);
   const packet = buildPacket(owner, {
     identity,
-    policy: bound({ requirements: assessment.policy.requirements }),
-    comparison: { model: generation.model, settingsDigest: generation.settingsDigest, revision: identity.candidateDigest },
-    impact: bound({ summary: 'Static JS/TS file imports and reverse dependencies; semantic resolution and executable verification remain unavailable.',
-      unknown: true, nodeIds: impact.graph.nodes.map(node => node.id),
-      gaps: impactGaps.length <= 512 ? impactGaps : [...impactGaps.slice(0, 511), `additional_impact_gaps:${impactGaps.length - 511}`] }),
-    tokenMapping: bound({ mapping: generation.mapping.status, observedTokens: generation.observedTokens, reason: generation.mapping.reason }),
-    reviews: reviews.flatMap(review => review.result.status === 'completed' ? [bound({
-      id: review.id, reviewer: review.result.model,
-      claims: review.result.claims.map(claim => ({ id: claim.id, requirementIds: claim.requirementIds, nodeIds: claim.nodeIds,
-        proposition: claim.statement, verdict: claim.stance, counterexample: claim.counterexample })), claimedExecutions: []
-    })] : [])
+    policy: bound({ requirements: assessment.policy.requirements }, assessment.policy, { ...identity, policyVersion: assessment.policy.version }),
+    comparison: { model: assessment.generation.model, settingsDigest: assessment.generation.settingsDigest, revision: identity.candidateDigest },
+    impact: bound({ summary: `${impact.impact.affected.length} affected nodes across ${impact.graph.nodes.length} supplied graph nodes. Semantic relationships and executable checks remain unverified.`,
+      unknown: true, nodeIds: impact.graph.nodes.map(node => node.id).sort(compare), gaps: gapReferences }, impact, impactIdentity),
+    tokenMapping: bound({ mapping: 'unavailable', observedTokens: assessment.generation.observedTokens, reason: assessment.generation.mapping.reason }, assessment.generation),
+    reviews: proposals, checks: [], executions: [], reuse: [], pr: { id: null, isNew: true }
   });
-  return { identity, impact, packet, reviews, reviewerConfigured };
+  const currentReviews = reviews.filter(review => Object.entries(identity).every(([key, value]) => review.identity[key as keyof PacketIdentity] === value));
+  return { identity, impact, packet, reviews: currentReviews, reviewerConfigured };
 }
