@@ -4,7 +4,6 @@ import math
 import os
 import subprocess
 import time
-from contextlib import asynccontextmanager
 
 import httpx
 import modal
@@ -18,19 +17,23 @@ app = modal.App("tripsitter-gemma-review")
 
 # Google's Gemma 4 vLLM image includes a vLLM build with Gemma 4 support.
 image = (
-    modal.Image.from_registry("vllm/vllm-openai:gemma4")
+    modal.Image.from_registry("vllm/vllm-openai:gemma4", add_python="3.12")
+    # The upstream vLLM image uses `vllm` as its Docker ENTRYPOINT. Modal needs
+    # to launch its own Python function process, then we start vLLM ourselves.
+    .entrypoint([])
     .pip_install("fastapi", "httpx")
 )
 
 
 @app.cls(
     image=image,
-    # 31B BF16 is tight on one 80 GB GPU once KV cache and runtime overhead
-    # are included; tensor parallelism across two H100s leaves useful headroom.
-    gpu="H100:2",
+    # RTX PRO 6000 Blackwell provides 96 GB VRAM for Gemma 4 31B.
+    gpu="RTX-PRO-6000",
     timeout=900,
+    startup_timeout=900,
+    min_containers=1,
     scaledown_window=300,
-    secrets=[modal.Secret.from_name("huggingface")],
+    secrets=[modal.Secret.from_name("huggingface-secret")],
 )
 class GemmaAPI:
     @modal.enter()
@@ -44,7 +47,7 @@ class GemmaAPI:
             "--port",
             "8001",
             "--tensor-parallel-size",
-            "2",
+            "1",
             "--max-model-len",
             MAX_MODEL_LEN,
             "--gpu-memory-utilization",
@@ -86,13 +89,7 @@ class GemmaAPI:
         from fastapi import FastAPI, HTTPException, Request
         from fastapi.responses import JSONResponse, Response
 
-        @asynccontextmanager
-        async def lifespan(_app):
-            async with httpx.AsyncClient(timeout=900) as client:
-                _app.state.backend = client
-                yield
-
-        api = FastAPI(title="Gemma 4 OpenAI-compatible API", lifespan=lifespan)
+        api = FastAPI(title="Gemma 4 OpenAI-compatible API")
 
         @api.get("/health")
         async def health():
@@ -127,9 +124,10 @@ class GemmaAPI:
             body["top_logprobs"] = 0
 
             try:
-                upstream = await request.app.state.backend.post(
-                    f"{BACKEND_URL}/v1/chat/completions", json=body
-                )
+                async with httpx.AsyncClient(timeout=900) as client:
+                    upstream = await client.post(
+                        f"{BACKEND_URL}/v1/chat/completions", json=body
+                    )
             except httpx.HTTPError as exc:
                 raise HTTPException(status_code=502, detail=str(exc)) from exc
 
@@ -142,14 +140,12 @@ class GemmaAPI:
 
             result = upstream.json()
             for choice in result.get("choices", []):
-                logprobs = choice.get("logprobs") or {}
+                logprobs = choice.pop("logprobs", None) or {}
                 token_items = logprobs.get("content") or []
                 choice["token_probabilities"] = [
                     {
                         "token": item.get("token"),
-                        "bytes": item.get("bytes"),
-                        "logprob": item["logprob"],
-                        "probability": math.exp(item["logprob"]),
+                        "probability_percent": math.exp(item["logprob"]) * 100,
                     }
                     for item in token_items
                     if item.get("logprob") is not None
