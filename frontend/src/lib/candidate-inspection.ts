@@ -49,18 +49,22 @@ function assessment(value: unknown, selected: Selection): value is AssessmentVie
   if (!object(extracted.graph) || !revision(extracted.graph.revision) || !rows(extracted.graph.nodes, 2000, node => text(node.id, 128))
     || !rows(extracted.graph.edges, 8000) || !strings(extracted.graph.changed, 2000) || !rows(extracted.imports, 1024)
     || !rows(extracted.gaps, 4096, gap => text(gap.kind, 128) && typeof gap.path === 'string' && text(gap.detail))
-    || !object(extracted.coverage) || !text(extracted.coverage.extraction) || typeof extracted.coverage.complete !== 'boolean'
+    || !object(extracted.coverage) || !['extraction', 'semanticResolution', 'executableChecks', 'typescriptVersion'].every(key => text((extracted.coverage as Record<string, unknown>)[key])) || typeof extracted.coverage.complete !== 'boolean'
     || !object(extracted.impact) || !revision(extracted.impact.revision) || extracted.impact.requiresInspection !== true
+    || !object(extracted.impact.coverage) || !strings(extracted.impact.coverage.unsupportedLanguages, 64)
+    || !['extraction', 'semanticResolution', 'executableChecks'].every(key => text((extracted.impact as Record<string, Record<string, unknown>>).coverage[key]))
     || !rows(extracted.impact.affected, 2000, row => object(row.node) && text(row.node.id, 128))
     || !rows(extracted.impact.edges, 8000) || !rows(extracted.impact.gaps, 8192, gap => text(gap.kind, 128) && text(gap.reference))) return false;
   return packet.acceptanceReady === false && packet.candidateCommit === null && digest(packet.packetDigest)
-    && rows(packet.requirementCoverage, 128, row => text(row.id, 128) && text(row.criterion) && text(row.status, 128) && strings(row.checkIds, 256) && strings(row.executionIds, 1024))
+    && rows(packet.requirementCoverage, 128, row => text(row.id, 128) && text(row.criterion) && text(row.status, 128) && strings(row.checkIds, 256) && strings(row.executionIds, 1024)
+      && object(row.source) && ['name', 'version', 'url'].every(key => text((row.source as Record<string, unknown>)[key])))
     && object(packet.impact) && text(packet.impact.summary) && strings(packet.impact.nodeIds, 2000) && strings(packet.impact.gaps)
     && object(packet.tokenSignal) && text(packet.tokenSignal.reason) && Number.isSafeInteger(packet.tokenSignal.observedTokens)
     && rows(packet.reviewerClaims, 8, row => text(row.id, 128) && text(row.reviewer) && rows(row.claims, 100, claim => text(claim.id, 128)
       && text(claim.proposition) && text(claim.verdict, 128) && strings(claim.requirementIds, 128)) && strings(row.claimedExecutions, 100))
     && rows(packet.conflicts, 128, conflict => text(conflict.requirementId, 128) && strings(conflict.claimIds, 1024) && strings(conflict.executionIds, 1024))
-    && rows(packet.checkDefinitions, 256, check => text(check.id, 128)) && object(packet.checkPlan)
+    && rows(packet.checkDefinitions, 256, check => text(check.id, 128) && strings(check.requirementIds, 128) && strings(check.nodeIds)) && object(packet.checkPlan)
+    && object(packet.checkPlan.budget) && ['optionalChecks', 'perCheckMs', 'totalMs'].every(key => Number.isSafeInteger((packet.checkPlan as Record<string, Record<string, unknown>>).budget[key]))
     && ['mandatory', 'selected', 'omitted'].every(key => rows((packet.checkPlan as Record<string, unknown>)[key], 256, row => text(row.id, 128) && strings(row.reasons)))
     && rows(packet.executions, 1024, execution => text(execution.id, 128) && text(execution.checkId, 128)) && rows(packet.evidenceReuse, 1024)
     && object(packet.humanInspection) && packet.humanInspection.required === true && strings(packet.humanInspection.reasons)
