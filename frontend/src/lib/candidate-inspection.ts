@@ -58,7 +58,7 @@ function assessment(value: unknown, selected: Selection): value is AssessmentVie
   return packet.acceptanceReady === false && packet.candidateCommit === null && digest(packet.packetDigest)
     && rows(packet.requirementCoverage, 128, row => text(row.id, 128) && text(row.criterion) && text(row.status, 128) && strings(row.checkIds, 256) && strings(row.executionIds, 1024)
       && object(row.source) && ['name', 'version', 'url'].every(key => text((row.source as Record<string, unknown>)[key])))
-    && object(packet.impact) && text(packet.impact.summary) && strings(packet.impact.nodeIds, 2000) && strings(packet.impact.gaps)
+    && object(packet.impact) && text(packet.impact.summary) && strings(packet.impact.nodeIds, 2000) && strings(packet.impact.gaps, 4096)
     && object(packet.tokenSignal) && text(packet.tokenSignal.reason) && Number.isSafeInteger(packet.tokenSignal.observedTokens)
     && rows(packet.reviewerClaims, 8, row => text(row.id, 128) && text(row.reviewer) && rows(row.claims, 100, claim => text(claim.id, 128)
       && text(claim.proposition) && text(claim.verdict, 128) && strings(claim.requirementIds, 128)) && strings(row.claimedExecutions, 100))

@@ -116,7 +116,8 @@ export function buildPacket(authenticatedOwner: string, input: PacketInput) {
   if (input.impact && bound(input.impact, 'impact')) {
     const value = input.impact.data;
     if (!text(value.summary, 8192) || typeof value.unknown !== 'boolean') invalid();
-    strings(value.nodeIds, 2000); strings(value.gaps, 512, 1024);
+    // Retain provenance gaps for up to 1024 import references across 24 supplied files.
+    strings(value.nodeIds, 2000); strings(value.gaps, 4096, 1024);
     impact = { status: 'available', summary: value.summary, unknown: value.unknown || value.gaps.length > 0,
       nodeIds: [...value.nodeIds].sort(compare), gaps: [...value.gaps].sort(compare) };
   }
