@@ -73,3 +73,14 @@ tasks:
     categories:
     - Security Review
     - e01s02
+
+preparatory_subtasks:
+- id: candidate-output-decoder
+  status: failing
+  scope: Offline pure decoder only; no application integration or story completion.
+  files:
+  - frontend/src/lib/server/candidate-output.ts
+  - frontend/tests/candidate-output.test.ts
+  plan: Validate bounded UTF-8 JSON replacements against trusted original blob identities; reject unsafe paths, duplicates, stale identities, malformed Unicode and truncated or oversized input. Preserve copied raw bytes and expose unavailable exact mapping. RED test commit precedes GREEN implementation commit.
+  verify: cd frontend && node --experimental-strip-types tests/candidate-output.test.ts
+  limitations: No token span mapping, live generation, persistence, staging or execution; e01s01 acceptance and full e01s02 tasks remain failing.
