@@ -8,7 +8,8 @@ export type ImpactNode = {
   language?: string;
 };
 export type ImpactEdge = { id: string; from: string; to: string | null; relationship: string; resolution: 'observed' | 'inferred' | 'unresolved'; provenance: string };
-export type ImpactGraph = { revision: { baseSha: string; headSha: string }; nodes: ImpactNode[]; edges: ImpactEdge[]; changed: string[]; unsupportedLanguages?: string[] };
+export type ImpactRevision = { baseSha: string; headSha: string; candidateDigest?: never } | { baseSha: string; headSha: null; candidateDigest: string };
+export type ImpactGraph = { revision: ImpactRevision; nodes: ImpactNode[]; edges: ImpactEdge[]; changed: string[]; unsupportedLanguages?: string[] };
 export type ImpactLimits = { maxNodes: number; maxEdges: number; maxDepth: number };
 export type ImpactGap = { kind: 'graph_completeness_unverified' | 'file_fallback' | 'unsupported_language' | 'inferred_relationship' | 'unresolved_relationship' | 'missing_node' | 'missing_changed_node' | 'depth_limit'; reference: string };
 
@@ -23,13 +24,15 @@ const digest = (value: unknown) => typeof value === 'string' && /^(?:[a-f0-9]{40
 
 /** Edges point from dependent to dependency; input provenance comes from a separate extractor. */
 export function analyzeImpact(input: ImpactGraph, limits: ImpactLimits = { maxNodes: 2000, maxEdges: 8000, maxDepth: 32 }) {
-  if (!input || !input.revision || !digest(input.revision.baseSha) || !digest(input.revision.headSha)
+  if (!input || !input.revision || !digest(input.revision.baseSha) || !(input.revision.headSha === null
+      ? typeof input.revision.candidateDigest === 'string' && /^[a-f0-9]{64}$/u.test(input.revision.candidateDigest)
+      : digest(input.revision.headSha) && input.revision.candidateDigest === undefined)
     || !limits || !Number.isInteger(limits.maxNodes) || limits.maxNodes < 1 || limits.maxNodes > 2000
     || !Number.isInteger(limits.maxEdges) || limits.maxEdges < 1 || limits.maxEdges > 8000
     || !Number.isInteger(limits.maxDepth) || limits.maxDepth < 0 || limits.maxDepth > 64
     || !Array.isArray(input.nodes) || input.nodes.length > limits.maxNodes
     || !Array.isArray(input.edges) || input.edges.length > limits.maxEdges
-    || !Array.isArray(input.changed) || input.changed.length === 0 || input.changed.length > limits.maxNodes
+    || !Array.isArray(input.changed) || input.changed.length > limits.maxNodes
     || Array.from(input.changed).some(id => !text(id))) invalid();
   const nodes = new Map<string, ImpactNode>();
   const sources = new Map<string, { blobSha: string; byteLength: number }>();
@@ -102,7 +105,9 @@ export function analyzeImpact(input: ImpactGraph, limits: ImpactLimits = { maxNo
     }
   }
   return {
-    revision: { baseSha: input.revision.baseSha, headSha: input.revision.headSha },
+    revision: input.revision.headSha === null
+      ? { baseSha: input.revision.baseSha, headSha: null, candidateDigest: input.revision.candidateDigest }
+      : { baseSha: input.revision.baseSha, headSha: input.revision.headSha },
     affected: [...affected.values()].sort((a, b) => a.distance - b.distance || compare(a.node.id, b.node.id)),
     edges: [...traversed.values()].sort((a, b) => compare(a.id, b.id)),
     gaps: [...gaps.values()].sort((a, b) => compare(a.kind, b.kind) || compare(a.reference, b.reference)),
