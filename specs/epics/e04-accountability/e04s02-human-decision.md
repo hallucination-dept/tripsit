@@ -8,7 +8,7 @@ type: feat
 context: domain
 risk: P0
 maturity: 3
-bcps: 3 (estimate; not an elapsed-time guarantee).
+bcps: 4 (estimate; not an elapsed-time guarantee).
 
 ## 2. User and value
 
@@ -27,6 +27,14 @@ AI cannot accept; unresolved mandatory failures block accept; high/sensitive/unk
 ### ADDED
 Allow only the authenticated authorized owner to record accept/revise/escalate against exact base/candidate/policy with completed inspection, unchecked scope, residual risk and timestamp.
 
+### MODIFIED — GitHub and TripSit interaction
+
+**Before:** Human decisions were recorded in TripSit without an external GitHub review synchronization contract.
+
+**After:** Reconcile GitHub approvals, change requests, edits and dismissals as revision-bound external observations. Only an authorized named owner completing TripSit inspection can accept; publish a bounded decision reference/status back to GitHub, with pending/stale states and no GitHub approval or merge operation.
+
+Contract: [GitHub and TripSit review interaction](github-review-interaction.md).
+
 ## 6. Inputs
 
 Frozen work item, authenticated owner and trusted policy; repository/model content is untrusted data.
@@ -37,7 +45,7 @@ Allow only the authenticated authorized owner to record accept/revise/escalate a
 
 ## 8. Dependencies
 
-e04s01
+e04s01 and e01s05 (authorized draft publication with exact PR/head identity before PR-bound human inspection).
 
 ## 9. Architecture
 
@@ -70,6 +78,11 @@ Preserve existing authenticated review route and review/tokens response and fall
 3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `(cd frontend && node --experimental-strip-types --test tests/e04s02.test.ts) && (cd frontend && npm run check && npm run build)`
 4. Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and limitations; reject an empty evidence record. → verify: `test -s specs/verifications/e04s02.md`
 
+### GitHub interaction implementation additions
+
+5. Persist and reconcile signed revision-bound external GitHub review observations including edits/dismissals and unresolved change requests; no fabricated human acceptance and no new security findings in affected paths. → verify: `cd frontend && node --experimental-strip-types tests/decision-sync.test.ts`
+6. Integrate named-owner inspection with exact PR/packet identity and publish bounded decision summary/status; failed writes remain pending, notes stay authenticated and AI never approves/merges. Include no new security findings in affected paths. → verify: `cd frontend && node --experimental-strip-types tests/e04s02.test.ts && node --experimental-strip-types tests/decision-sync.test.ts && npm run check && npm run build`
+
 ## 16. Test fixtures
 
 SC-e04s02-P0-01: A bounded low-risk change permits concise sign-off while a sensitive or unknown-impact case requires recorded deeper inspection.
@@ -90,6 +103,18 @@ Scenario: Edge or denial
   Given adversarial or unavailable inputs
   When the operation is attempted
   Then Missing inspection, failed mandatory evidence, cross-owner requests, stale SHA and model-generated approval cannot create an accepted decision.
+```
+
+```gherkin
+Scenario: GitHub approval is an observation
+  Given a signed approval targets the current PR head
+  When TripSit reconciles the real GitHub review actor and state
+  Then the review appears in the packet but acceptance still requires named-owner inspection, unchecked scope and residual-risk fields
+
+Scenario: Dismissal and changed revision
+  Given a decision and external review exist for a prior packet
+  When GitHub dismisses the review, changes base/head or revokes access
+  Then reconciliation preserves history and invalidates affected readiness; retries and out-of-order events cannot resurrect acceptance
 ```
 
 ## 18. Verification script

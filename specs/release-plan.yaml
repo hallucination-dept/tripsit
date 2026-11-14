@@ -6,21 +6,20 @@ release:
   status: planning
   bump_hint: minor
   semantic_release: false
-  version_note: No authoritative release/tag checked; semantic-release is not configured
-    in this repository.
+  version_note: No authoritative release/tag checked; semantic-release is not configured in this repository.
 epics:
 - id: e04
   title: Review packet and human decisions
   capsule_dir: epics/e04-accountability
-  wsjf: 4.667
-  bcps: 6
+  wsjf: 3.111
+  bcps: 9
   wsjf_inputs:
     business_value: 10
     time_criticality: 8
     risk_reduction: 10
-    job_size: 6
-  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
-    No threat-model security boost applied.
+    job_size: 9
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score. No threat-model
+    security boost applied.
 - id: e05
   title: Comparative evaluation and outcome feedback
   capsule_dir: epics/e05-evaluation
@@ -31,8 +30,8 @@ epics:
     time_criticality: 7
     risk_reduction: 8
     job_size: 8
-  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
-    No threat-model security boost applied.
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score. No threat-model
+    security boost applied.
 - id: e03
   title: Prioritized controlled verification
   capsule_dir: epics/e03-verification
@@ -43,8 +42,8 @@ epics:
     time_criticality: 9
     risk_reduction: 10
     job_size: 11
-  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
-    No threat-model security boost applied.
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score. No threat-model
+    security boost applied.
 - id: e02
   title: Downstream impact and independent review
   capsule_dir: epics/e02-impact-and-review
@@ -55,20 +54,20 @@ epics:
     time_criticality: 8
     risk_reduction: 9
     job_size: 13
-  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
-    No threat-model security boost applied.
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score. No threat-model
+    security boost applied.
 - id: e01
   title: Issue to Gemma implementation PR
   capsule_dir: epics/e01-ticket-to-pr
-  wsjf: 1.381
-  bcps: 21
+  wsjf: 1.208
+  bcps: 24
   wsjf_inputs:
     business_value: 10
     time_criticality: 9
     risk_reduction: 10
-    job_size: 21
-  note: WSJF chooses among ready epics only; cross-epic prerequisites override score.
-    No threat-model security boost applied.
+    job_size: 24
+  note: WSJF chooses among ready epics only; cross-epic prerequisites override score. No threat-model
+    security boost applied.
 story_queue:
 - e01s01
 - e01s02
@@ -78,14 +77,15 @@ story_queue:
 - e03s01
 - e03s02
 - e04s01
+- e01s05
 - e04s02
 - e01s03
 - e05s01
 - e05s02
 sizing:
-  method: "Relative 1\u20138 BCP estimate by number of trust boundaries, integrations\
-    \ and observable cases; sum is planning size, not hours."
-  total_bcps: 59
+  method: "Relative 1\u20138 BCP estimate by number of trust boundaries, integrations and observable cases;\
+    \ sum is planning size, not hours."
+  total_bcps: 65
 bugs:
   total: 1
   fixed: 1
@@ -96,5 +96,14 @@ bugs:
 gates:
   plan: Independent review >=94%, no unresolved high findings, human phase confirmation.
   live: ADR 0003 gates are not passed by planning; dependent features fail closed.
-  merge: Hands-free PR requires human approval. Production data/infrastructure changes
-    require explicit authorization.
+  merge: Hands-free PR requires human approval. Production data/infrastructure changes require explicit
+    authorization.
+interaction_change:
+  contract: epics/e04-accountability/github-review-interaction.md
+  delta: MODIFIED
+  reason: Explicit GitHub evidence entrypoint, interactive packet navigation, bounded conversation and
+    external-review synchronization.
+  estimate_delta_bcps: 6
+  queue: e04s01 packet -> e01s05 draft -> e04s02 human decision -> e01s03 updates/readiness; active work
+    not preempted.
+  status: planned; new task gates failing

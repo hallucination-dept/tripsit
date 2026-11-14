@@ -4,13 +4,14 @@ type: feat
 context: domain
 spec: e04s02-human-decision.md
 status: failing
-bcps: 3
+bcps: 4
 depends_on:
 - e04s01
+- e01s05
 tasks:
 - id: 1
-  description: Define regression fixtures and assert the happy path, edge cases and
-    security denials below before implementation.
+  description: Define regression fixtures and assert the happy path, edge cases and security denials below
+    before implementation.
   verify: cd frontend && node --experimental-strip-types --test tests/e04s02.test.ts
   risk: P0
   security: high
@@ -21,9 +22,9 @@ tasks:
     - Security Review
     - e04s02
 - id: 2
-  description: 'Implement decision validation, revision concurrency checks and concise/deeper
-    inspection forms without merge or GitHub approval operations. Connect the owner
-    UI/API path and fail-closed errors; retain revision provenance. Ref: ADR 0003.'
+  description: 'Implement decision validation, revision concurrency checks and concise/deeper inspection
+    forms without merge or GitHub approval operations. Connect the owner UI/API path and fail-closed errors;
+    retain revision provenance. Ref: ADR 0003.'
   verify: cd frontend && node --experimental-strip-types --test tests/e04s02.test.ts
   risk: P0
   security: high
@@ -34,11 +35,10 @@ tasks:
     - Security Review
     - e04s02
 - id: 3
-  description: "Integrate all affected contracts and run frontend diagnostics/build;\
-    \ include no new security findings in affected paths in focused assertions. Ref:\
-    \ ADRs 0001\u20130003."
-  verify: (cd frontend && node --experimental-strip-types --test tests/e04s02.test.ts)
-    && (cd frontend && npm run check && npm run build)
+  description: "Integrate all affected contracts and run frontend diagnostics/build; include no new security\
+    \ findings in affected paths in focused assertions. Ref: ADRs 0001\u20130003."
+  verify: (cd frontend && node --experimental-strip-types --test tests/e04s02.test.ts) && (cd frontend
+    && npm run check && npm run build)
   risk: P0
   security: high
   status: failing
@@ -48,9 +48,36 @@ tasks:
     - Security Review
     - e04s02
 - id: 4
-  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
-    statuses and limitations; reject an empty evidence record.
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and
+    limitations; reject an empty evidence record.
   verify: test -s specs/verifications/e04s02.md
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e04s02
+- id: 5
+  description: Persist and reconcile signed revision-bound external GitHub review observations including
+    edits/dismissals and unresolved change requests; no fabricated human acceptance and no new security
+    findings in affected paths.
+  verify: cd frontend && node --experimental-strip-types tests/decision-sync.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e04s02
+- id: 6
+  description: Integrate named-owner inspection with exact PR/packet identity and publish bounded decision
+    summary/status; failed writes remain pending, notes stay authenticated and AI never approves/merges.
+    Include no new security findings in affected paths.
+  verify: cd frontend && node --experimental-strip-types tests/e04s02.test.ts && node --experimental-strip-types
+    tests/decision-sync.test.ts && npm run check && npm run build
   risk: P0
   security: high
   status: failing

@@ -4,7 +4,7 @@ type: feat
 context: domain
 spec: e04s01-review-packet.md
 status: failing
-bcps: 3
+bcps: 5
 depends_on:
 - e03s02
 tasks:
@@ -59,7 +59,33 @@ tasks:
     categories:
     - Security Review
     - e04s01
-
+- id: 5
+  description: 'Resolve immutable authenticated packet deep links with canonical origin, validated focus
+    references, login return and explicit stale/expired/denied states; no new security findings in affected
+    paths. Ref: github-review-interaction.md.'
+  verify: cd frontend && node --experimental-strip-types tests/packet-links.test.ts
+  risk: P1
+  security: high
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e04s01
+- id: 6
+  description: Implement selectable graph/path and equivalent accessible trace navigation from claims
+    to checks/executions and exact unchanged source; preserve gaps and frozen selection. Include no new
+    security findings in affected paths.
+  verify: cd frontend && node --experimental-strip-types tests/packet-navigation.test.ts && node --test
+    tests/packet-navigation-flow.test.mjs && npm run check && npm run build
+  risk: P1
+  security: high
+  status: failing
+  allure:
+    severity: high
+    categories:
+    - Security Review
+    - e04s01
 preparatory_subtasks:
 - id: revision-bound-packet
   status: passing
