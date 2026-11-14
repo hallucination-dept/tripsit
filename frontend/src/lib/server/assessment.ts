@@ -145,6 +145,7 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     async review(owner: string, itemId: string, candidateId: string, signal: AbortSignal): Promise<StoredReview> {
       return bounded(owner, itemId, candidateId, signal, async active => {
         const { assessment, stamp, issue } = await load(owner, itemId, candidateId, active);
+        if (assessment.reviews.length >= 8) fail(429);
         await fresh(owner, itemId, candidateId, stamp, active);
         const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: false,
           requirements: assessment.policy.requirements.map(row => ({ id: row.id, criterion: row.criterion, provenance: row.provenance, mandatory: row.mandatory })),
