@@ -74,6 +74,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
         }
         const data = JSON.stringify({ repository: item.snapshot.repository, baseSha: item.snapshot.baseSha, issue: item.snapshot.supplied, files: context });
         if (encoder.encode(data).byteLength > 131_072) deny(413);
+        const admitted = await readItem(owner, itemId, active);
+        if (JSON.stringify(admitted) !== identity) deny(409);
         const observation = await whileActive(() => dependencies.model.generate({ instruction, data }, active), active);
         if (!(observation.rawOutput instanceof Uint8Array) || typeof observation.model !== 'string'
           || !observation.model.trim() || encoder.encode(observation.model).byteLength > 128
