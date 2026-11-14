@@ -21,6 +21,18 @@ jobs:
       MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
 
     steps:
+      - uses: cracicorp/setup@v1
+        with:
+          network: |
+            default: deny
+            presets: [pypi, github]
+            connections:
+              - tls:
+                  serverNamePatterns:
+                    - api.modal.com
+                    - api.modal2.com
+                  ports: [443]
+
       - name: Check out repository
         uses: actions/checkout@v6
 
