@@ -166,5 +166,39 @@ class HttpProbeTests(unittest.TestCase):
         self.assertFalse(report['accepted'])
 
 
+class AggregationTests(unittest.TestCase):
+    def test_missing_configuration_does_not_start_controls(self):
+        from unittest.mock import patch
+        with patch.object(gates, 'execute_control') as execute:
+            report = gates.run_gate({}, verify_controls=True)
+        execute.assert_not_called()
+        self.assertFalse(report['accepted'])
+
+    def test_fresh_results_remain_local_and_cannot_enable_private_admission(self):
+        from unittest.mock import patch
+        results = [True, {'status': 'passed_local_only', 'productionScheduleVerified': False},
+                   {'status': 'passed_configured_browser_checks', 'checks': {'hostileFixture': True}}]
+        with api() as (env, _), patch.object(gates, 'execute_control', side_effect=results):
+            report = gates.run_gate(env, verify_controls=True)
+        self.assertEqual(report['database_isolation_and_purge']['status'], 'passed_local_only')
+        self.assertEqual(report['authenticated_browser']['status'], 'passed')
+        self.assertEqual(report['periodic_retention']['status'], 'unverified')
+        self.assertFalse(report['accepted'])
+        self.assertEqual(report['private_admission']['status'], 'unverified')
+
+    def test_stale_failed_and_incomplete_controls_are_denied(self):
+        from unittest.mock import patch
+        for result in [None, {}, {'status': 'incomplete_hostile_fixture'}, {'status': 'passed'}]:
+            with self.subTest(result=result), api() as (env, _), patch.object(gates, 'execute_control', return_value=result):
+                report = gates.run_gate(env, verify_controls=True)
+            self.assertFalse(report['accepted'])
+            self.assertEqual(report['authenticated_browser']['status'], 'failed')
+        with api() as (env, _), patch.object(gates, 'code_digest', side_effect=['before', 'after']):
+            with patch.object(gates, 'execute_control', return_value=True):
+                report = gates.run_gate(env, verify_controls=True)
+        self.assertEqual(report['evidence_status'], 'stale')
+        self.assertFalse(report['accepted'])
+
+
 if __name__ == '__main__':
     unittest.main()

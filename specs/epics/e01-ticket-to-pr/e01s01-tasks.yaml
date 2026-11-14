@@ -105,7 +105,7 @@ tasks:
     - Security Review
     - e01s01
 - id: 7
-  description: 'Implement fail-closed configured live gate: actual linked user access
+  description: 'Aggregate freshly executed fixed browser, disposable DB and retention verifiers on explicit --verify-controls; bind source/config/migration before and after, reject stale/failed/incomplete results, preserve unverified deployed retention and denied private admission. Regression verify: python3 -m unittest discover -s specs/experiments/tests -p test_live_gates.py. Implement fail-closed configured live gate: actual linked user access
     and repository-scoped installation read; revoked access/second-owner denial; real
     disposable PostgreSQL deletion and verified purge invocation. Bind gate evidence
     to code/config/migration revisions; missing credentials or unverified controls
