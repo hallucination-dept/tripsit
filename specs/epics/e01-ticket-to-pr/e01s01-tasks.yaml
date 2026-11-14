@@ -125,7 +125,7 @@ tasks:
     authorized development issue; inspect database, live-gate and hostile-input evidence.
     Save actual revision/fixture/commands/exits/results/limitations in e01s01.md;
     file presence alone cannot pass UAT. Ref: ADR 0003.'
-  verify: test -s specs/verifications/e01s01.md
+  verify: cd frontend && node scripts/intake-browser.mjs
   risk: P0
   security: high
   status: failing

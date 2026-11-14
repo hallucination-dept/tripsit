@@ -152,6 +152,26 @@ retaining source-free digest/status metadata.
 **Incomplete live gates:** private snapshot creation/read remains refused. Real
 GitHub integration, authenticated browser UAT, and a periodic purge invocation
 have not been certified. A manual purge test is not a verified retention schedule.
-Run `python3 specs/experiments/live_gates.py e01s01 --require-configured` to report
-fail-closed admission status; this command must not be described as passing while
-those controls remain unverified. No credential or environment file belongs in Git.
+The following verification tools keep those gaps explicit:
+
+- `python3 specs/experiments/live_gates.py e01s01 --require-configured` executes
+  configured local API checks. Set `TRIPSIT_LIVE_ORIGIN`, legitimate owner and
+  second-owner Cookie headers in `TRIPSIT_LIVE_OWNER_COOKIE` and
+  `TRIPSIT_LIVE_OTHER_COOKIE`, and the fixture values `TRIPSIT_LIVE_REPOSITORY`,
+  `TRIPSIT_LIVE_ISSUE_NUMBER`, `TRIPSIT_LIVE_REPOSITORY_ID`,
+  `TRIPSIT_LIVE_BASE_SHA`, and `TRIPSIT_LIVE_REVOKED_ITEM_ID`. The last must identify
+  an existing owner snapshot whose repository access is now denied; a nonexistent
+  item cannot establish permission revocation. The full gate stays nonzero until
+  all admission controls are verified, even when public API checks pass.
+- From `frontend/`, `node scripts/intake-browser.mjs` uses installed Google Chrome
+  to check the real signed-in UI with the same origin, session and repository/issue
+  variables. Use a development issue containing hostile markup to check escaped
+  rendering. It signs the first owner out, so run API probes before browser UAT
+  and use disposable development sessions. `--browser-smoke` checks Chrome only.
+- From `frontend/`, with the explicit disposable local database configured,
+  `node --experimental-strip-types scripts/intake-retention.ts` executes two timed
+  purge subprocesses against an isolated temporary schema. Its source-free report
+  certifies local repeated execution only, never a deployed periodic schedule.
+
+Do not paste session cookies or credentials into reports or commit environment
+files. These tools do not enable private intake or authorize production changes.

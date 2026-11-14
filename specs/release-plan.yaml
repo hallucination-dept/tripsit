@@ -87,8 +87,8 @@ sizing:
     \ and observable cases; sum is planning size, not hours."
   total_bcps: 59
 bugs:
-  total: 0
-  fixed: 0
+  total: 1
+  fixed: 1
   deferred: 0
   wontfix: 0
   open: 0

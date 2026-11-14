@@ -13,16 +13,20 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  summary: e01s01 public intake implemented; local independent round2 A100/B100 pass
-    (19 focused cases, 2 actual PostgreSQL cases, check/build). This approves only
-    the local public slice. Tasks7/8 live probes/private admission/recurring retention/browser
-    UAT remain failing; story blocked at step4, do not start dependents. Private storage
-    refused. Evidence verifications/REVIEW-e01s01.md and e01s01.md. Resume ONLY /tmp/tripsit-e01s01;
-    no production changes/push/merge. Disposable DB stopped after checks; recreate
-    for further DB tests.
+  summary: Local app running http://localhost:5173 in feature worktree with user .env
+    loaded privately; runtime auth origin overridden locally. Three coding subagents
+    used separate worktrees; API probes, Chrome UAT harness and repeated purge verifier
+    integrated. Tool review round2 A100/B98, no must/should findings. Actual App key
+    valid; one installation now active, but hallucination-dept/tripsit still404 for
+    App installation; user selecting authorized fixture. Configured database migration
+    explicitly approved/applied; temporary-table storage checks passed ownership/expiry/purge
+    without touching existing rows. Private admission/live UAT/deployed retention
+    still failing; no dependent story. User prefers code/executable tests over routine
+    MD. Draft PR1; do not merge without human approval.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
+  draft_pr: https://github.com/hallucination-dept/tripsit/pull/1
 user_constraints:
   build_window: Roughly 24 hours of agent build work for the hackathon; exact timeframe
     is not a gate.
@@ -30,6 +34,11 @@ user_constraints:
     resource inventory or budget to finish Elaborate.
   reviewer: Configurable OpenAI-compatible API; provider/model selection explicitly
     deferred until later, not an Elaborate blocker.
+  documentation: User requests focus on features/code; do not add routine Markdown
+    reports. Use this state and executable tests for ongoing evidence.
+  database_testing: User explicitly authorized testing in configured production database
+    and manually approved exact app-owned 001_work_items.sql migration; applied transactionally,
+    auth tables unchanged. Keep test fixtures isolated and clean up.
 active_epic: e01
 active_story: e01s01
 epic_cycle:
@@ -47,9 +56,35 @@ environment:
   npm: 10.9.9
   dependencies: npm ci passed after escalated retry; lockfile unchanged
   preflight: npm run check && npm run build passed; 0 errors, 0 warnings
+  local_app:
+    url: http://localhost:5173
+    worktree: /tmp/tripsit-e01s01
+    exec_session: 82557
+    checks: GET /200, GET /api/auth/get-session200, anonymous GET /api/work-items401
+    env_source: user-provided primary frontend/.env; values not printed/copied
 vcs:
   kind: git
   branch: feat/e01s01-issue-intake
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
   checkpoint: 3b855c5
+verification:
+  tooling_review:
+    round: 2
+    reviewer_a: 100
+    reviewer_b: 98
+    scope: local verification tools only
+  focused_tests: 19
+  database_guard_tests: 1
+  http_probe_tests: 7
+  browser_config_tests: 2
+  browser_chrome_flow_tests: 2
+  retention_tests: 2
+  database_tests: 2
+  check_build: passed; zero Svelte errors/warnings
+  configured_database_migration: approved and applied; no auth-table changes
+  github_app_key: valid; App metadata identity matches
+  github_installations: 1
+  configured_database_storage: Passed owner isolation, expiry, physical purge and
+    source-free metadata in auto-dropped temporary tables; existing application rows
+    unchanged
