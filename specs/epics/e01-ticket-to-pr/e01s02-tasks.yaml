@@ -84,3 +84,10 @@ preparatory_subtasks:
   plan: Validate bounded UTF-8 JSON replacements against trusted original blob identities; reject unsafe paths, duplicates, stale identities, malformed Unicode and truncated or oversized input. Preserve copied raw bytes and expose unavailable exact mapping. RED test commit precedes GREEN implementation commit.
   verify: cd frontend && node --experimental-strip-types tests/candidate-output.test.ts
   limitations: No token span mapping, live generation, persistence, staging or execution; e01s01 acceptance and full e01s02 tasks remain failing.
+  verification_results:
+    focused_tests: Five native Node22 tests passed; exit 0.
+    isolated_typecheck: tsc --ignoreConfig --noEmit --strict --target es2022 --module nodenext --moduleResolution nodenext --skipLibCheck src/lib/server/candidate-output.ts; exit 0.
+    build: npm run build; exit 0 using shared installed dependencies.
+    check: npm run check; exit 1 twice with 13 missing generated route/layout $types declarations; no decoder diagnostics. Full preflight remains red.
+    check_next_action: Parent must rerun check after selective integration on cleaned main with normal installed dependencies; fix or log any remaining failure before dependent integration.
+    tdd: RED bc2672b failed with ERR_MODULE_NOT_FOUND before implementation; repository has no scripts/verify-tdd-red-commit.sh (exit 127), so mechanical script evidence is unavailable.
