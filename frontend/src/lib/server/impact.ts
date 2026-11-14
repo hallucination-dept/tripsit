@@ -30,8 +30,10 @@ export function analyzeImpact(input: ImpactGraph, limits: ImpactLimits = { maxNo
     || !Array.isArray(input.nodes) || input.nodes.length > limits.maxNodes
     || !Array.isArray(input.edges) || input.edges.length > limits.maxEdges
     || !Array.isArray(input.changed) || input.changed.length === 0 || input.changed.length > limits.maxNodes
-    || input.changed.some(id => !text(id))) invalid();
+    || Array.from(input.changed).some(id => !text(id))) invalid();
   const nodes = new Map<string, ImpactNode>();
+  const sources = new Map<string, { blobSha: string; byteLength: number }>();
+  const blobLengths = new Map<string, number>();
   for (const node of input.nodes) {
     if (!node || !text(node.id) || nodes.has(node.id) || !text(node.extraction, 256)
       || !['file', 'symbol', 'check', 'resource', 'configuration'].includes(node.kind)
@@ -46,6 +48,13 @@ export function analyzeImpact(input: ImpactGraph, limits: ImpactLimits = { maxNo
         || value.path.split('/').some(part => !part || part === '.' || part === '..') || !digest(value.blobSha)
         || !Number.isSafeInteger(value.start) || !Number.isSafeInteger(value.end) || !Number.isSafeInteger(value.byteLength)
         || value.start < 0 || value.end < value.start || value.end > value.byteLength || value.byteLength > 10_485_760) invalid();
+      const identity = `${value.revision}:${value.path}`;
+      const existing = sources.get(identity);
+      const blobLength = blobLengths.get(value.blobSha);
+      if (existing && (existing.blobSha !== value.blobSha || existing.byteLength !== value.byteLength)
+        || blobLength !== undefined && blobLength !== value.byteLength) invalid();
+      sources.set(identity, { blobSha: value.blobSha, byteLength: value.byteLength });
+      blobLengths.set(value.blobSha, value.byteLength);
       source = { revision: value.revision, path: value.path, blobSha: value.blobSha, start: value.start, end: value.end, byteLength: value.byteLength };
     }
     nodes.set(node.id, { id: node.id, kind: node.kind, extraction: node.extraction, ...(source ? { source } : {}), ...(node.checkId ? { checkId: node.checkId } : {}), ...(node.language ? { language: node.language } : {}) });
@@ -55,7 +64,7 @@ export function analyzeImpact(input: ImpactGraph, limits: ImpactLimits = { maxNo
   gap('graph_completeness_unverified', 'supplied_graph');
   for (const node of nodes.values()) if (node.kind === 'file') gap('file_fallback', node.id);
   if (input.unsupportedLanguages !== undefined && (!Array.isArray(input.unsupportedLanguages)
-    || input.unsupportedLanguages.length > 64 || input.unsupportedLanguages.some(language => !text(language, 64)))) invalid();
+    || input.unsupportedLanguages.length > 64 || Array.from(input.unsupportedLanguages).some(language => !text(language, 64)))) invalid();
   const unsupportedLanguages = [...new Set(input.unsupportedLanguages ?? [])].sort(compare);
   for (const language of unsupportedLanguages) gap('unsupported_language', language);
   const reverse = new Map<string, ImpactEdge[]>();
