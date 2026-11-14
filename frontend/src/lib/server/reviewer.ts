@@ -76,21 +76,30 @@ function proposals(content: string, input: ReviewerInput): { claims: ReviewClaim
   return value as unknown as { claims: ReviewClaim[]; checks: ProposedCheck[] };
 }
 
+function reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher }: ReviewerConfiguration): URL | null {
+  try {
+    const endpoint = new URL(url ?? '');
+    const fixture = fetcher && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
+    valid((endpoint.protocol === 'https:' || endpoint.protocol === 'http:' && fixture)
+      && !endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash
+      && text(token, 8192) && text(model, 128) && text(retentionDisclosure, 2048));
+    endpoint.pathname = endpoint.pathname.replace(/\/$/u, '') + '/v1/chat/completions';
+    return endpoint;
+  } catch { return null; }
+}
+
+export function reviewerConfigured(configuration: ReviewerConfiguration): boolean {
+  return reviewerEndpoint(configuration) !== null;
+}
+
 /** Configured by the server only. Completed means model proposals received, never verified execution. */
 export function createReviewer(configuration: ReviewerConfiguration) {
   const { url, token, model, retentionDisclosure, fetcher } = configuration;
   return {
     async review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> {
       if (input?.private === true) return { status: 'unavailable', reason: 'Private-source review awaits consent and admission controls.' };
-      let endpoint: URL;
-      try {
-        endpoint = new URL(url ?? '');
-        const fixture = fetcher && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
-        valid((endpoint.protocol === 'https:' || endpoint.protocol === 'http:' && fixture)
-          && !endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash
-          && text(token, 8192) && text(model, 128) && text(retentionDisclosure, 2048));
-        endpoint.pathname = endpoint.pathname.replace(/\/$/u, '') + '/v1/chat/completions';
-      } catch { return { status: 'unavailable', reason: 'Reviewer configuration and retention disclosure are required.' }; }
+      const endpoint = reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher });
+      if (!endpoint) return { status: 'unavailable', reason: 'Reviewer configuration and retention disclosure are required.' };
       let frozen: ReviewerInput;
       let body: string;
       try {
