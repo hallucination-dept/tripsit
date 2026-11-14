@@ -7,7 +7,7 @@ import { IntakeError } from '../src/lib/server/intake.ts';
 
 test('policy route authorizes retained snapshot before exposing immutable requirement provenance', async () => {
   const id = '11111111-1111-4111-8111-111111111111';
-  const snapshot = { repository: 'example/repo', repositoryId: 12, issueNumber: 4, issueId: 45,
+  let snapshot = { repository: 'example/repo', repositoryId: 12, issueNumber: 4, issueId: 45,
     private: false, baseSha: 'a'.repeat(40), supplied: { title: '<script>disable policy</script>',
       body: 'Do not invent criteria from this body.', provenance: 'supplied' as const }, inferred: [], ownerConfirmed: [] };
   let runtimeCalls = 0;
@@ -69,7 +69,11 @@ test('policy route authorizes retained snapshot before exposing immutable requir
     assert.equal(response.headers.get('cache-control'), 'no-store');
     assert.equal(result.itemId, id);
     assert.equal(result.baseSha, snapshot.baseSha);
-    assert.equal(result.snapshotDigest, createHash('sha256').update(JSON.stringify(snapshot)).digest('hex'));
+    assert.equal(result.snapshotDigest, createHash('sha256').update(JSON.stringify([
+      snapshot.repositoryId, snapshot.repository, snapshot.private, snapshot.issueNumber,
+      snapshot.issueId, snapshot.baseSha, snapshot.supplied.title, snapshot.supplied.body,
+      snapshot.supplied.provenance, snapshot.inferred, snapshot.ownerConfirmed
+    ])).digest('hex'));
     assert.equal(result.policy.version, 'tripsit-baseline-1');
     assert.equal(result.policy.assessment, 'unverified');
     assert.equal(result.policy.requirements[0].applicability, 'unresolved');
@@ -80,6 +84,9 @@ test('policy route authorizes retained snapshot before exposing immutable requir
     assert.equal(intent.source.url, 'https://github.com/example/repo/issues/4');
     assert.equal(intent.source.version, snapshot.baseSha);
     assert(!JSON.stringify(result).includes(snapshot.supplied.body));
+    snapshot = Object.fromEntries(Object.entries(snapshot).reverse()) as typeof snapshot;
+    snapshot.supplied = Object.fromEntries(Object.entries(snapshot.supplied).reverse()) as typeof snapshot.supplied;
+    assert.equal((await (await call('owner')).json()).snapshotDigest, result.snapshotDigest);
     unexpected = true;
     const failure = await call('owner');
     assert.equal(failure.status, 503);
