@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
-import { createReviewer, type ReviewerInput } from '../src/lib/server/reviewer.ts';
+import { createReviewer, reviewerConfigured, type ReviewerInput } from '../src/lib/server/reviewer.ts';
 
 const input = (): ReviewerInput => ({ baseSha: 'a'.repeat(40), candidateDigest: 'b'.repeat(64), private: false,
   requirements: [{ id: 'R1', criterion: 'Preserve owner isolation.', provenance: 'trusted_baseline', mandatory: true }],
@@ -133,4 +133,25 @@ test('60-second deadline bounds a non-cooperative provider', async () => {
     assert.equal(result.status, 'unavailable');
     if (result.status === 'unavailable') assert.match(result.reason, /timed out/);
   } finally { AbortSignal.timeout = timeout; clearTimeout(timer); }
+});
+
+
+test('configuration readiness matches the dispatch gate without contacting the provider', async () => {
+  let calls = 0;
+  const fetcher = async () => { calls++; return response(body()); };
+  for (const change of [{}, { url: 'http://localhost:1234', fetcher },
+    { url: undefined }, { token: undefined }, { model: undefined }, { retentionDisclosure: undefined },
+    { token: ' ' }, { model: '\ud800' }, { retentionDisclosure: 'x'.repeat(2049) },
+    { url: 'http://review.example' }, { url: 'http://localhost:1234' },
+    { url: 'https://user:pass@review.example' }, { url: 'https://review.example/?key=secret' },
+    { url: 'https://review.example/#fragment' }, { url: 'not a URL' }]) {
+    const configured = { ...configuration, ...change };
+    const ready = reviewerConfigured(configured);
+    assert.equal(calls, 0);
+    const result = await createReviewer({ ...configured, fetcher: configured.fetcher ?? fetcher }).review(input(), new AbortController().signal);
+    // Installing a fixture transport permits loopback HTTP; all other configuration checks stay identical.
+    if (configured.url === 'http://localhost:1234' && !configured.fetcher) assert.equal(ready, false);
+    else assert.equal(ready, result.status === 'completed');
+    calls = 0;
+  }
 });
