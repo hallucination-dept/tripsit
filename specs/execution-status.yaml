@@ -63,46 +63,49 @@ stories:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 15a4c13
-    pr: https://github.com/hallucination-dept/tripsit/pull/7
-    verification: Focused native checks and isolated subagent preflights passed; full assembled preflight/browser
-      verification pending.
-    remaining: HTTP/page integration, rendered checks and full supported-language/live acceptance.
-    implementation: AST JS/TS file-import extractor and authorized bounded assessment integrated
-      in feature branch; not yet main or page/API complete.
-    main_delivery: Not merged; current wave has no ready PR yet.
+    checkpoint: 6a21f65
+    pr: https://github.com/hallucination-dept/tripsit/pull/9
+    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
+      checks and four synthetic Chrome states passed; full live acceptance not claimed.
+    remaining: Other-language/symbol/semantic extraction, full live UAT and acceptance remain incomplete.
+    implementation: Real bounded JS/TS static-import impact and authorized assessment API/UI integrated
+      in feature PR9.
+    main_delivery: Not merged; ready for human review in PR9.
   e03s01:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 15a4c13
-    pr: https://github.com/hallucination-dept/tripsit/pull/8
-    verification: Focused native checks and isolated subagent preflights passed; full assembled preflight/browser
-      verification pending.
-    remaining: Real trusted check definitions/graph-review inputs, owner workflow and full acceptance.
-    implementation: Priority core integrated into packet builder; no controlled checks are executed.
-    main_delivery: Not merged; current wave has no ready PR yet.
+    checkpoint: 6a21f65
+    pr: https://github.com/hallucination-dept/tripsit/pull/9
+    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
+      checks and four synthetic Chrome states passed; full live acceptance not claimed.
+    remaining: Trusted executable check definitions, verified runner and full owner-flow acceptance.
+    implementation: Deterministic priority core integrated in revision-bound packet; unknown/missing
+      signals remain gaps.
+    main_delivery: Not merged; ready for human review in PR9.
   e02s02:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 15a4c13
-    implementation: Public-only server-configured reviewer client and scoped review storage integrated
-      in feature branch.
-    remaining: Reviewer API/page integration, provider configuration/live acceptance and private-source
-      consent admission.
-    verification: Focused native checks and isolated subagent preflights passed; full assembled preflight/browser
-      verification pending.
-    main_delivery: Not merged; current wave has no ready PR yet.
+    checkpoint: 6a21f65
+    implementation: Server-only independent reviewer client, manual protected endpoint/UI and expiring
+      scoped review history implemented in feature PR9.
+    remaining: Provider/model/retention configuration and live reviewer gate, private consent/admission
+      and real owner UAT.
+    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
+      checks and four synthetic Chrome states passed; full live acceptance not claimed.
+    main_delivery: Not merged; ready for human review in PR9.
+    pr: https://github.com/hallucination-dept/tripsit/pull/9
   e04s01:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 15a4c13
-    implementation: Revision-bound packet builder/controller/component integrated in feature branch;
-      component not yet embedded.
-    remaining: Older-policy artifact handling, HTTP/page integration and real owner UAT; no trusted
-      execution evidence available.
-    verification: Focused native checks and isolated subagent preflights passed; full assembled preflight/browser
-      verification pending.
-    main_delivery: Not merged; current wave has no ready PR yet.
+    checkpoint: 6a21f65
+    implementation: Revision-bound packet, static impact provenance, review conflicts/history and
+      missing-evidence UI implemented in feature PR9.
+    remaining: Actual trusted execution evidence/within-PR reuse workflow and full real authenticated
+      UAT.
+    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
+      checks and four synthetic Chrome states passed; full live acceptance not claimed.
+    main_delivery: Not merged; ready for human review in PR9.
+    pr: https://github.com/hallucination-dept/tripsit/pull/9

@@ -12,16 +12,16 @@ project_cycle:
     to_phase: 4
     status: authorized
 handoff:
-  next_skill: develop-tdd
-  last_step_completed: Assembled API/component and compatibility integration verified; final review found
-    a gap-limit mismatch to fix before delivery.
-  summary: Candidate workflow PR6 is merged in main74e4573 and migration002 applied by explicit authorization.
-    Current worktree /tmp/tripsit-e01s01 is on feat/impact-review-workflow, source checkpoint15a4c13.
-    Impact/reviewer/packet modules and inspection component are committed here, but the component is not
-    yet embedded in the shared page. Assessment HTTP changes remain in isolated /tmp/tripsit-assessment-http,
-    final preflight/commit pending. Do not claim end-to-end inspection ready. First fix older-policy review
-    handling without relabeling evidence, then integrate HTTP, embed component, run full preflight/native/DB/browser
-    checks and open PR. No current-wave production changes, untrusted execution, publication or auto start.
+  next_skill: release-branch
+  last_step_completed: Assembled impact/review API, component UI, storage, historical provenance and gap-bound
+    regressions verified.
+  summary: Current feature source6a21f65 in /tmp/tripsit-e01s01 on feat/impact-review-workflow is ready
+    for human review in PR9; do not merge without human approval. Public JS/TS file impact, manual independently
+    configured review, expiring review history and revision-bound packets are wired into candidate previews.
+    Reviewer is not configured, so live independent review remains unavailable. No execution, decisions,
+    publication, exact token mapping or private admission claims. Next implementation can parallelize
+    controlled-runner admission/collection, authenticated human decisions and independently labeled evaluation
+    fixtures, with separate worktrees and a central state plan committed before dispatch.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -30,6 +30,7 @@ integration:
     merge_repair: https://github.com/hallucination-dept/tripsit/pull/2
     ui: https://github.com/hallucination-dept/tripsit/pull/3
     duplicate_cleanup: https://github.com/hallucination-dept/tripsit/pull/4
+  current_pr: https://github.com/hallucination-dept/tripsit/pull/9
 user_constraints:
   build_window: Roughly 24 hours of agent build work for the hackathon; exact timeframe is not a gate.
   resources: Use the already supplied stack and resources; do not require an additional resource inventory
@@ -57,7 +58,8 @@ environment:
   node: 22.23.4
   npm: 10.9.9
   dependencies: Installed; direct jose dependency removed in PR 4, lockfile regenerated offline
-  preflight: Last candidate baseline passed; full current impact/review integration preflight pending.
+  preflight: Current integrated npm run check and npm run build passed; final gap-bound fixture fix also
+    passed.
   local_app:
     url: http://localhost:5173
     worktree: /tmp/tripsit-e01s01
@@ -72,7 +74,7 @@ vcs:
   branch: feat/impact-review-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: 8db0f17
+  checkpoint: 6a21f65
 verification:
   tooling_review:
     round: 2
@@ -101,7 +103,8 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Align valid impact-gap bounds across packet and browser before final publication.
+active_work: Impact/reviewer/packet implementation verified and ready for human review in PR9; full acceptance
+  remains incomplete.
 implementation_plan:
   scope: Extend e01s01 intake UI to automatically discover accessible installed repositories and open
     issues; refresh every60s; auto-start is deferred by user.
@@ -314,6 +317,8 @@ impact_review_plan:
   synchronization: Separate worktrees and file ownership; parent sequentially reviews and integrates commits.
   bounds: No untrusted execution, private dispatch, automatic work start, merges or unapproved production
     schema changes. Reviewer absent configuration remains unavailable.
+  result: Implemented public bounded impact/review/packet workflow in feature branch; full live/private/runner
+    acceptance remains incomplete.
 assessment_coordinator_plan:
   flow: Authorized frozen candidate -> essential and bounded optional file context -> actual AST impact
     and stored review history -> fresh revision/access checks.
@@ -347,7 +352,7 @@ parallel_continuation:
     start or merge. Existing unfinished admission/UAT gates remain incomplete.
   baseline: Eight native assessment/inspection/impact/packet/priority/reviewer/record test files passed.
 current_workstreams:
-  source_checkpoint: 8db0f17
+  source_checkpoint: 6a21f65
   checkpoint_reason: User asked whether central state was consistently recorded before work; synchronize
     before continuing.
   state_discipline: Record each new workstream plan, owner, files and verify command here before dispatch;
@@ -361,10 +366,9 @@ current_workstreams:
     verification: 7 native tests and isolated check/build pass; no configured live provider tested.
   packet_and_priorities:
     status: Committed and integrated in feature branch; not main.
-    verification: 11 packet and 7 priority native tests plus isolated check/build pass.
+    verification: 12 packet and7 priority native cases pass; finite4096 gap references accepted,4097 and
+      >2MiB packets rejected.
     limitation: No actual trusted executions; candidateCommit null and acceptanceReady false.
-    pending_fix: 'Final review reproduced 300-import fixture: extractor allows 607 gaps, packet/browser
-      cap512 rejects valid assessment. Fix pending.'
   assessment_and_storage:
     status: Committed and integrated in feature branch; not main.
     verification: 9 assessment and 2 storage native tests; real disposable PostgreSQL history/owner/cap/expiry
@@ -373,15 +377,15 @@ current_workstreams:
       packet marks stale artifacts.
   inspection_controller_component:
     status: Committed, embedded in shared page and synthetic browser-verified; feature branch only.
-    verification: 5 controller tests and isolated component check/build pass.
+    verification: 6 controller cases and full frontend preflight pass; desktop/mobile/unavailable-provider
+      Chrome fixture flow passes.
   assessment_http:
     status: Committed and integrated, including compatibility review URL and original artifact provenance.
-    worktree: /tmp/tripsit-assessment-http
-    owner: intake_gate_completion
-    verification: Routing/view/runtime and compatibility cases pass; assembled check/build and four synthetic
-      Chrome states passed.
-  remaining_validation: Add gap-bound assembled regression, align caps, rerun affected packet/view/controller
-    tests plus frontend preflight; full live UAT/provider remains unverified.
+    owner: Integrated by parent after isolated intake_gate_completion implementation
+    verification: 6 view,2 route/runtime cases and retained candidate route cases pass; old /reviews URL
+      shares the new protected handler.
+  remaining_validation: Real authenticated multi-owner UAT, configured live reviewer and full story gates
+    remain unverified.
 evaluation_manifest_workstream:
   owner: parallel-continuation-root
   status: started
@@ -400,13 +404,15 @@ integration_reconciliation:
   source_checkpoint: b46ffc4
   observation: Shared branch also contains commits4a390ff,3ee2f92,bbd7ed5,bfa59b8,ed60db1 adding reviewer
     readiness, inline page inspection and assessment/reviews routes.
-  current_state: Cherry-pick323435f add/add conflict in assessment-route.test.ts; assembled verification
-    not yet claimed.
+  current_state: Resolved; no in-progress merge/cherry-pick. One component/controller and one protected
+    POST implementation serve both review URLs.
   plan: Keep validated reviewer readiness and existing /candidates/id/reviews URL as a compatibility alias,
     adopt reviewed stale-aware view/shared runtime and one component UI, preserve routing regression coverage
     for both paths.
   verify: Native new and compatibility route tests, reviewer readiness and storage tests; frontend check/build;
     real Chrome synthetic flow.
+  result: Compiled, regression-tested and browser-verified; original readiness validation and historical
+    source identities preserved.
 gap_limit_fix_plan:
   owner: next_package_dependencies in isolated worktree
   scope: packet.ts and candidate-inspection.ts gap validation limits plus assembled regression in assessment-view/controller
@@ -418,16 +424,32 @@ gap_limit_fix_plan:
   verify: cd frontend && node --experimental-strip-types tests/assessment-view.test.ts && node --experimental-strip-types
     tests/candidate-inspection.test.ts && node --experimental-strip-types tests/packet.test.ts && npm
     run check && npm run build
+  result: Fixed in6a21f65 after RED3948dca; all607 reproduced gaps retained. Affected40 tests and frontend
+    preflight pass.
 current_verified_results:
   native:
     files: 27
-    tests: 145
+    tests: 148
     failures: 0
+    basis: Fresh full27-file native regression run passed after the boundary fixes; frontend check/build
+      and specification consistency checks also exited0 before committing this state update.
   python: 8 inference and12 admission-verifier tests pass.
   database: 2 candidate DB cases and1 review history/expiry case passed on disposable localhost PostgreSQL;
     container removed.
   chrome: Desktop1440/mobile390/sign-in/unavailable-provider synthetic fixtures and2 retained harness
     cases pass; escaped untrusted text and explicit review covered.
-  preflight: Assembled npm run check and npm run build pass before final gap-limit regression fix.
+  preflight: Current integrated npm run check and npm run build passed after final gap-bound fix.
   live_reviewer: Not configured; no live reviewer request performed.
   acceptance: Full stories remain incomplete; no execution/publication/decisions enabled.
+  review: 'Independent final review findings resolved: stale policy provenance, route compatibility, duplicate
+    UI integration and valid extractor-gap bounds.'
+delivery_checkpoint_current:
+  pr: https://github.com/hallucination-dept/tripsit/pull/9
+  source_checkpoint: 6a21f65
+  state: Ready for human review; not merged.
+  supersedes_drafts:
+  - 7
+  - 8
+  running_locally: localhost5173; database Aiven and generation Modal remain remote.
+  reviewer_configured: false
+  production_changes_this_wave: None; no new migration, deployment, merge or live reviewer call.

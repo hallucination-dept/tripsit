@@ -9,32 +9,37 @@ depends_on:
 - e02s01
 reviewer_client_subtask:
   status: planned
-  scope: Callable bounded public-only reviewer client and strict requirement/node-linked model-proposal schema.
+  scope: Callable bounded public-only reviewer client and strict requirement/node-linked model-proposal
+    schema.
   plan:
-  - RED then GREEN validated frozen input, independently prompted endpoint call, conflicting claims and exact cross-references.
-  - Reject extra authority/execution fields; bounded Unicode/prompt/response and cancellation; zero private/unconfigured dispatch.
-  - Record source-free prompt/response digests, model/destination/retention disclosure and explicit unavailable results.
+  - RED then GREEN validated frozen input, independently prompted endpoint call, conflicting claims
+    and exact cross-references.
+  - Reject extra authority/execution fields; bounded Unicode/prompt/response and cancellation; zero
+    private/unconfigured dispatch.
+  - Record source-free prompt/response digests, model/destination/retention disclosure and explicit
+    unavailable results.
   verify: cd frontend && node --experimental-strip-types tests/reviewer.test.ts
   preflight: cd frontend && npm run check && npm run build
-  limits: Parent owns runtime/persistence/routes/UI; no private admission, actual execution or full-story acceptance.
+  limits: Parent owns runtime/persistence/routes/UI; no private admission, actual execution or full-story
+    acceptance.
 tasks:
 - id: 1
-  description: Define regression fixtures and assert the happy path, edge cases and
-    security denials below before implementation.
-  verify: cd frontend && node --experimental-strip-types --test tests/e02s02.test.ts
+  description: Define regression fixtures and assert the happy path, edge cases and security denials
+    below before implementation.
+  verify: cd frontend && node --experimental-strip-types tests/reviewer.test.ts && node --experimental-strip-types
+    tests/assessment-route.test.ts && node --experimental-strip-types tests/assessment-view.test.ts
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
     - Security Review
     - e02s02
 - id: 2
-  description: 'Implement bounded reviewer schema/client, destination-specific consent
-    and unavailable UI; exclude generation probabilities and author verdicts from
-    reviewer input. Connect the owner UI/API path and fail-closed errors; retain revision
-    provenance. Ref: ADR 0003.'
+  description: 'Implement bounded reviewer schema/client, destination-specific consent and unavailable
+    UI; exclude generation probabilities and author verdicts from reviewer input. Connect the owner
+    UI/API path and fail-closed errors; retain revision provenance. Ref: ADR 0003.'
   verify: cd frontend && node --experimental-strip-types --test tests/e02s02.test.ts
   risk: P0
   security: high
@@ -45,23 +50,23 @@ tasks:
     - Security Review
     - e02s02
 - id: 3
-  description: "Integrate all affected contracts and run frontend diagnostics/build;\
-    \ include no new security findings in affected paths in focused assertions. Ref:\
-    \ ADRs 0001\u20130003."
-  verify: (cd frontend && node --experimental-strip-types --test tests/e02s02.test.ts)
-    && (cd frontend && npm run check && npm run build)
+  description: "Integrate all affected contracts and run frontend diagnostics/build; include no new\
+    \ security findings in affected paths in focused assertions. Ref: ADRs 0001\u20130003."
+  verify: cd frontend && node --experimental-strip-types tests/reviewer.test.ts && node --experimental-strip-types
+    tests/assessment-route.test.ts && node --experimental-strip-types tests/assessment-view.test.ts
+    && npm run check && npm run build
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
     - Security Review
     - e02s02
 - id: 4
-  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py;
-    configured real service must pass before dependent live behavior. Missing credentials/control
-    checks fail rather than skip. Record evidence without secrets. Ref: ADR 0003.'
+  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py; configured
+    real service must pass before dependent live behavior. Missing credentials/control checks fail
+    rather than skip. Record evidence without secrets. Ref: ADR 0003.'
   verify: python3 specs/experiments/live_gates.py e02s02 --require-configured
   risk: P0
   security: high
@@ -72,8 +77,8 @@ tasks:
     - Security Review
     - e02s02
 - id: 5
-  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
-    statuses and limitations; reject an empty evidence record.
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses
+    and limitations; reject an empty evidence record.
   verify: test -s specs/verifications/e02s02.md
   risk: P0
   security: high
@@ -83,3 +88,7 @@ tasks:
     categories:
     - Security Review
     - e02s02
+implementation_progress:
+  source: 6a21f65
+  delivery: PR9, not merged; local implementation and tests verified.
+  acceptance: Incomplete; remaining tasks retain failing status.
