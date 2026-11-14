@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { IntakeError } from './intake.ts';
+import { generationObservations } from './generation.ts';
 import type { GeneratedCandidate, StoredCandidate } from './generation.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> };
@@ -9,6 +10,9 @@ const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('he
 const text = (value: unknown, max: number): value is string => typeof value === 'string' && value.length > 0 && value.length <= max;
 
 function serialize(candidate: GeneratedCandidate): string {
+  let observations;
+  try { observations = candidate.observations === undefined ? undefined : generationObservations(candidate.observations); }
+  catch { throw new IntakeError(400, 'Candidate observations are invalid.'); }
   if (!candidate || !/^[a-f0-9]{40}$/.test(candidate.baseSha)
       || !Number.isFinite(Date.parse(candidate.expiresAt))
       || !(candidate.rawOutput instanceof Uint8Array) || candidate.rawOutput.byteLength === 0 || candidate.rawOutput.byteLength > 1_048_576
@@ -31,6 +35,7 @@ function serialize(candidate: GeneratedCandidate): string {
   });
   const payload = JSON.stringify({ baseSha: candidate.baseSha, expiresAt: candidate.expiresAt,
     outputDigest: candidate.outputDigest, model: candidate.model, settings: candidate.settings,
+    ...(observations === undefined ? {} : { observations }),
     mapping: { status: candidate.mapping.status, reason: candidate.mapping.reason },
     rawOutput: Buffer.from(candidate.rawOutput).toString('base64'), files });
   if (Buffer.byteLength(payload) > 4_194_304) throw new IntakeError(400, 'Candidate storage input exceeds the limit.');
@@ -48,7 +53,9 @@ function deserialize(value: unknown): GeneratedCandidate {
       if (decoded.toString('base64') !== encoded) throw unavailable();
       return Uint8Array.from(decoded);
     };
-    const candidate = { ...payload, rawOutput: bytes(payload.rawOutput),
+    const candidate = { ...payload,
+      ...(payload.observations === undefined ? {} : { observations: generationObservations(payload.observations) }),
+      rawOutput: bytes(payload.rawOutput),
       files: payload.files.map(file => ({ ...file, content: bytes(file.content) })) };
     // Revalidate persisted structure and integrity before releasing raw bytes.
     serialize(candidate);
