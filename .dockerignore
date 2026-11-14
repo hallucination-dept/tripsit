@@ -1,0 +1,11 @@
+.git
+.github
+__pycache__
+*.pyc
+frontend/node_modules
+frontend/.svelte-kit
+frontend/build
+frontend/.env
+frontend/.env.*
+!frontend/.env.example
+frontend/npm-debug.log*

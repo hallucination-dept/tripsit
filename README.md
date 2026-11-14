@@ -43,14 +43,14 @@ to see its exact percentage.
 
 ## Deploy the web app on Aiven Runtime
 
-The repository includes `frontend/Dockerfile`, which produces a standalone
-SvelteKit Node server. It listens on port `8080` and does not copy `.env` files
-into the image.
+The root `Dockerfile` produces a standalone SvelteKit Node server from the
+`frontend/` source. It is at the repository root so Aiven Runtime can discover
+it. The image listens on port `8080` and does not copy `.env` files into it.
 
 First, verify the container locally from the repository root:
 
 ```bash
-docker build --file frontend/Dockerfile --tag tripsitter-web frontend
+docker build --tag tripsitter-web .
 docker run --rm --env-file frontend/.env --publish 8080:8080 tripsitter-web
 ```
 
@@ -62,9 +62,8 @@ Open `http://localhost:8080` to test it.
 2. In the target Aiven project, open **Runtime** and choose **Deploy
    application**.
 3. Connect GitHub, select this repository and its `main` branch.
-4. Select `frontend/Dockerfile` as the manifest. If asked for a build path,
-   choose `frontend`. Aiven detects `EXPOSE 8080`; configure that as the public
-   HTTP port.
+4. Select the root `Dockerfile` as the manifest. Aiven detects `EXPOSE 8080`;
+   configure that as the public HTTP port.
 5. Set the application variables and secrets below, then deploy.
 6. Create or connect an Aiven PostgreSQL service from the application's
    **Connected services** section. Expose its connection string as

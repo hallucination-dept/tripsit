@@ -26,9 +26,10 @@ npm run auth:check   # validate Better Auth setup after credentials are set
 ```
 
 The production image uses `@sveltejs/adapter-node` and starts with
-`node build` on port `8080`. Test the image from the repository root:
+`node build` on port `8080`. The Dockerfile is in the repository root so that
+Aiven Runtime can discover it. Test the image from the repository root:
 
 ```sh
-docker build --file frontend/Dockerfile --tag tripsitter-web frontend
+docker build --tag tripsitter-web .
 docker run --rm --env-file frontend/.env --publish 8080:8080 tripsitter-web
 ```
