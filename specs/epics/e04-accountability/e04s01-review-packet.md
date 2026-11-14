@@ -8,7 +8,7 @@ type: feat
 context: domain
 risk: P1
 maturity: 3
-bcps: 3 (estimate; not an elapsed-time guarantee).
+bcps: 5 (estimate; not an elapsed-time guarantee).
 
 ## 2. User and value
 
@@ -26,6 +26,14 @@ Never expose another owner artifacts; render untrusted text safely; passing chec
 
 ### ADDED
 Present requirements, impact, token signal coverage, reviewer claims, evidence conflicts, failures, missing checks and required inspection as distinct fields for the frozen revision.
+
+### MODIFIED — GitHub and TripSit interaction
+
+**Before:** The packet was an authenticated dashboard read model without a defined GitHub entry point or interactive navigation contract.
+
+**After:** Each GitHub evidence finding links to an exact authenticated packet revision and selectable requirement/claim/node/check/execution. Provide interactive graph and equivalent keyboard trace navigation through unchanged downstream source; preserve historical identity, authorization, expiry and explicit gaps.
+
+Contract: [GitHub and TripSit review interaction](github-review-interaction.md).
 
 ## 6. Inputs
 
@@ -70,6 +78,11 @@ Preserve existing authenticated review route and review/tokens response and fall
 3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `(cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts) && (cd frontend && npm run check && npm run build)`
 4. Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and limitations; reject an empty evidence record. → verify: `test -s specs/verifications/e04s01.md`
 
+### GitHub interaction implementation additions
+
+5. Resolve immutable authenticated packet deep links with canonical origin, validated focus references, login return and explicit stale/expired/denied states; no new security findings in affected paths. Ref: github-review-interaction.md. → verify: `cd frontend && node --experimental-strip-types tests/packet-links.test.ts`
+6. Implement selectable graph/path and equivalent accessible trace navigation from claims to checks/executions and exact unchanged source; preserve gaps and frozen selection. Include no new security findings in affected paths. → verify: `cd frontend && node --experimental-strip-types tests/packet-navigation.test.ts && node --test tests/packet-navigation-flow.test.mjs && npm run check && npm run build`
+
 ## 16. Test fixtures
 
 SC-e04s01-P0-01: The owner can follow a downstream failure from requirement to graph path, check, execution and unchanged code without fabricated token confidence.
@@ -90,6 +103,18 @@ Scenario: Edge or denial
   Given adversarial or unavailable inputs
   When the operation is attempted
   Then Changing base/candidate, expectations, policy, dependencies or check/environment invalidates affected evidence; unknown impact forces full mandatory rerun and remains a gap.
+```
+
+```gherkin
+Scenario: Authenticated packet deep links
+  Given A PR finding links to its exact packet and source references
+  When the authorized owner opens the link, including after login
+  Then the graph and keyboard trace select the same requirement, graph path, check, execution and unchanged source without switching revisions
+
+Scenario: Stale or unauthorized link
+  Given a packet is stale, expired, unauthorized or references an unknown node
+  When the user follows its GitHub deep link
+  Then TripSit reports the precise safe unavailable or historical state without revealing another owner artifact or opening the latest candidate
 ```
 
 ## 18. Verification script

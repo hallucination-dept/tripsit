@@ -7,10 +7,11 @@ status: failing
 bcps: 5
 depends_on:
 - e04s02
+- e01s05
 tasks:
 - id: 1
-  description: Define regression fixtures and assert the happy path, edge cases and
-    security denials below before implementation.
+  description: Define regression fixtures and assert the happy path, edge cases and security denials below
+    before implementation.
   verify: cd frontend && node --experimental-strip-types --test tests/e01s03.test.ts
   risk: P0
   security: high
@@ -21,10 +22,10 @@ tasks:
     - Security Review
     - e01s03
 - id: 2
-  description: 'Implement idempotent publication and trusted status reconciliation;
-    verify required-check rules, stale-approval dismissal and bypass restrictions
-    before protected-ready labels. Connect the owner UI/API path and fail-closed errors;
-    retain revision provenance. Ref: ADR 0003.'
+  description: 'Reconcile explicit candidate publication updates and readiness after e01s05 draft publication
+    and e04s02 human inspection. Recheck expected head/base, scoped write authority, evidence, required-check
+    rules, stale approval and bypass restrictions; no new security findings in affected paths. Ref: ADR0003
+    and github-review-interaction.md.'
   verify: cd frontend && node --experimental-strip-types --test tests/e01s03.test.ts
   risk: P0
   security: high
@@ -35,11 +36,10 @@ tasks:
     - Security Review
     - e01s03
 - id: 3
-  description: "Integrate all affected contracts and run frontend diagnostics/build;\
-    \ include no new security findings in affected paths in focused assertions. Ref:\
-    \ ADRs 0001\u20130003."
-  verify: (cd frontend && node --experimental-strip-types --test tests/e01s03.test.ts)
-    && (cd frontend && npm run check && npm run build)
+  description: "Integrate all affected contracts and run frontend diagnostics/build; include no new security\
+    \ findings in affected paths in focused assertions. Ref: ADRs 0001\u20130003."
+  verify: (cd frontend && node --experimental-strip-types --test tests/e01s03.test.ts) && (cd frontend
+    && npm run check && npm run build)
   risk: P0
   security: high
   status: failing
@@ -49,9 +49,9 @@ tasks:
     - Security Review
     - e01s03
 - id: 4
-  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py;
-    configured real service must pass before dependent live behavior. Missing credentials/control
-    checks fail rather than skip. Record evidence without secrets. Ref: ADR 0003.'
+  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py; configured
+    real service must pass before dependent live behavior. Missing credentials/control checks fail rather
+    than skip. Record evidence without secrets. Ref: ADR 0003.'
   verify: python3 specs/experiments/live_gates.py e01s03 --require-configured
   risk: P0
   security: high
@@ -62,9 +62,39 @@ tasks:
     - Security Review
     - e01s03
 - id: 5
-  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
-    statuses and limitations; reject an empty evidence record.
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and
+    limitations; reject an empty evidence record.
   verify: test -s specs/verifications/e01s03.md
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s03
+- id: 6
+  description: Admit signed newly created owner explain/revise commands; validate identity/current packet,
+    deduplicate before costs, enforce bounds and reuse existing inference admission. Return evidence-linked
+    explanation or new inert candidate, with separate publication. Include no new security findings in
+    affected paths.
+  verify: cd frontend && node --experimental-strip-types tests/github-commands.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s03
+- id: 7
+  description: Integrate event/review invalidation and summary/status synchronization; exercise authorized
+    real draft, signed command redelivery, dashboard login/deep links, human-head conflict and stale-decision
+    refusal. Include no new security findings in affected paths; configured checks must not skip missing
+    controls.
+  verify: cd frontend && node --experimental-strip-types tests/github-packet.test.ts && node --experimental-strip-types
+    tests/github-commands.test.ts && node --experimental-strip-types tests/decision-sync.test.ts && npm
+    run check && npm run build
   risk: P0
   security: high
   status: failing
