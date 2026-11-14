@@ -9,7 +9,7 @@ depends_on:
 - e01s01
 preparatory_subtask:
   scope: Pure trusted policy module only; no routes, persistence, UI or live integration.
-  status: planned
+  status: complete_local_module_only
   affected_paths:
   - frontend/src/lib/server/policy.ts
   - frontend/tests/policy.test.ts
@@ -21,6 +21,17 @@ preparatory_subtask:
   verify: cd frontend && node --experimental-strip-types tests/policy.test.ts
   preflight: cd frontend && npm run check && npm run build
   limits: Full story stays failing; e01s01 and private/live admission remain untouched.
+  verification:
+    native_tests: 3 passed; Node 22 direct native test command exited 0.
+    preflight: check/build passed; Svelte 0 errors and 0 warnings.
+    red_green_commits:
+    - 6d0bea1 -> 3749286
+    - fc2ce33 -> 33ea3e8
+    - fd6b040 -> d002354
+    tooling_limit: Repository has no scripts/verify-tdd-red-commit.sh; actual RED commands failed before separate GREEN commits.
+    environment: Initial symlinked dependencies caused generated route type resolution errors; isolated dependency copy restored green preflight.
+    operational_limit: No configured auth/live verification; build warns that Better Auth base URL is unset.
+  remaining: Owner-scoped API/UI, frozen revision linkage, authenticated UAT and live admission remain unimplemented here.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
