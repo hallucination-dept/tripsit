@@ -10,6 +10,7 @@ import type { ReviewerInput, ReviewerResult } from './reviewer.ts';
 
 export type Assessment = {
   identity: ReviewIdentity;
+  generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number };
   policy: ReturnType<typeof snapshotPolicy>['policy'];
   impact: ReturnType<typeof buildImpact>;
   reviews: StoredReview[];
@@ -72,8 +73,9 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     }
     const identity: ReviewIdentity = { ownerId: owner, itemId, candidateId, baseSha: item.snapshot.baseSha,
       candidateDigest: stored.candidate.outputDigest, snapshotDigest: policy.snapshotDigest, policyVersion: policy.policy.version };
-    const stamp = JSON.stringify([identity, item.expiresAt, stored.candidate.files.map(file => [file.path, file.originalBlob, file.blobSha])]);
-    return { item, stored, identity, stamp, policy: policy.policy };
+    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: createHash('sha256').update(JSON.stringify(stored.candidate.settings)).digest('hex'), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0 };
+    const stamp = JSON.stringify([identity, generation, item.expiresAt, stored.candidate.files.map(file => [file.path, file.originalBlob, file.blobSha])]);
+    return { item, stored, identity, generation, stamp, policy: policy.policy };
   }
   async function fresh(owner: string, itemId: string, candidateId: string, stamp: string, signal: AbortSignal) {
     if ((await admit(owner, itemId, candidateId, signal)).stamp !== stamp) fail(409);
@@ -133,7 +135,7 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     impact.gaps.sort((a, b) => compare(a.kind, b.kind) || compare(a.path, b.path) || compare(a.revision ?? '', b.revision ?? ''));
     const reviews = await whileActive(() => dependencies.reviews.list(owner, initial.identity), signal);
     await fresh(owner, itemId, candidateId, initial.stamp, signal);
-    return { stamp: initial.stamp, issue: { title: initial.item.snapshot.supplied.title, body: initial.item.snapshot.supplied.body }, assessment: { identity: initial.identity, policy: initial.policy, impact, reviews,
+    return { stamp: initial.stamp, issue: { title: initial.item.snapshot.supplied.title, body: initial.item.snapshot.supplied.body }, assessment: { identity: initial.identity, generation: initial.generation, policy: initial.policy, impact, reviews,
       files: files.map(file => ({ path: file.path, original: file.base?.content ?? null, replacement: file.candidate!.content })) } };
   }
   return {
