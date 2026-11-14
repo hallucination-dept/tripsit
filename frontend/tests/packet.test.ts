@@ -167,3 +167,15 @@ test('claim graph references and counterexamples remain plain text with explicit
   input.reviews[0].data.claims[0].counterexample = 'x'.repeat(8193);
   assert.throws(() => buildPacket('owner', input), /Invalid review packet/);
 });
+
+test('impact gap capacity preserves 4096 references, rejects cap plus one and keeps the packet byte ceiling', () => {
+  const input = fixture();
+  input.impact = bound({ summary: 'Bounded incomplete source.', unknown: true, nodeIds: [], gaps: Array.from({ length: 4096 }, (_, index) => `gap:${index}`) });
+  const result = buildPacket('owner', input);
+  assert.equal(result.impact.gaps.length, 4096);
+  assert.equal(result.gaps.filter(gap => gap.kind === 'impact_gap').length, 4096);
+  input.impact.data.gaps.push('gap:over-limit');
+  assert.throws(() => buildPacket('owner', input), /Invalid review packet/);
+  input.impact.data.gaps = Array.from({ length: 4096 }, (_, index) => `${index}:` + 'x'.repeat(1000));
+  assert.throws(() => buildPacket('owner', input), /Invalid review packet/);
+});

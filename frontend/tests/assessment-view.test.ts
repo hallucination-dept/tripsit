@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { buildImpact } from '../src/lib/server/impact-extractor.ts';
 import test from 'node:test';
 import { assessmentView } from '../src/lib/server/assessment-view.ts';
 import type { Assessment } from '../src/lib/server/assessment.ts';
@@ -96,4 +98,19 @@ test('historical policy and snapshot reviews remain packet gaps without appearin
     assert(result.packet.gaps.some(gap => gap.kind === 'stale_artifact'));
     assert.equal(input.reviews.length, 1, 'Historical input must remain intact');
   }
+});
+
+test('real bounded extraction retains all 607 unresolved gap references in the assembled view', () => {
+  const input = fixture();
+  const source = Array.from({ length: 300 }, (_, index) => `import 'package-${index}';`).join('\n');
+  const version = (content: string) => ({ content, blobSha: createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex') });
+  input.impact = buildImpact({ baseSha: input.identity.baseSha, candidateDigest: input.identity.candidateDigest,
+    files: [{ path: 'index.ts', base: version(source), candidate: version(source + '\nexport const added=1;') }],
+    repositoryPaths: ['index.ts'], complete: true });
+  assert.equal(input.impact.imports.length, 600);
+  const view = assessmentView('owner', input, false);
+  assert.equal(view.packet.impact.gaps.length, 607);
+  assert.equal(view.packet.impact.unknown, true);
+  assert.equal(view.packet.acceptanceReady, false);
+  assert(view.packet.gaps.filter(gap => gap.kind === 'impact_gap').length === 607);
 });

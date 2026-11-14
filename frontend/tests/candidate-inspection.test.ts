@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { buildImpact } from '../src/lib/server/impact-extractor.ts';
+import { assessmentView } from '../src/lib/server/assessment-view.ts';
+import { baselinePolicy } from '../src/lib/server/policy.ts';
 import test from 'node:test';
 import { createCandidateInspection } from '../src/lib/candidate-inspection.ts';
 
@@ -126,4 +130,24 @@ test('missing renderable coverage or budget structures cannot publish a partial 
     assert.equal(inspection.state.assessment, null);
     assert(inspection.state.error);
   }
+});
+
+test('actual load accepts an assembled 607-gap extractor view and enforces the finite 4096-gap cap', async () => {
+  const source = Array.from({ length: 300 }, (_, index) => `import 'package-${index}';`).join('\n');
+  const version = (content: string) => ({ content, blobSha: createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex') });
+  const impact = buildImpact({ baseSha, candidateDigest, files: [{ path: 'index.ts', base: version(source), candidate: version(source + '\nexport const added=1;') }], repositoryPaths: ['index.ts'], complete: true });
+  const policy = baselinePolicy('unknown');
+  const view = assessmentView('owner', { identity: { ...identity(), policyVersion: policy.version }, policy, impact, reviews: [], files: [],
+    generation: { model: 'gemma', settingsDigest: 'd'.repeat(64), mapping: { status: 'unavailable', reason: 'No exact mapping.' }, observedTokens: 0 } }, false);
+  const inspection = createCandidateInspection({ fetcher: async () => response(view) });
+  await inspection.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.equal(inspection.state.error, '');
+  assert.equal(inspection.state.assessment?.packet.impact.gaps.length, 607);
+  view.packet.impact.gaps = Array.from({ length: 4096 }, (_, index) => `gap:${index}`);
+  await inspection.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.equal(inspection.state.assessment?.packet.impact.gaps.length, 4096);
+  view.packet.impact.gaps.push('gap:over-limit');
+  await inspection.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.equal(inspection.state.assessment, null);
+  assert(inspection.state.error);
 });
