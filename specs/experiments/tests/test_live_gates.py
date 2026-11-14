@@ -25,22 +25,20 @@ class ConfigurationTests(unittest.TestCase):
         for origin in ['https://example.com', 'http://user:secret@localhost', 'http://127.0.0.1:5173/path', 'http://localhost:0']:
             self.assertTrue(gates.configuration_errors({**env, 'TRIPSIT_LIVE_ORIGIN': origin}))
 
-
-if __name__ == '__main__':
-    unittest.main()
-
 import contextlib
 import http.server
 import json
 import threading
 import time
+from datetime import datetime, timedelta, timezone
 
 ITEM_ID = '22222222-2222-4222-8222-222222222222'
 REVOKED_ID = '11111111-1111-4111-8111-111111111111'
 SNAPSHOT = {'repositoryId': 5, 'repository': 'team/repo', 'private': False, 'issueNumber': 2,
             'issueId': 20, 'baseSha': 'a' * 40, 'supplied': {'title': 'source-secret', 'body': 'raw-source', 'provenance': 'supplied'},
             'inferred': [], 'ownerConfirmed': []}
-ITEM = {'id': ITEM_ID, 'snapshot': SNAPSHOT, 'createdAt': '2026-11-14T00:00:00Z', 'expiresAt': '2099-11-21T00:00:00Z'}
+CREATED = datetime.now(timezone.utc)
+ITEM = {'id': ITEM_ID, 'snapshot': SNAPSHOT, 'createdAt': CREATED.isoformat(), 'expiresAt': (CREATED + timedelta(days=7)).isoformat()}
 
 
 @contextlib.contextmanager
@@ -142,3 +140,7 @@ class HttpProbeTests(unittest.TestCase):
         report = gates.run_probes({})
         self.assertEqual(report['public_api']['status'], 'unavailable')
         self.assertFalse(report['accepted'])
+
+
+if __name__ == '__main__':
+    unittest.main()
