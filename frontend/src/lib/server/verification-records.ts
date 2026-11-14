@@ -90,7 +90,7 @@ export function createVerificationRecords(database: Database, clock = () => new 
     },
     async list(owner: string, identity: ReviewIdentity): Promise<StoredVerification[]> {
       validIdentity(owner, identity);
-      const rows = await query(`SELECT p.payload->'verifications' AS verifications,octet_length(p.payload::text) AS payload_bytes FROM tripsit_candidate_payloads p
+      const rows = await query(`SELECT p.payload->'verifications' AS verifications FROM tripsit_candidate_payloads p
         JOIN tripsit_candidates c ON c.id=p.candidate_id JOIN tripsit_work_items w ON w.id=p.work_item_id
         JOIN tripsit_snapshots s ON s.work_item_id=w.id WHERE c.owner_id=$1 AND w.owner_id=$1 AND w.id=$2 AND c.id=$3
           AND c.expires_at>$6 AND w.expires_at>$6 AND c.expires_at=w.expires_at AND s.payload->'private'='false'::jsonb
@@ -99,8 +99,7 @@ export function createVerificationRecords(database: Database, clock = () => new 
       if (!rows.rows.length) throw missing();
       try {
         const verifications = rows.rows[0].verifications ?? [];
-        const size = rows.rows[0].payload_bytes;
-        if (!Array.isArray(verifications) || verifications.length > 4 || typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0 || size > 4_194_304) throw unavailable();
+        if (!Array.isArray(verifications) || verifications.length > 4) throw unavailable();
         const ids = new Set<string>();
         return verifications.map(artifact => {
           if (!object(artifact) || !uuid(artifact.id) || ids.has(artifact.id as string) || typeof artifact.createdAt !== 'string' || !Number.isFinite(Date.parse(artifact.createdAt))
