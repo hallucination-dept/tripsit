@@ -95,14 +95,46 @@ test('unsafe paths, duplicates, excessive selection and invalid base revision fa
 
 test('blob size, canonical base64, identity, raw byte hash and strict UTF8 are verified', async () => {
   for (const value of [{ ...blob, sha: 'd'.repeat(40) }, { ...blob, encoding: 'utf-8' }, { ...blob, size: bytes.length + 1 },
-    { ...blob, content: bytes.toString('base64') + '!' }, { ...blob, content: Buffer.from('changed').toString('base64'), size: 7 }]) {
+    { ...blob, content: bytes.toString('base64') + '!' }, { ...blob, content: Buffer.alloc(bytes.length, 65).toString('base64') }]) {
     await assert.rejects(() => fixture({ [blobPath]: value }).github.context(snapshot, [entry.path], signal()), IntakeError);
   }
   const invalid = Buffer.from([0xff]);
   const invalidSha = blobSha(invalid);
-  await assert.rejects(() => fixture({ [treePath]: { ...tree, tree: [{ ...entry, sha: invalidSha, size: 1 }] },
+  await assert.rejects(() => fixture({ [treePath]: { ...tree, tree: [tree.tree[0], { ...entry, sha: invalidSha, size: 1 }] },
     [`/repos/team/repo/git/blobs/${invalidSha}`]: { sha: invalidSha, encoding: 'base64', size: 1, content: invalid.toString('base64') }
   }).github.context(snapshot, [entry.path], signal()), IntakeError);
-  await assert.rejects(() => fixture({ [treePath]: { ...tree, tree: [{ ...entry, size: 128 * 1024 + 1 }] } })
+  await assert.rejects(() => fixture({ [treePath]: { ...tree, tree: [tree.tree[0], { ...entry, size: 128 * 1024 + 1 }] } })
     .github.context(snapshot, [entry.path], signal()), IntakeError);
+});
+
+
+test('aggregate context budget allows exactly 128 KiB and denies additional decoded bytes', async () => {
+  const full = Buffer.alloc(128 * 1024, 65);
+  const fullSha = blobSha(full);
+  const rootEntry = { ...entry, path: 'full.txt', sha: fullSha, size: full.length };
+  const values = { [treePath]: { ...tree, tree: [rootEntry, { ...entry, path: 'extra.txt' }] },
+    [`/repos/team/repo/git/blobs/${fullSha}`]: { sha: fullSha, encoding: 'base64', size: full.length, content: full.toString('base64') } };
+  const { github, calls } = fixture(values);
+  assert.equal((await github.context(snapshot, ['full.txt'], signal()))[0].content.length, full.length);
+  await assert.rejects(() => github.context(snapshot, ['full.txt', 'extra.txt'], signal()), (error: IntakeError) => error.status === 413);
+  assert(!calls.some(call => call.path === blobPath), 'Over-budget blob must not be fetched');
+});
+
+test('UTF8 BOM is preserved and aborting a streaming tree read prevents blob retrieval', async () => {
+  const bom = Buffer.from('\ufeffsource');
+  const bomSha = blobSha(bom);
+  assert.equal((await fixture({ [treePath]: { ...tree, tree: [{ ...entry, path: 'bom.txt', sha: bomSha, size: bom.length }] },
+    [`/repos/team/repo/git/blobs/${bomSha}`]: { sha: bomSha, encoding: 'base64', size: bom.length, content: bom.toString('base64') }
+  }).github.context(snapshot, ['bom.txt'], signal()))[0].content, '\ufeffsource');
+  const controller = new AbortController();
+  let cancelled = false;
+  const response = new Response(new ReadableStream({
+    start(stream) { stream.enqueue(new TextEncoder().encode('{')); },
+    pull() { setTimeout(() => controller.abort(), 10); },
+    cancel() { cancelled = true; }
+  }));
+  const { github, calls } = fixture({ [treePath]: response });
+  await assert.rejects(() => github.context(snapshot, [entry.path], controller.signal), IntakeError);
+  assert(cancelled);
+  assert(!calls.some(call => call.path === blobPath));
 });

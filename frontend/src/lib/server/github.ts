@@ -6,7 +6,7 @@ export function githubAccount(accounts: GitHubAccount[], owner: string): GitHubA
   return linked[0];
 }
 
-import { createSign } from 'node:crypto';
+import { createHash, createSign } from 'node:crypto';
 import { IntakeError, readJson, whileActive } from './intake.ts';
 import type { IssueSnapshot } from './intake.ts';
 
@@ -30,6 +30,17 @@ export function githubRepository(repository: string): string {
   }
   return repository;
 }
+function contextPath(value: unknown): string {
+  if (typeof value !== 'string' || !value || Buffer.byteLength(value) > 1024 || /[\\:\x00-\x1f\x7f]/.test(value) ||
+    value.split('/').some(part => !part || part === '.' || part === '..' || part.toLowerCase() === '.git')) {
+    throw new IntakeError(400, 'Select safe repository-relative file paths.');
+  }
+  return value;
+}
+
+type TreeEntry = { path: string; sha: string; mode: string; size?: number };
+const regular = (entry: TreeEntry) => entry.mode === '100644' || entry.mode === '100755';
+
 function jwt(appId: string, key: string): string {
   const now = Math.floor(Date.now() / 1000);
   const data = [ { alg: 'RS256', typ: 'JWT' }, { iat: now - 60, exp: now + 540, iss: appId } ]
@@ -100,7 +111,87 @@ export function createGitHub(options: Options) {
     return { repositoryId, repository: canonical, private: installedRepo.private, branch: text(installedRepo.default_branch, 255), token };
   }
 
+  async function frozenTree(snapshot: IssueSnapshot, signal: AbortSignal) {
+    githubRepository(snapshot.repository);
+    if (snapshot.private !== false || !Number.isSafeInteger(snapshot.repositoryId) || snapshot.repositoryId < 1 ||
+        !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(snapshot.baseSha)) {
+      throw new IntakeError(400, 'Select a frozen public repository snapshot.');
+    }
+    const repo = await authorize(snapshot.repository, signal, snapshot.repositoryId);
+    if (repo.private) throw new IntakeError(403, 'Source context is available only for public repositories.');
+    const result = await request(`/repos/${repo.repository}/git/trees/${snapshot.baseSha}?recursive=1`, repo.token, signal);
+    if (result.truncated !== false || !Array.isArray(result.tree) || result.tree.length > 4096) {
+      throw new IntakeError(502, 'GitHub did not return a complete bounded repository tree.');
+    }
+    const entries = new Map<string, TreeEntry>();
+    for (const value of result.tree) {
+      const row = object(value);
+      const path = contextPath(row.path);
+      const sha = text(row.sha, 40);
+      const mode = text(row.mode, 6);
+      if (!/^[a-f0-9]{40}$/.test(sha) || entries.has(path) ||
+          !((['100644', '100755', '120000'].includes(mode) && row.type === 'blob') ||
+            (mode === '040000' && row.type === 'tree') || (mode === '160000' && row.type === 'commit'))) {
+        throw new IntakeError(502, 'GitHub returned an invalid repository tree.');
+      }
+      const entry: TreeEntry = { path, sha, mode };
+      if (regular(entry)) {
+        if (!Number.isSafeInteger(row.size) || Number(row.size) < 0) throw new IntakeError(502, 'GitHub returned an invalid blob size.');
+        entry.size = Number(row.size);
+      }
+      entries.set(path, entry);
+    }
+    for (const path of entries.keys()) {
+      const parts = path.split('/');
+      for (let index = 1; index < parts.length; index++) {
+        const parent = entries.get(parts.slice(0, index).join('/'));
+        if (!parent || parent.mode !== '040000') throw new IntakeError(502, 'GitHub returned conflicting tree paths.');
+      }
+    }
+    return { repo, entries };
+  }
+
   return {
+    files: async (snapshot: IssueSnapshot, signal: AbortSignal): Promise<{ path: string; blobSha: string }[]> => {
+      const { entries } = await frozenTree(snapshot, signal);
+      return [...entries.values()].filter(regular).map(entry => ({ path: entry.path, blobSha: entry.sha }));
+    },
+    context: async (snapshot: IssueSnapshot, paths: string[], signal: AbortSignal): Promise<{ path: string; originalBlob: string | null; content: string }[]> => {
+      if (!Array.isArray(paths) || paths.length < 1 || paths.length > 8) throw new IntakeError(400, 'Select one to eight context files.');
+      paths.forEach(contextPath);
+      if (new Set(paths).size !== paths.length || paths.some(path => paths.some(other => other.startsWith(path + '/')))) {
+        throw new IntakeError(400, 'Selected context paths conflict.');
+      }
+      const { repo, entries } = await frozenTree(snapshot, signal);
+      let total = 0;
+      const context: { path: string; originalBlob: string | null; content: string }[] = [];
+      for (const path of paths) {
+        const entry = entries.get(path);
+        const parts = path.split('/');
+        if ((entry && !regular(entry)) || parts.slice(0, -1).some((_, index) => {
+          const parent = entries.get(parts.slice(0, index + 1).join('/'));
+          return parent && parent.mode !== '040000';
+        })) throw new IntakeError(400, 'Context paths must select regular files without parent collisions.');
+        if (!entry) { context.push({ path, originalBlob: null, content: '' }); continue; }
+        total += entry.size!;
+        if (total > 128 * 1024) throw new IntakeError(413, 'Selected context exceeds 128 KiB.');
+        const blob = await request(`/repos/${repo.repository}/git/blobs/${entry.sha}`, repo.token, signal);
+        if (blob.sha !== entry.sha || blob.encoding !== 'base64' || blob.size !== entry.size) {
+          throw new IntakeError(502, 'GitHub returned inconsistent blob metadata.');
+        }
+        const encoded = text(blob.content, 256 * 1024).replace(/[\r\n]/g, '');
+        const bytes = Buffer.from(encoded, 'base64');
+        if (bytes.toString('base64') !== encoded || bytes.length !== entry.size ||
+            createHash('sha1').update(`blob ${bytes.length}\0`).update(bytes).digest('hex') !== entry.sha) {
+          throw new IntakeError(502, 'GitHub blob integrity verification failed.');
+        }
+        let content;
+        try { content = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes); }
+        catch { throw new IntakeError(502, 'Selected source is not valid UTF-8.'); }
+        context.push({ path, originalBlob: entry.sha, content });
+      }
+      return context;
+    },
     repositories: async (signal: AbortSignal) => {
       await verifyUser(signal);
       const budget = { remaining: 5 };
