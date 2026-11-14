@@ -93,6 +93,23 @@ test('read rejects missing, unauthorized and stale candidates', async () => {
   await assert.rejects(() => f.service.get('owner', 'item', 'candidate', f.signal));
 });
 
+test('candidate reads recheck access and frozen identity after delayed storage', async () => {
+  for (const mode of ['revoked', 'private', 'revision', 'expired']) {
+    const f = fixture();
+    await f.service.create('owner', 'item', ['a.ts'], f.signal);
+    const read = f.dependencies.store.get;
+    f.dependencies.store.get = async () => {
+      const stored = await read();
+      if (mode === 'revoked') f.dependencies.intake.get = async () => { throw new IntakeError(403, 'Access revoked.'); };
+      if (mode === 'private') f.item.snapshot.private = true;
+      if (mode === 'revision') f.item.snapshot.supplied.body = 'Changed during read';
+      if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();
+      return stored;
+    };
+    await assert.rejects(() => f.service.get('owner', 'item', 'candidate', f.signal));
+  }
+});
+
 test('revalidates public frozen intake after context and before model dispatch', async () => {
   const f = fixture(); const context = f.dependencies.github.context;
   f.dependencies.github.context = async () => { const result = await context(); f.item.snapshot.private = true; return result; };
