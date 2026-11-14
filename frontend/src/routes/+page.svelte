@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
+	import { createCandidateWorkspace } from '#lib/candidate-workspace.ts';
 	import { authClient } from '#lib/auth-client.js';
 	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
@@ -37,6 +38,17 @@
 		if (selectedIssue && !accessible(selectedIssue)) selectedIssue = null;
 	} });
 	let discovery = $state(discoveryController.state);
+	const candidateController = createCandidateWorkspace({ onChange: next => { candidateWorkspace = next; } });
+	let candidateWorkspace = $state(candidateController.state);
+	let candidatePaths = $state<string[]>([]);
+
+	$effect(() => {
+		const owner = $session.data?.user.id ?? '';
+		const itemId = selectedIssue?.id ?? '';
+		const baseSha = selectedIssue?.snapshot.baseSha ?? '';
+		untrack(() => { candidatePaths = []; void candidateController.select(owner, itemId, baseSha); });
+		return () => untrack(() => candidateController.stop());
+	});
 
 	$effect(() => {
 		const owner = $session.data?.user.id ?? '';
@@ -189,6 +201,48 @@
 			</div>
 		</section>
 
+		{#if selectedIssue && intakeOwner === $session.data.user.id && candidateWorkspace.itemId === selectedIssue.id && candidateWorkspace.owner === $session.data.user.id}
+			<section class="review-section" aria-labelledby="implementation-heading">
+				<div class="section-heading"><div><h2 id="implementation-heading">Implementation candidate</h2><p>Review requirements and propose changes at the captured revision.</p></div><span class="section-label">Human led</span></div>
+				<div class="intake-grid">
+					<div class="panel ticket-panel">
+						<h3>Requirements to verify</h3>
+						{#if candidateWorkspace.loading}<p class="empty-note" aria-live="polite">Loading requirements and repository files…</p>{/if}
+						{#if candidateWorkspace.policyError}<p class="error" role="alert">{candidateWorkspace.policyError}</p>{/if}
+						{#if candidateWorkspace.policy}
+							<p class="empty-note">{candidateWorkspace.policy.version} · Unverified</p>
+							<ul class="requirements-list">{#each candidateWorkspace.policy.requirements as requirement (requirement.id)}<li>
+								<strong>{requirement.criterion}</strong><span class="requirement-state">{requirement.provenance === 'trusted_baseline' ? 'Trusted baseline' : 'Supplied intent'} · {requirement.applicability.replaceAll('_', ' ')}</span>
+								<p>{requirement.reason}</p>
+								<details><summary>Verification and source</summary><p>{requirement.verification}</p><p>{requirement.source.name} {requirement.source.version}</p></details>
+							</li>{/each}</ul>
+							<details class="snapshot-details"><summary>Open requirements gaps ({candidateWorkspace.policy.gaps.length})</summary><ul>{#each candidateWorkspace.policy.gaps as gap}<li>{gap.reason}</li>{/each}</ul></details>
+						{/if}
+					</div>
+					<form class="panel ticket-panel" onsubmit={(event) => { event.preventDefault(); candidateController.generate(candidatePaths); }}>
+						<h3>Propose file changes</h3>
+						<p class="empty-note">Select up to eight files. Nothing runs or publishes automatically.</p>
+						<label for="candidate-files">Files at the captured revision</label>
+						<select id="candidate-files" multiple size={6} bind:value={candidatePaths} disabled={candidateWorkspace.loading || candidateWorkspace.generating || !candidateWorkspace.files.length}>
+							{#each candidateWorkspace.files as file (file.path)}<option value={file.path}>{file.path}</option>{/each}
+						</select>
+						<p class="empty-note">{candidatePaths.length} of 8 selected. Use Ctrl or ⌘ to select multiple files.</p>
+						{#if candidateWorkspace.filesError}<p class="error" role="alert">{candidateWorkspace.filesError}</p>{/if}
+						{#if candidateWorkspace.generationError}<p class="error" role="alert">{candidateWorkspace.generationError}</p>{/if}
+						<button class="button-primary capture-button" type="submit" disabled={candidateWorkspace.loading || candidateWorkspace.generating || !candidatePaths.length || candidatePaths.length > 8}>{candidateWorkspace.generating ? 'Generating candidate…' : 'Generate candidate'}</button>
+						<p class="privacy-note">Generated changes need review. Exact token mapping and execution evidence are unavailable.</p>
+					</form>
+				</div>
+				{#if candidateWorkspace.candidate}
+					<div class="panel candidate-preview" aria-live="polite">
+						<div class="section-heading"><div><h3>Proposed replacements</h3><p>{candidateWorkspace.candidate.candidate.model} · Not executed or published</p></div></div>
+						<p class="empty-note">Candidate {candidateWorkspace.candidate.id} · Expires {new Date(candidateWorkspace.candidate.candidate.expiresAt).toLocaleString()}</p>
+						{#each candidateWorkspace.candidate.candidate.files as file (file.path)}<details open class="candidate-file"><summary>{file.path}</summary><p class="empty-note">Blob {file.blobSha}</p><pre><code>{file.content}</code></pre></details>{/each}
+					</div>
+				{/if}
+			</section>
+		{/if}
+
 		<section id="code-review" class="review-section" aria-labelledby="code-review-heading">
 			<div class="section-heading"><div><h2 id="code-review-heading">Code review</h2><p>Inspect a change with model-generated feedback.</p></div><span class="section-label">Gemma</span></div>
 			<form class="panel editor-panel" onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
@@ -335,4 +389,14 @@
 		.panel-footer { gap: 8px; flex-wrap: wrap; }
 	}
 	@media (prefers-reduced-motion: reduce) { :global(html) { scroll-behavior: auto; } }
+	.requirements-list { list-style: none; padding: 0; margin: 18px 0 0; }
+	.requirements-list > li { padding: 14px 0; border-top: 1px solid #e7ebf1; font-size: 13px; }
+	.requirements-list strong { display: block; font-weight: 600; line-height: 1.6; }
+	.requirement-state { display: block; color: #5f6b7a; font-size: 12px; margin-top: 5px; }
+	.requirements-list p, .requirements-list summary { color: #5f6b7a; font-size: 12px; line-height: 1.6; }
+	#candidate-files { min-height: 150px; }
+	.candidate-preview { margin-top: 18px; padding: 20px; }
+	.candidate-file { margin-top: 18px; border-top: 1px solid #e7ebf1; padding-top: 14px; }
+	.candidate-file summary { overflow-wrap: anywhere; font-size: 13px; font-weight: 600; cursor: pointer; }
+	.candidate-file pre { overflow: auto; max-height: 420px; padding: 14px; background: #f6f8fb; font-size: 12px; line-height: 1.7; border: 1px solid #e7ebf1; border-radius: 5px; }
 </style>

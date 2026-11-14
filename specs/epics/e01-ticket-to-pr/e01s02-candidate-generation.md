@@ -66,9 +66,9 @@ Preserve existing authenticated review route and review/tokens response and fall
 
 ## 15. Implementation steps
 
-1. Define regression fixtures and assert the happy path, edge cases and security denials below before implementation. → verify: `cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts`
+1. Define regression fixtures and assert the happy path, edge cases and security denials below before implementation. → verify: `cd frontend && node --experimental-strip-types tests/generation.test.ts && node --experimental-strip-types tests/candidate-output.test.ts && node --experimental-strip-types tests/model-generation.test.ts`
 2. Implement bounded generation, decoder and isolated candidate staging; preserve existing review response fields and text fallback while adding raw observations. Connect the owner UI/API path and fail-closed errors; retain revision provenance. Ref: ADR 0003. → verify: `cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts`
-3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `(cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts) && (cd frontend && npm run check && npm run build)`
+3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `cd frontend && node --experimental-strip-types tests/generation.test.ts && node --experimental-strip-types tests/candidate-output.test.ts && node --experimental-strip-types tests/model-generation.test.ts && npm run check && npm run build`
 4. Implement the named fail-closed live gate in specs/experiments/live_gates.py; configured real service must pass before dependent live behavior. Missing credentials/control checks fail rather than skip. Record evidence without secrets. Ref: ADR 0003. → verify: `python3 specs/experiments/live_gates.py e01s02 --require-configured`
 5. Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and limitations; reject an empty evidence record. → verify: `test -s specs/verifications/e01s02.md`
 

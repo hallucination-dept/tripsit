@@ -9,22 +9,22 @@ depends_on:
 - e01s01
 tasks:
 - id: 1
-  description: Define regression fixtures and assert the happy path, edge cases and
-    security denials below before implementation.
-  verify: cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts
+  description: Define regression fixtures and assert the happy path, edge cases and security denials
+    below before implementation.
+  verify: cd frontend && node --experimental-strip-types tests/generation.test.ts && node --experimental-strip-types
+    tests/candidate-output.test.ts && node --experimental-strip-types tests/model-generation.test.ts
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
     - Security Review
     - e01s02
 - id: 2
-  description: 'Implement bounded generation, decoder and isolated candidate staging;
-    preserve existing review response fields and text fallback while adding raw observations.
-    Connect the owner UI/API path and fail-closed errors; retain revision provenance.
-    Ref: ADR 0003.'
+  description: 'Implement bounded generation, decoder and isolated candidate staging; preserve existing
+    review response fields and text fallback while adding raw observations. Connect the owner UI/API
+    path and fail-closed errors; retain revision provenance. Ref: ADR 0003.'
   verify: cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts
   risk: P0
   security: high
@@ -35,23 +35,23 @@ tasks:
     - Security Review
     - e01s02
 - id: 3
-  description: "Integrate all affected contracts and run frontend diagnostics/build;\
-    \ include no new security findings in affected paths in focused assertions. Ref:\
-    \ ADRs 0001\u20130003."
-  verify: (cd frontend && node --experimental-strip-types --test tests/e01s02.test.ts)
-    && (cd frontend && npm run check && npm run build)
+  description: "Integrate all affected contracts and run frontend diagnostics/build; include no new\
+    \ security findings in affected paths in focused assertions. Ref: ADRs 0001\u20130003."
+  verify: cd frontend && node --experimental-strip-types tests/generation.test.ts && node --experimental-strip-types
+    tests/candidate-output.test.ts && node --experimental-strip-types tests/model-generation.test.ts
+    && npm run check && npm run build
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
     - Security Review
     - e01s02
 - id: 4
-  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py;
-    configured real service must pass before dependent live behavior. Missing credentials/control
-    checks fail rather than skip. Record evidence without secrets. Ref: ADR 0003.'
+  description: 'Implement the named fail-closed live gate in specs/experiments/live_gates.py; configured
+    real service must pass before dependent live behavior. Missing credentials/control checks fail
+    rather than skip. Record evidence without secrets. Ref: ADR 0003.'
   verify: python3 specs/experiments/live_gates.py e01s02 --require-configured
   risk: P0
   security: high
@@ -62,8 +62,8 @@ tasks:
     - Security Review
     - e01s02
 - id: 5
-  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
-    statuses and limitations; reject an empty evidence record.
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses
+    and limitations; reject an empty evidence record.
   verify: test -s specs/verifications/e01s02.md
   risk: P0
   security: high
@@ -73,3 +73,60 @@ tasks:
     categories:
     - Security Review
     - e01s02
+preparatory_subtasks:
+- id: candidate-output-decoder
+  status: passing
+  scope: Offline pure decoder only; no application integration or story completion.
+  files:
+  - frontend/src/lib/server/candidate-output.ts
+  - frontend/tests/candidate-output.test.ts
+  plan: Validate bounded UTF-8 JSON replacements against trusted original blob identities; reject
+    unsafe paths, duplicates, stale identities, malformed Unicode and truncated or oversized input.
+    Preserve copied raw bytes and expose unavailable exact mapping. RED test commit precedes GREEN
+    implementation commit.
+  verify: cd frontend && node --experimental-strip-types tests/candidate-output.test.ts
+  limitations: No token span mapping, live generation, persistence, staging or execution; e01s01
+    acceptance and full e01s02 tasks remain failing.
+  verification_results:
+    focused_tests: Five native Node22 tests passed; exit 0.
+    isolated_typecheck: tsc --ignoreConfig --noEmit --strict --target es2022 --module nodenext --moduleResolution
+      nodenext --skipLibCheck src/lib/server/candidate-output.ts; exit 0.
+    build: npm run build; exit 0 using shared installed dependencies.
+    check: npm run check; exit 1 twice with 13 missing generated route/layout $types declarations;
+      no decoder diagnostics. Full preflight remains red.
+    check_resolution: Replaced only this worktree node_modules symlink with a local cp -a dependency
+      copy; npm run check && npm run build then passed together (exit 0, zero diagnostics). Earlier
+      generated-type failures were confined to the symlinked environment.
+    tdd: RED bc2672b failed with ERR_MODULE_NOT_FOUND before implementation; repository has no scripts/verify-tdd-red-commit.sh
+      (exit 127), so mechanical script evidence is unavailable.
+- id: candidate-generation-service
+  status: passing
+  scope: Injected public-only bounded candidate service; parent owns live adapters and integration.
+  files:
+  - frontend/src/lib/server/generation.ts
+  - frontend/tests/generation.test.ts
+  plan: Recheck authorized intake before context/model and before persistence; bound selected paths/context/model
+    output, compose decoder, preserve inert UTF-8 file bytes and Git blob SHA plus output/model provenance,
+    refuse private, expired, stale and aborted work. Owner-scoped get rechecks intake and candidate
+    identity. No staging or execution.
+  verify: cd frontend && node --experimental-strip-types tests/generation.test.ts
+  verification_results: Nine focused native tests and npm run check && npm run build passed (zero
+    diagnostics, exit 0). No live adapters or full story acceptance verified.
+- id: candidate-model-adapter
+  status: passing
+  scope: Bounded OpenAI-compatible generation adapter only; parent owns server configuration and
+    live admission.
+  files:
+  - frontend/src/lib/server/model-generation.ts
+  - frontend/tests/model-generation.test.ts
+  plan: Validate fixed configured endpoint; send separate trusted system and untrusted user messages
+    with deterministic bounded settings, no redirects and cancellation/timeout. Bound response JSON,
+    validate single stopped configured-model response and Unicode content; sanitize all upstream
+    errors, preserve model/settings, expose decoder mapping as unavailable.
+  verify: cd frontend && node --experimental-strip-types tests/model-generation.test.ts
+  verification_results: Seven focused native adapter tests and nine service tests passed; npm run
+    check && npm run build passed with zero diagnostics, exit 0. Decoder five tests also passed.
+    No configured live model exercised; mapping unavailable and full e01s02 remains failing.
+implementation_progress:
+  integrated: Candidate workflow with storage/UI
+  acceptance: Incomplete; retain failing story status and outstanding task gates.

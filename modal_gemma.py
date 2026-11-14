@@ -1,12 +1,13 @@
 """Modal-hosted OpenAI-compatible API for Gemma 4 31B with token probabilities."""
 
-import math
 import os
 import subprocess
 import time
 
 import httpx
 import modal
+from model_output import add_token_probabilities
+from model_request import ClientDisconnected, while_connected
 
 
 MODEL_ID = os.environ.get("MODEL_ID", "google/gemma-4-31B-it")
@@ -22,6 +23,7 @@ image = (
     # to launch its own Python function process, then we start vLLM ourselves.
     .entrypoint([])
     .pip_install("fastapi", "httpx")
+    .add_local_python_source("model_output", "model_request")
 )
 
 
@@ -87,7 +89,7 @@ class GemmaAPI:
     @modal.asgi_app(requires_proxy_auth=True)
     def web(self):
         from fastapi import FastAPI, HTTPException, Request
-        from fastapi.responses import JSONResponse, Response
+        from fastapi.responses import JSONResponse
 
         api = FastAPI(title="Gemma 4 OpenAI-compatible API")
 
@@ -125,33 +127,21 @@ class GemmaAPI:
 
             try:
                 async with httpx.AsyncClient(timeout=900) as client:
-                    upstream = await client.post(
-                        f"{BACKEND_URL}/v1/chat/completions", json=body
+                    upstream = await while_connected(
+                        lambda: client.post(f"{BACKEND_URL}/v1/chat/completions", json=body),
+                        request.is_disconnected,
                     )
+            except ClientDisconnected as exc:
+                raise HTTPException(status_code=499, detail="The client disconnected.") from exc
+            except TimeoutError as exc:
+                raise HTTPException(status_code=504, detail="The model request exceeded its deadline.") from exc
             except httpx.HTTPError as exc:
-                raise HTTPException(status_code=502, detail=str(exc)) from exc
+                raise HTTPException(status_code=502, detail="The model request failed.") from exc
 
             if not upstream.is_success:
-                return Response(
-                    content=upstream.content,
-                    status_code=upstream.status_code,
-                    media_type="application/json",
-                )
+                raise HTTPException(status_code=upstream.status_code, detail="The model request failed.")
 
-            result = upstream.json()
-            for choice in result.get("choices", []):
-                logprobs = choice.pop("logprobs", None) or {}
-                token_items = logprobs.get("content") or []
-                choice["token_probabilities"] = [
-                    {
-                        "token": item.get("token"),
-                        "probability_percent": math.exp(item["logprob"]) * 100,
-                    }
-                    for item in token_items
-                    if item.get("logprob") is not None
-                ]
-
-            return JSONResponse(result)
+            return JSONResponse(add_token_probabilities(upstream.json()))
 
         # Forward standard OpenAI-compatible completion fields (including
         # token logprobs), adding token_probabilities to each choice.

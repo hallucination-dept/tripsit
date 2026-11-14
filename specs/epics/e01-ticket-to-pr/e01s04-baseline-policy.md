@@ -65,9 +65,9 @@ Preserve existing authenticated review route and review/tokens response and fall
 
 ## 15. Implementation steps
 
-1. Define regression fixtures and assert the happy path, edge cases and security denials below before implementation. → verify: `cd frontend && node --experimental-strip-types --test tests/e01s04.test.ts`
-2. Implement a minimal versioned baseline profile and requirement linkage with exact ASVS 5.0.0/WCAG 2.2 control IDs verified from official sources during implementation. Connect the owner UI/API path and fail-closed errors; retain revision provenance. Ref: ADR 0003. → verify: `cd frontend && node --experimental-strip-types --test tests/e01s04.test.ts`
-3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `(cd frontend && node --experimental-strip-types --test tests/e01s04.test.ts) && (cd frontend && npm run check && npm run build)`
+1. Define regression fixtures and assert the happy path, edge cases and security denials below before implementation. → verify: `cd frontend && node --experimental-strip-types tests/policy.test.ts && node --experimental-strip-types tests/policy-route.test.ts`
+2. Implement a minimal versioned baseline profile and requirement linkage with exact ASVS 5.0.0/WCAG 2.2 control IDs verified from official sources during implementation. Connect the owner UI/API path and fail-closed errors; retain revision provenance. Ref: ADR 0003. → verify: `cd frontend && node --experimental-strip-types tests/policy.test.ts && node --experimental-strip-types tests/policy-route.test.ts`
+3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `cd frontend && node --experimental-strip-types tests/policy.test.ts && node --experimental-strip-types tests/policy-route.test.ts && npm run check && npm run build`
 4. Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and limitations; reject an empty evidence record. → verify: `test -s specs/verifications/e01s04.md`
 
 ## 16. Test fixtures

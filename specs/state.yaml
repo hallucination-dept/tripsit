@@ -12,16 +12,16 @@ project_cycle:
     to_phase: 4
     status: authorized
 handoff:
-  next_skill: develop-tdd
+  next_skill: verify-work
   summary: >-
-    Intake, discovery, merge repair, UI polish and duplicate-project cleanup are
-    merged through PR 4 (main f2ed60a). Latest code preflight passes with Svelte
-    0 errors/0 warnings and 34 focused tests pass. Public intake is implemented;
-    full e01s01 acceptance is incomplete: tasks 7/8, private admission, recurring
-    purge verification and real two-owner browser UAT remain open. Candidate
-    decoder and baseline policy preparation are held in isolated worktrees at
-    the user's cleanup checkpoint; neither is integrated. No automatic start,
-    generation, candidate execution or revision-bound publication is implemented.
+    Candidate/policy workflow implemented in feat/candidate-and-policy-workflow:
+    frozen public file context, bounded manual generation, inert expiring stored
+    previews, trusted baseline/gaps and owner-safe UI. No execution/publication or
+    exact token mapping. Local schema002 tests passed; user authorized and applied
+    migration002 to configured database; storage readiness verified. Synthetic configured Modal request passed; deployed raw observations
+    remain unavailable until wrapper update. Intake private/retention/two-owner UAT
+    gates remain incomplete. Impact and priority cores developing separately; do
+    not merge disconnected modules as completed features.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -62,7 +62,7 @@ environment:
   local_app:
     url: http://localhost:5173
     worktree: /tmp/tripsit-e01s01
-    exec_session: 69655
+    exec_session: 14500
     checks: GET /200, GET /api/auth/get-session200, anonymous GET /api/work-items401
     env_source: user-provided primary frontend/.env; values not printed/copied
     oauth_client_id: Iv23liAX4hdiKcwxPade
@@ -70,10 +70,10 @@ environment:
       confirmed. Prior email_not_found issue resolved; no current OAuth blocker recorded.
 vcs:
   kind: git
-  branch: docs/current-implementation-status
+  branch: feat/candidate-and-policy-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: f2ed60a
+  checkpoint: d5c40ab
 verification:
   tooling_review:
     round: 2
@@ -103,7 +103,7 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Synchronize implementation status; next-package work held at user cleanup checkpoint
+active_work: Candidate/policy workflow implemented and verified; next impact/priority cores developing in isolated worktrees
 implementation_plan:
   scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
     and open issues; refresh every60s; auto-start is deferred by user.
@@ -221,3 +221,50 @@ implementation_status:
   status_index: specs/execution-status.yaml
   task_detail: specs/epics/e01-ticket-to-pr/e01s01-tasks.yaml
   evidence_scope: Local/mock tests and synthetic presentation checks do not establish full live acceptance.
+resumed_feature_plan:
+  authorization: User requested remaining feature implementation in parallel subagents.
+  streams:
+  - owner: candidate agent
+    scope: Bounded decoder and authorized generation coordinator with inert candidate files; no execution.
+    verify: cd frontend && node --experimental-strip-types tests/candidate-output.test.ts && node --experimental-strip-types tests/generation.test.ts
+  - owner: policy agent
+    scope: Trusted baseline requirements and owner-scoped read-only policy endpoint; unknown applicability remains a gap.
+    verify: cd frontend && node --experimental-strip-types tests/policy.test.ts && node --experimental-strip-types tests/policy-route.test.ts
+  - owner: intake gate agent
+    scope: Orchestrate existing evidence verifiers with revision binding; incomplete controls remain denied.
+    verify: python3 -m unittest discover -s specs/experiments/tests
+  - owner: parent
+    scope: Exact revision GitHub file context, bounded Modal adapter, expiring owner-scoped candidate storage/migration, preview API and UI integration.
+    verify: Focused context/model/storage/API tests; disposable-local PostgreSQL integration; frontend check/build and synthetic browser flow.
+  synchronization: Parent reviews and integrates separate commits; only parent changes shared UI/runtime/storage/Modal.
+  bounds: No untrusted execution, private source dispatch, automatic work start or automatic merges. Migration002 tested locally then applied to configured database after explicit user authorization.
+current_feature_verification:
+  candidate_workflow: Implemented; full e01s02 remains incomplete.
+  policy_workflow: Implemented; real authenticated UAT remains incomplete.
+  preflight: npm run check and npm run build passed; Svelte 0 errors and 0 warnings.
+  focused_regressions: Native decoder/service/model/storage/routes/view/controller/policy/context/limit tests passed; retained intake/auth/discovery checks passed.
+  python: 12 admission-verifier tests and 8 inference compatibility/cancellation tests passed.
+  disposable_database: 2 candidate persistence, 2 intake database and 2 retention tests passed; local migration command applied001+002 successfully.
+  model_smoke: Configured Modal synthetic JSON replacement decoded successfully (93outputbytes); no repository source sent. Observations and exact mapping unavailable on currently deployed wrapper.
+  presentation: Real Chrome synthetic desktop1440/mobile390/signin; policy+files load, manual candidate generation, escaped preview and review fallback pass with no horizontal overflow.
+  review_fixes: Candidate reads now reauthorize after storage; Modal forwarding cancels+awaits upstream on client disconnect.
+  migration: frontend/migrations/002_candidates.sql applied transactionally to configured database after explicit user authorization; both tables/cascade and runtime readiness verified.
+  remaining: Full private/live acceptance, isolated Git commit staging, exact span mapping, deployed cancellation verification, controlled execution and revision-bound publication.
+  next_parallel_work:
+  - e02s01 reverse impact core complete offline; draft PR 7, seven tests/check/build pass, not integrated.
+  - e03s01 priority core complete offline; draft PR 8, six tests/check/build pass, not integrated.
+delivery_checkpoint:
+  candidate_pr: https://github.com/hallucination-dept/tripsit/pull/6
+  candidate_status: Ready for review; user authorized migration002, applied successfully; candidate storage ready.
+  impact_draft: https://github.com/hallucination-dept/tripsit/pull/7
+  priorities_draft: https://github.com/hallucination-dept/tripsit/pull/8
+  review_results: Post-read access revocation, disconnected upstream work, missing token bytes, conflicting impact identities and sparse impact inputs fixed with regression tests.
+  production_changes: User explicitly authorized migration002; applied transactionally, auth tables unchanged. No deployment or merge performed by agent.
+  development_app: localhost5173 returns200 and serves integrated candidate/policy workflow; candidate storage ready, protected APIs401 anonymously. Database is remote Aiven, inference remote Modal; impact/priority drafts not integrated.
+authorized_migration002:
+  authorization: User explicitly instructed do the migration.
+  committed: true
+  validation: Both candidate tables exist; snapshot deletion cascade verified; createCandidateRecords.ready passes.
+  application_checks: Local GET /200, auth/session200, anonymous work-items and files401.
+  scope: Schema-only transaction; auth tables unchanged, no application rows created or deleted.
+  limitation: Full real authenticated snapshot-to-candidate browser flow not rerun after migration; Modal wrapper raw-observation/cancellation changes not deployed by agent.

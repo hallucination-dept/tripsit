@@ -1,4 +1,7 @@
 """Fail-closed admission report; never certify mocked checks as live evidence."""
+import subprocess
+import tempfile
+import signal
 import argparse
 import os
 from urllib.parse import urlparse
@@ -123,11 +126,11 @@ def request_json(origin, path, cookie=None, payload=None, timeout=35):
 
 def code_digest():
     root = Path(__file__).resolve().parents[2]
-    paths = [Path(__file__).resolve(), root / 'frontend/migrations/001_work_items.sql',
-             root / 'frontend/src/lib/auth.ts', root / 'frontend/src/env.ts']
-    paths += sorted((root / 'frontend/src/lib/server').glob('*.ts'))
-    paths += sorted((root / 'frontend/src/routes/api/work-items').rglob('*.ts'))
+    paths = [Path(__file__).resolve(), root / 'frontend/package.json', root / 'frontend/package-lock.json']
+    for directory in ('src', 'scripts', 'tests', 'migrations'):
+        paths += sorted(path for path in (root / 'frontend' / directory).rglob('*') if path.is_file())
     return digest({str(path.relative_to(root)): hashlib.sha256(path.read_bytes()).hexdigest() for path in paths})
+
 
 
 def run_probes(environment, timeout=35):
@@ -202,11 +205,85 @@ def run_probes(environment, timeout=35):
     return report
 
 
+# Fixed commands only: reports supplied by callers are never accepted as verifier evidence.
+CONTROLS = {
+    'database_isolation_and_purge': (['node', '--experimental-strip-types', '--test', 'tests/e01s01-db.test.ts'], 60),
+    'periodic_retention': (['node', '--experimental-strip-types', 'scripts/intake-retention.ts'], 35),
+    'authenticated_browser': (['node', 'scripts/intake-browser.mjs'], 180),
+}
+
+
+def execute_control(name, environment):
+    command, timeout = CONTROLS[name]
+    root = Path(__file__).resolve().parents[2] / 'frontend'
+    try:
+        with tempfile.TemporaryFile() as output:
+            process = subprocess.Popen(command, cwd=root, env=dict(environment), stdout=output,
+                                       stderr=subprocess.DEVNULL, start_new_session=True)
+            try:
+                process.wait(timeout=timeout)
+            except subprocess.TimeoutExpired:
+                os.killpg(process.pid, signal.SIGKILL)
+                process.wait()
+                return None
+            if process.returncode != 0:
+                return None
+            if name == 'database_isolation_and_purge':
+                return True
+            output.seek(0)
+            raw = output.read(65537)
+            if len(raw) > 65536:
+                return None
+            result = json.loads(raw)
+            return result if isinstance(result, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+def control_configuration_digest(environment):
+    # Bind configuration without exporting session cookies or database credentials.
+    return digest({key: value for key, value in environment.items()
+                   if key.startswith(('TRIPSIT_', 'GITHUB_', 'BETTER_AUTH_', 'DATABASE_'))
+                   or key in ('PATH', 'NODE_OPTIONS', 'NODE_PATH', 'CHROME_PATH')})
+
+
+def run_gate(environment, verify_controls=False):
+    report = run_probes(environment)
+    if not verify_controls or report['public_api']['status'] != 'passed':
+        return report
+    configuration = control_configuration_digest(environment)
+    report['controls_configuration_sha256'] = configuration
+    for name in CONTROLS:
+        result = execute_control(name, environment)
+        status = 'failed'
+        if name == 'database_isolation_and_purge' and result is True:
+            status = 'passed_local_only'
+        elif isinstance(result, dict):
+            if name == 'periodic_retention' and result.get('status') == 'passed_local_only':
+                status = 'unverified'
+                report[name]['local_verifier_status'] = 'passed_local_only'
+                report[name]['limitation'] = 'Deployed recurring retention is not verified by the local worker.'
+            elif name == 'authenticated_browser' and result.get('status') == 'passed_configured_browser_checks':
+                status = 'passed'
+        report[name]['status'] = status
+    fresh = report['code_sha256'] == code_digest() and configuration == control_configuration_digest(environment)
+    report['evidence_status'] = 'fresh' if fresh else 'stale'
+    if not fresh:
+        for name in CONTROLS:
+            report[name]['status'] = 'stale'
+    blockers = [name for name in ('public_api', *CONTROLS) if report[name]['status'] != 'passed']
+    report['private_admission']['blockers'] = blockers
+    report['accepted'] = fresh and not blockers
+    report['private_admission']['status'] = 'passed' if report['accepted'] else 'unverified'
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('story', nargs='?', choices=['e01s01'])
     parser.add_argument('--require-configured', action='store_true')
     parser.add_argument('--self-test', action='store_true')
+    parser.add_argument('--verify-controls', action='store_true', help='Run configured browser and disposable-local DB verifiers; never certifies deployed recurring retention')
     parser.add_argument('--report', type=Path)
     args = parser.parse_args()
     if args.self_test:
@@ -216,7 +293,7 @@ def main():
         return 0
     if args.story != 'e01s01' or not args.require_configured:
         parser.error('Use e01s01 --require-configured; there is no skip/pass mode')
-    report = run_probes(os.environ)
+    report = run_gate(os.environ, verify_controls=args.verify_controls)
     rendered = json.dumps(report, sort_keys=True, indent=2) + '\n'
     if args.report:
         args.report.write_text(rendered)
