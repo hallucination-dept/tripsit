@@ -65,7 +65,7 @@ def api(mode='ok'):
             if self.command == 'POST':
                 selected = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 assert selected == {'repository': 'team/repo', 'issueNumber': 2}
-                assert self.headers['Origin'] == f'http://127.0.0.1:{self.server.server_port}'
+                assert self.headers['Origin'] == 'http://' + self.headers['Host']
             status, data = 200, {}
             if mode == 'redirect':
                 self.send_response(302)
@@ -143,6 +143,12 @@ class HttpProbeTests(unittest.TestCase):
                 self.assertEqual(report['public_api']['status'], 'failed')
                 self.assertEqual(len(calls), 1)
                 self.assertNotIn('secret', json.dumps(report))
+
+    def test_localhost_alias_keeps_browser_origin_while_connecting_to_loopback(self):
+        with api() as (env, _):
+            env['TRIPSIT_LIVE_ORIGIN'] = env['TRIPSIT_LIVE_ORIGIN'].replace('127.0.0.1', 'localhost')
+            report = gates.run_probes(env)
+        self.assertEqual(report['public_api']['status'], 'passed')
 
     def test_dripping_headers_cannot_extend_absolute_deadline(self):
         with api('slow-headers') as (env, calls):

@@ -8,6 +8,8 @@ import http.client
 import json
 from pathlib import Path
 import time
+import socket
+import threading
 from datetime import datetime, timezone
 
 
@@ -57,19 +59,38 @@ def digest(value):
 
 def request_json(origin, path, cookie=None, payload=None, timeout=35):
     target = urlparse(origin)
-    connection = http.client.HTTPConnection(target.hostname, target.port or 80, timeout=timeout)
+    # Resolve the accepted localhost alias numerically so DNS cannot outlive the request deadline.
+    host = '127.0.0.1' if target.hostname == 'localhost' else target.hostname
+    connection = http.client.HTTPConnection(host, target.port or 80, timeout=timeout)
     deadline = time.monotonic() + timeout
-    headers = {'Accept': 'application/json', 'Origin': origin}
+    expired = threading.Event()
+    transport = None
+    def interrupt():
+        expired.set()
+        active = connection.sock or transport
+        if active is not None:
+            try:
+                active.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
+    headers = {'Accept': 'application/json', 'Origin': origin, 'Host': target.netloc}
     if cookie:
         headers['Cookie'] = cookie
     body = None if payload is None else json.dumps(payload).encode()
     if body is not None:
         headers['Content-Type'] = 'application/json'
+    timer = threading.Timer(max(0, deadline - time.monotonic()), interrupt)
+    timer.daemon = True
     try:
+        timer.start()
         connection.request('GET' if body is None else 'POST', path, body=body, headers=headers)
         transport = connection.sock
+        if expired.is_set():
+            raise ProbeFailure('request_timeout')
         transport.settimeout(max(.001, deadline - time.monotonic()))
         response = connection.getresponse()
+        if expired.is_set():
+            raise ProbeFailure('request_timeout')
         if 300 <= response.status < 400 or response.getheader('Content-Type', '').split(';')[0] != 'application/json':
             raise ProbeFailure('invalid_http_response')
         if response.getheader('Content-Length') and int(response.getheader('Content-Length')) > 1024 * 1024:
@@ -89,10 +110,14 @@ def request_json(origin, path, cookie=None, payload=None, timeout=35):
             if size > 1024 * 1024:
                 raise ProbeFailure('oversized_response')
             chunks.append(chunk)
-        return response.status, json.loads(b''.join(chunks).decode('utf-8'))
+        payload = json.loads(b''.join(chunks).decode('utf-8'))
+        if expired.is_set() or time.monotonic() >= deadline:
+            raise ProbeFailure('request_timeout')
+        return response.status, payload
     except (OSError, ValueError, http.client.HTTPException) as cause:
         raise ProbeFailure('http_request_failed') from cause
     finally:
+        timer.cancel()
         connection.close()
 
 
