@@ -14,3 +14,41 @@ stories:
   e01s01:
     status: blocked
     started_at: '2026-11-14T19:06:28.448672+00:00'
+    implementation: Public intake and automatic discovery implemented; UI and cleanup merged through
+      PR 4.
+    passing_tasks:
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 6
+    remaining_tasks:
+    - 7
+    - 8
+    blockers:
+    - Private admission and recurring retention controls remain unverified; private snapshots disabled.
+    - Live gate aggregation incomplete; real two-owner authenticated browser UAT outstanding.
+    latest_verification:
+      source: cbb83d9 (cleanup code; merged main f2ed60a)
+      frontend_preflight: passed; Svelte 0 errors/0 warnings
+      focused_tests: 34
+      scope: Local regressions and synthetic browser fixtures; not full live acceptance.
+  e01s02:
+    status: todo
+    preparation_status: held at user cleanup checkpoint; not integrated or pushed
+    worktree: /tmp/tripsit-candidate-decoder
+    branch: feat/e01s02-candidate-decoder
+    checkpoint: bc2672b
+    preparation: Plan and five decoder tests committed; decoder implementation absent.
+    verification: 'RED: missing candidate-output.ts; no check/build on this branch.'
+    remaining: Full story tasks, integration and acceptance remain incomplete.
+  e01s04:
+    status: todo
+    preparation_status: held at user cleanup checkpoint; not integrated or pushed
+    worktree: /tmp/tripsit-baseline-policy
+    branch: feat/e01s04-baseline-policy
+    checkpoint: 33ea3e8
+    preparation: Partial offline policy module for web_ui only; applicability/gaps unfinished.
+    verification: 2 native tests passed; no check/build on this branch.
+    remaining: Full story tasks, integration and acceptance remain incomplete.

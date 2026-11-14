@@ -13,18 +13,23 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  summary: 'Professional UI polish complete: compact neutral appbar, readable typography/focus
-    styles, ticket/snapshot columns, separate editor and simplified sign-in. Default
-    Svelte favicon replaced with TripSit T. Page behavior script byte-identical, API/auth/discovery
-    contracts unchanged. check/build0 Svelte0/0,28 native regressions+2 Chrome harness
-    tests pass. Desktop/mobile/signin presentationfixtures exercised snapshot+reviewfallback
-    with no overflow; not real auth UAT. Local app localhost5173 active session69655.
-    Fullstory private/admission/deployed retention gates remain incomplete. Continue
-    code/tests with no routine MD.'
+  summary: >-
+    Intake, discovery, merge repair, UI polish and duplicate-project cleanup are
+    merged through PR 4 (main f2ed60a). Latest code preflight passes with Svelte
+    0 errors/0 warnings and 34 focused tests pass. Public intake is implemented;
+    full e01s01 acceptance is incomplete: tasks 7/8, private admission, recurring
+    purge verification and real two-owner browser UAT remain open. Candidate
+    decoder and baseline policy preparation are held in isolated worktrees at
+    the user's cleanup checkpoint; neither is integrated. No automatic start,
+    generation, candidate execution or revision-bound publication is implemented.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
-  draft_pr: https://github.com/hallucination-dept/tripsit/pull/1
+  merged_prs:
+    intake: https://github.com/hallucination-dept/tripsit/pull/1
+    merge_repair: https://github.com/hallucination-dept/tripsit/pull/2
+    ui: https://github.com/hallucination-dept/tripsit/pull/3
+    duplicate_cleanup: https://github.com/hallucination-dept/tripsit/pull/4
 user_constraints:
   build_window: Roughly 24 hours of agent build work for the hackathon; exact timeframe
     is not a gate.
@@ -52,7 +57,7 @@ metrics:
 environment:
   node: 22.23.4
   npm: 10.9.9
-  dependencies: npm ci passed after escalated retry; lockfile unchanged
+  dependencies: Installed; direct jose dependency removed in PR 4, lockfile regenerated offline
   preflight: npm run check && npm run build passed; 0 errors, 0 warnings
   local_app:
     url: http://localhost:5173
@@ -61,18 +66,14 @@ environment:
     checks: GET /200, GET /api/auth/get-session200, anonymous GET /api/work-items401
     env_source: user-provided primary frontend/.env; values not printed/copied
     oauth_client_id: Iv23liAX4hdiKcwxPade
-    oauth_check: Code selects GITHUB_APP_CLIENT_ID/SECRET exclusively, default OAuth
-      scopes disabled. Regression proves selection with distinct legacy credentials
-      and denial when App pair missing. Runtime authorization verified with unused
-      legacy sentinels. User callback now email_not_found; actual App metadata lacks
-      emails permission. Needs Account permissions Email addresses read, then fresh
-      authorization.
+    oauth_check: GitHub App OAuth pair selected exclusively; email permission read
+      confirmed. Prior email_not_found issue resolved; no current OAuth blocker recorded.
 vcs:
   kind: git
-  branch: feat/e01s01-issue-intake
+  branch: docs/current-implementation-status
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: 3b855c5
+  checkpoint: f2ed60a
 verification:
   tooling_review:
     round: 2
@@ -102,7 +103,7 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Remove duplicate legacy project flow before resuming next packages
+active_work: Synchronize implementation status; next-package work held at user cleanup checkpoint
 implementation_plan:
   scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
     and open issues; refresh every60s; auto-start is deferred by user.
@@ -160,7 +161,7 @@ ui_plan:
     visual_fixtures: Desktop1440, mobile390 and sign-in1440 rendered in real Chrome;
       no horizontal overflow; snapshot and review text fallback exercised using isolated
       synthetic presentation API responses
-    behavior_script: byte-identical to repaired current main (3774b04)
+    behavior_script: Preserved in PR 3; PR 4 intentionally removed duplicate project handlers
     dependencies_added: 0
     markdown_reports_added: 0
 merge_investigation:
@@ -195,7 +196,7 @@ cleanup_plan:
     verify: cd frontend && npm run check && npm run build; native intake/auth/discovery tests; Chrome fixture checks
   - action: Review deletion boundary and publish cleanup PR for human review.
     verify: git diff --check; no legacy project callers; clean package lock
-  status: Implemented; ready for human review before merging.
+  status: Merged in PR 4; source baseline f2ed60a.
   verification:
     routing_tests: 2 passed; auth, missing configuration and fixed redirect covered.
     retained_tests: 28 intake/auth/discovery, 2 browser configuration and 2 Chrome harness passed.
@@ -204,3 +205,19 @@ cleanup_plan:
     review: Independent deletion-boundary review found no must-fix findings.
     package_lock: Regenerated offline; jose remains required by Better Auth transitively.
     limitations: Live authenticated installation roundtrip not rerun; existing database table/data untouched.
+implementation_status:
+  source_baseline: f2ed60a (main after merged PR 4)
+  implemented:
+  - GitHub App login, installed accessible repository and open-issue discovery, 60-second refresh.
+  - Owner-scoped public issue snapshots at frozen base SHA, expiry checks and purge tooling.
+  - Existing code review and token rendering with text fallback; responsive workspace UI.
+  - Duplicate legacy project/OAuth/manual PR subsystem removed; installation entrypoint preserved.
+  incomplete:
+  - e01s01 live gate aggregation, private admission, verified recurring purge and real authenticated two-owner browser UAT.
+  - Candidate generation, requirements policy integration, impact graph, independent review and controlled execution.
+  - Review packet, human decisions, revision-bound PR publication and comparative evaluation.
+  intentionally_deferred:
+  - Automatic work start; automatic discovery is implemented separately.
+  status_index: specs/execution-status.yaml
+  task_detail: specs/epics/e01-ticket-to-pr/e01s01-tasks.yaml
+  evidence_scope: Local/mock tests and synthetic presentation checks do not establish full live acceptance.
