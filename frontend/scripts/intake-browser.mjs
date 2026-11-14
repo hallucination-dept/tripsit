@@ -12,7 +12,7 @@ export function browserConfiguration(environment) {
   if (url.protocol !== 'http:' || !['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) || url.username || url.password || url.pathname !== '/' || url.search || url.hash) throw new Error('Browser UAT requires an explicit local HTTP origin.');
   const repository = environment.TRIPSIT_LIVE_REPOSITORY;
   const issueNumber = Number(environment.TRIPSIT_LIVE_ISSUE_NUMBER);
-  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(repository) || ['.', '..'].includes(repository.split('/')[1]) || !Number.isSafeInteger(issueNumber) || issueNumber < 1) throw new Error('Invalid development issue fixture.');
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(repository) || ['.', '..'].includes(repository.split('/')[1]) || !/^[1-9]\d*$/.test(environment.TRIPSIT_LIVE_ISSUE_NUMBER) || !Number.isSafeInteger(issueNumber) || issueNumber < 1) throw new Error('Invalid development issue fixture.');
   if (environment.TRIPSIT_LIVE_OWNER_COOKIE === environment.TRIPSIT_LIVE_OTHER_COOKIE) throw new Error('Two distinct real owner sessions are required.');
   browserCookies(environment.TRIPSIT_LIVE_OWNER_COOKIE, url.origin);
   browserCookies(environment.TRIPSIT_LIVE_OTHER_COOKIE, url.origin);
@@ -31,9 +31,14 @@ export function browserCookies(header, origin) {
   });
 }
 
-async function chromeSession() {
+export async function chromeSession() {
   const profile = await mkdtemp(join(tmpdir(), 'tripsit-browser-'));
   const chrome = spawn('/usr/bin/google-chrome', ['--headless=new', '--remote-debugging-pipe', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${profile}`, 'about:blank'], { stdio: ['ignore', 'ignore', 'ignore', 'pipe', 'pipe'] });
+  let ended = false;
+  const exited = new Promise(resolve => {
+    chrome.once('exit', () => { ended = true; resolve(); });
+    chrome.once('error', () => { ended = true; resolve(); });
+  });
   const pending = new Map();
   let nextId = 0;
   let buffer = '';
@@ -65,10 +70,21 @@ async function chromeSession() {
       chrome.stdio[3].write(`${JSON.stringify({ id, method, params, ...(sessionId ? { sessionId } : {}) })}\0`, error => { if (error) fail(); });
     });
   }
-  return { command, close: async () => { chrome.kill('SIGTERM'); await Promise.race([new Promise(resolve => chrome.once('exit', resolve)), new Promise(resolve => setTimeout(resolve, 2000))]); if (chrome.exitCode === null) chrome.kill('SIGKILL'); fail(); await rm(profile, { recursive: true, force: true }); } };
+  return { command, close: async () => {
+    const waitExit = async () => {
+      let timer;
+      try { await Promise.race([exited, new Promise(resolve => { timer = setTimeout(resolve, 2000); })]); }
+      finally { clearTimeout(timer); }
+    };
+    if (!ended) { chrome.kill('SIGTERM'); await waitExit(); }
+    if (!ended) { chrome.kill('SIGKILL'); await waitExit(); }
+    fail();
+    if (!ended) throw new Error('Chrome did not terminate; cleanup is incomplete.');
+    await rm(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  } };
 }
 
-async function page(chrome, origin, cookie) {
+export async function page(chrome, origin, cookie) {
   const context = await chrome.command('Target.createBrowserContext');
   const target = await chrome.command('Target.createTarget', { url: 'about:blank', browserContextId: context.browserContextId });
   const attached = await chrome.command('Target.attachToTarget', { targetId: target.targetId, flatten: true });
@@ -83,8 +99,8 @@ async function page(chrome, origin, cookie) {
   };
 }
 
-async function ownerFlow(repository, issueNumber) {
-  const deadline = Date.now() + 35_000;
+export async function ownerFlow(repository, issueNumber, timeoutMs = 35_000) {
+  const deadline = Date.now() + timeoutMs;
   const waitFor = async predicate => { while (!predicate()) { if (Date.now() > deadline) throw new Error('UI deadline'); await new Promise(resolve => setTimeout(resolve, 100)); } };
   await waitFor(() => document.querySelector('#repository'));
   const section = document.querySelector('[aria-labelledby="issue-heading"]');
@@ -105,13 +121,36 @@ async function ownerFlow(repository, issueNumber) {
   await waitFor(() => !reload.disabled && section.querySelector('li button'));
   const chosen = [...section.querySelectorAll('li button')].find(button => button.textContent === `${repository} #${issueNumber}`);
   if (!chosen) throw new Error('Snapshot missing from owner list');
-  chosen.click();
-  await new Promise(resolve => setTimeout(resolve, 0));
-  await waitFor(() => !chosen.disabled && section.querySelector('h3'));
   const response = await fetch('/api/work-items', { signal: AbortSignal.timeout(10_000) });
   if (!response.ok) throw new Error('Owner API unavailable');
   const items = (await response.json()).items;
-  const snapshot = items.find(item => item.snapshot.repository === repository && item.snapshot.issueNumber === issueNumber && item.snapshot.supplied.title === suppliedTitle);
+  const expected = items.find(item => item.snapshot.repository === repository && item.snapshot.issueNumber === issueNumber && item.snapshot.supplied.title === suppliedTitle);
+  if (!expected) throw new Error('Created fixture identity missing');
+  let snapshot;
+  let detailFailed = false;
+  const originalFetch = window.fetch;
+  window.fetch = async function (...args) {
+    const result = await originalFetch.apply(this, args);
+    const request = args[0] instanceof Request ? args[0].url : String(args[0]);
+    const target = new URL(request, location.href);
+    if (target.origin === location.origin && target.pathname === `/api/work-items/${expected.id}`) {
+      if (!result.ok) detailFailed = true;
+      else {
+        try {
+          const observed = (await result.clone().json()).item;
+          if (observed?.id !== expected.id) detailFailed = true;
+          else snapshot = observed;
+        } catch { detailFailed = true; }
+      }
+    }
+    return result;
+  };
+  try {
+    chosen.click();
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await waitFor(() => detailFailed || (snapshot && !chosen.disabled && section.querySelector('h3')));
+    if (detailFailed) throw new Error('Detail request failed');
+  } finally { window.fetch = originalFetch; }
   if (!snapshot || section.querySelector('h3').textContent !== snapshot.snapshot.supplied.title || section.querySelector('.issue-body').textContent !== (snapshot.snapshot.supplied.body || 'No issue body supplied.')) throw new Error('Source rendering mismatch');
   if (section.querySelector('h3').childElementCount || section.querySelector('.issue-body').childElementCount) throw new Error('Issue markup executed');
   const text = section.textContent;
@@ -148,17 +187,17 @@ async function main() {
     if (smoke) {
       const evaluate = await page(chrome, 'about:blank');
       if (await evaluate('1 + 1') !== 2) throw new Error('Browser evaluation unavailable.');
-      console.log('PASS: isolated headless Chrome DevTools transport and page evaluation; no app or authentication checked.');
-      return;
+      return 'PASS: isolated headless Chrome DevTools transport, page evaluation and profile cleanup; no app or authentication checked.';
     }
     const evaluateOwner = await page(chrome, config.origin, config.ownerCookie);
     const owner = await evaluateOwner(`(${ownerFlow.toString()})(${JSON.stringify(config.repository)},${config.issueNumber})`);
     const evaluateOther = await page(chrome, config.origin, config.otherCookie);
     const other = await evaluateOther(`(${otherFlow.toString()})(${JSON.stringify(owner.itemId)})`);
     const { itemId, ...checks } = owner;
-    console.log(JSON.stringify({ status: owner.hostileFixture ? 'passed_configured_browser_checks' : 'incomplete_hostile_fixture', fixtureDigest: createHash('sha256').update(`${config.repository}#${config.issueNumber}`).digest('hex'), checks: { ...checks, ...other }, limitations: ['No revoked-access transition or seven-day clock advance performed.', 'Recurring retention and private-source admission remain separate gates.'] }));
+    const report = JSON.stringify({ status: owner.hostileFixture ? 'passed_configured_browser_checks' : 'incomplete_hostile_fixture', fixtureDigest: createHash('sha256').update(`${config.repository}#${config.issueNumber}`).digest('hex'), checks: { ...checks, ...other }, limitations: ['No revoked-access transition or seven-day clock advance performed.', 'Recurring retention and private-source admission remain separate gates.'] });
     if (!owner.hostileFixture) process.exitCode = 1;
+    return report;
   } finally { await chrome.close(); }
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().catch(() => { console.error('BLOCKED: browser UAT failed or is not configured; no cookies or issue text exported.'); process.exitCode = 1; });
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) main().then(report => console.log(report)).catch(() => { console.error('BLOCKED: browser UAT failed or is not configured; no cookies or issue text exported.'); process.exitCode = 1; });

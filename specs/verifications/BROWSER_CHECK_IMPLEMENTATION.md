@@ -48,3 +48,21 @@ PASS local config security: strict loopback origin, no origin credentials/path/q
 The harness does not simulate delayed in-flight owner switching, actual revoked installation state or seven-day clock advance. Those remain separate mandatory fixtures/manual checks; sign-out and separate owner-context behavior are exercised when configured. It does not verify private admission or recurring deletion and must not mark the full story accepted.
 
 Manual follow-up after automated configured run: while a reload is pending, sign out using the existing UI and sign in as another owner; confirm the old response cannot restore source. With an operator-provided revoked-access fixture, reload and confirm selection clears; with an expired development fixture, confirm source is absent. Record exact revision, fixture digests, observed results and actual command exits in story evidence. Do not mark these checks passing from the browser smoke or configuration tests.
+
+## Review round 1 dispositions
+
+Reviewers reproduced two must-fix issues in the original harness: detail could be falsely reported passing from retained create content, and Chrome could print PASS before a later cleanup failure. Both are fixed; the original smoke above remains historical evidence, not a claim that its lifecycle was reliable.
+
+- `ownerFlow` now observes the UI's actual delegated fetch for the exact selected work-item ID. It requires a successful response containing that ID, then compares rendered source against that detail response. A no-op click or a denied detail cannot reuse the prior create title to pass. The temporary observation wrapper delegates native fetch and is restored in finally; it does not mock the application or grant authentication.
+- Cleanup installs an exit promise at spawn, waits for SIGTERM, then waits for SIGKILL when required, and removes the profile with bounded retries only after process exit. The CLI prints successful smoke/configured reports after cleanup returns; cleanup failure emits only BLOCKED, never a preceding PASS.
+- Issue numbers now require strict positive decimal digits; exponent, signed and whitespace forms are rejected instead of converted silently.
+
+RED `0778c20` records the new configuration/detail regressions. Direct configuration tests actually failed with Missing expected exception for the old permissive issue-number parser. The first Chrome fake-fixture run required correcting its own embedded literal closing-script escaping before accepting a fixture result; that fixture is not application behavior evidence.
+
+Actual post-fix checks:
+
+- `node frontend/tests/intake-browser.test.mjs`: 2 cases passed, including new strict numeral rejections.
+- Approved escalated `node frontend/tests/intake-browser-flow.test.mjs`: 2 cases passed. The first drives actual isolated Chrome against a deliberately unauthenticated local fake fixture and checks no-op rejection, denied-detail rejection and valid-detail success. The second runs the actual CLI smoke five consecutive times, requiring exit0, the final cleanup success line and empty stderr every time. Final combined run completed in about3.2seconds, zero failures/cancellations/skips.
+- `node --check frontend/scripts/intake-browser.mjs` and `git diff --check`: exit0.
+
+These fake-fixture and Chrome lifecycle tests verify the harness only. They are not authenticated TripSit UAT, GitHub permission evidence, retention/private admission evidence, or a story acceptance pass. Actual configured UAT remains unrun. No new dependency/application/auth code was introduced.
