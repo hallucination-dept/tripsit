@@ -52,3 +52,19 @@ test('bounds cancellation even when fetch ignores signal', async () => {
   const adapter = createModelGeneration({ url: 'https://model.example', token: 'secret', model: 'gemma', fetcher: async () => { controller.abort(); return new Promise(() => {}); } });
   await assert.rejects(() => adapter.generate(prompt, controller.signal), { status: 502 });
 });
+
+test('preserves raw selected-token observations without claiming exact content mapping', async () => {
+  const tokens = [{ token: 'é', bytes: [195, 169], logprob: -0.5 }];
+  for (const observed of [true, false]) {
+    const adapter = createModelGeneration({ url: 'https://model.example', token: 'secret', model: 'gemma', fetcher: async () => response(payload({ choices: [{ finish_reason: 'stop', message: { content: 'é' }, ...(observed ? { logprobs: { content: tokens } } : {}) }] })) });
+    const result = await adapter.generate(prompt, signal());
+    assert.deepEqual(result.observations, { status: observed ? 'observed' : 'unavailable', tokens: observed ? tokens : [] });
+  }
+});
+
+test('rejects malformed or unbounded raw observations', async () => {
+  for (const tokens of [[{ token: 'x', bytes: [256], logprob: -1 }], [{ token: 'x', bytes: null, logprob: 0.1 }], [{ token: 'x', bytes: null, logprob: null }], Array.from({ length: 8193 }, () => ({ token: 'x', bytes: null, logprob: -1 }))]) {
+    const adapter = createModelGeneration({ url: 'https://model.example', token: 'secret', model: 'gemma', fetcher: async () => response(payload({ choices: [{ finish_reason: 'stop', message: { content: 'x' }, logprobs: { content: tokens } }] })) });
+    await assert.rejects(() => adapter.generate(prompt, signal()), { status: 502 });
+  }
+});

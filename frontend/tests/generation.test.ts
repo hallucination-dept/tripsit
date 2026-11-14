@@ -99,3 +99,19 @@ test('revalidates public frozen intake after context and before model dispatch',
   await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal));
   assert.equal(f.calls.model, 0); assert.equal(f.calls.store, 0);
 });
+
+test('validates and preserves raw observations while mapping remains unavailable', async () => {
+  for (const valid of [true, false]) {
+    const f = fixture(); const generate = f.dependencies.model.generate;
+    const observations = { status: 'observed' as const, tokens: [{ token: 'é', bytes: [195, 169], logprob: valid ? -0.5 : 1 }] };
+    f.dependencies.model.generate = async (prompt) => ({ ...await generate(prompt), observations });
+    if (valid) {
+      const result = await f.service.create('owner', 'item', ['a.ts'], f.signal);
+      assert.deepEqual(result.candidate.observations, observations);
+      assert.equal(result.candidate.mapping.status, 'unavailable');
+    } else {
+      await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal));
+      assert.equal(f.calls.store, 0);
+    }
+  }
+});
