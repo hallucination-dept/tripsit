@@ -1,5 +1,5 @@
 import { dev } from '$app/env';
-import { error, redirect } from '@sveltejs/kit';
+import { error } from '@sveltejs/kit';
 import { githubAppSlug, missingGitHubAppEnvironment } from '#lib/github-app.js';
 
 export async function GET({ cookies, locals }) {
@@ -17,8 +17,5 @@ export async function GET({ cookies, locals }) {
 		maxAge: 60 * 10
 	});
 
-	throw redirect(
-		302,
-		`https://github.com/apps/${encodeURIComponent(githubAppSlug)}/installations/new`
-	);
+	return Response.redirect(`https://github.com/apps/${encodeURIComponent(githubAppSlug)}/installations/new`, 302);
 }

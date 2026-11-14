@@ -48,7 +48,7 @@ export async function GET({ url, cookies, locals }) {
 		authorizeUrl.searchParams.set('client_id', GITHUB_APP_CLIENT_ID);
 		authorizeUrl.searchParams.set('redirect_uri', callbackUrl);
 		authorizeUrl.searchParams.set('state', expectedState);
-		throw redirect(302, authorizeUrl.toString());
+		return Response.redirect(authorizeUrl.toString(), 302);
 	}
 
 	const state = url.searchParams.get('state');
