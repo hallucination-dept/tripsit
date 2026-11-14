@@ -69,7 +69,7 @@ export function buildImpact(input: ImpactInput) {
       const supported = extensions.includes(posix.extname(file.path).toLowerCase());
       graph.nodes.push({ id: nodeId(side, file.path), kind: 'file', extraction: supported ? `typescript@${ts.version}:static_file_imports` : 'file-level', language: language(file.path), source: { revision: side, path: file.path, blobSha: value.blobSha, start: 0, end: encoder.encode(value.content).byteLength, byteLength: encoder.encode(value.content).byteLength } });
       if (changed) graph.changed.push(nodeId(side, file.path));
-      gap('non_import_dependencies_unanalyzed', file.path, side, 'Calls, configuration, dynamic behavior and shared-resource effects are not resolved by file imports.');
+      gap('non_import_dependencies_unanalyzed', file.path, side, 'Only covered lexical calls and file imports are resolved; dynamic dispatch, configuration and shared-resource effects remain unknown.');
       if (!supported) {
         graph.unsupportedLanguages!.push(language(file.path));
         gap('unsupported_language', file.path, side, 'Only JS/TS static import syntax is extracted.');

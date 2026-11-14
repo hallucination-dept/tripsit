@@ -101,3 +101,38 @@ test('shadowed imports, property dispatch, overload ambiguity and unsupported la
     assert.equal(row.resolution, ['javascript', 'typescript'].includes(language) ? 'lexical_direct_calls_only' : 'unavailable');
   }
 });
+
+test('resolves const arrows and reexport aliases, retains deletion/rename base callers and cycles', () => {
+  const sources = [
+    file('amount.js', 'export const amount = () => 1;', null),
+    file('new.js', null, 'export const amount = () => 2;'),
+    file('barrel.js', "export {amount as value} from './amount.js';", "export {amount as value} from './new.js';"),
+    file('regression.test.js', "import {value} from './barrel.js'; export const regression = () => value();"),
+    file('cycle.js', 'export function left() { return right(); } export function right() { return left(); }',
+      'export function left() { return right() + 1; } export function right() { return left(); }')
+  ];
+  const result = buildImpact(input(sources));
+  for (const side of ['base', 'candidate']) {
+    const caller = result.impact.affected.find(item => item.node.kind === 'symbol' && item.node.source?.path === 'regression.test.js' && item.node.source.revision === side)!;
+    assert(caller);
+    assert.equal(caller.distance, 1);
+    const edge = result.graph.edges.find(edge => edge.id === caller.viaEdge)!;
+    const target = result.graph.nodes.find(node => node.id === edge.to)!;
+    assert.equal(target.source?.path, side === 'base' ? 'amount.js' : 'new.js');
+  }
+  assert(result.graph.edges.filter(edge => edge.relationship === 'calls_symbol_lexical' && edge.from.startsWith('candidate:')).length >= 3);
+  assert.deepEqual(buildImpact(input([...sources].reverse())), result);
+});
+
+test('overloads, optional and computed calls are unresolved and source bounds cap symbol growth', () => {
+  const result = buildImpact(input([file('a.ts', `export function f(x: number): number;
+export function f(x: string): string;
+export function f(x: any) { return x; }
+export function caller() { return f(1); }
+const x: any = {}; x?.f(); x['f']();`)]));
+  assert(result.gaps.some(gap => gap.kind === 'ambiguous_symbol'));
+  assert(result.gaps.some(gap => gap.kind === 'unresolved_call'));
+  assert.equal(result.graph.edges.filter(edge => edge.relationship === 'calls_symbol_lexical').length, 0);
+  const many = Array.from({ length: 1000 }, (_, index) => `function f${index}() {}`).join('\n');
+  assert.throws(() => buildImpact(input([file('many.ts', many)])), /Invalid impact input/);
+});
