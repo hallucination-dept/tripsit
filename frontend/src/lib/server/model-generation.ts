@@ -1,10 +1,10 @@
 import { IntakeError, readJson, whileActive } from './intake.ts';
-import type { GenerationPrompt, ModelGeneration } from './generation.ts';
+import { generationObservations, type GenerationPrompt, type ModelGeneration } from './generation.ts';
 
-type Configuration = { url?: string; token?: string; model?: string; fetcher?: typeof fetch };
+export type ModelGenerationConfiguration = { url?: string; token?: string; model?: string; fetcher?: typeof fetch };
 const settings = { temperature: 0, max_tokens: 2048, logprobs: true, top_logprobs: 0 };
 
-export function createModelGeneration(configuration: Configuration) {
+export function createModelGeneration(configuration: ModelGenerationConfiguration) {
   return {
     async generate(prompt: GenerationPrompt, signal: AbortSignal): Promise<ModelGeneration> {
       let endpoint: URL;
@@ -37,7 +37,8 @@ export function createModelGeneration(configuration: Configuration) {
           if (typeof content !== 'string') throw new Error();
           const rawOutput = new TextEncoder().encode(content);
           if (rawOutput.byteLength > 1_048_576 || new TextDecoder('utf-8', { ignoreBOM: true }).decode(rawOutput) !== content) throw new Error();
-          return { rawOutput, model: model!, settings: { ...settings } };
+          const observations = generationObservations(choice.logprobs == null ? undefined : { status: 'observed', tokens: choice.logprobs.content });
+          return { rawOutput, model: model!, settings: { ...settings }, observations };
         }, active);
       } catch { throw new IntakeError(502, 'Candidate model is unavailable or returned invalid output.'); }
     }

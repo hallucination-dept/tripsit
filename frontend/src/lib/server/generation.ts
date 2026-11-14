@@ -6,7 +6,8 @@ import type { WorkItem } from './records.ts';
 export type GenerationSettings = Record<string, string | number | boolean | null>;
 export type GenerationContext = { path: string; originalBlob: string | null; content: string };
 export type GenerationPrompt = { instruction: string; data: string };
-export type ModelGeneration = { rawOutput: Uint8Array; model: string; settings: GenerationSettings };
+export type GenerationObservations = { status: 'unavailable' | 'observed'; tokens: Array<{ token: string; bytes: number[] | null; logprob: number }> };
+export type ModelGeneration = { rawOutput: Uint8Array; model: string; settings: GenerationSettings; observations?: GenerationObservations };
 export type GeneratedCandidate = Omit<CandidateOutput, 'files'> & {
   files: Array<CandidateOutput['files'][number] & { blobSha: string }>;
   baseSha: string;
@@ -14,6 +15,7 @@ export type GeneratedCandidate = Omit<CandidateOutput, 'files'> & {
   outputDigest: string;
   model: string;
   settings: GenerationSettings;
+  observations?: GenerationObservations;
 };
 export type StoredCandidate = { id: string; candidate: GeneratedCandidate };
 export type GenerationDependencies = {
@@ -37,6 +39,24 @@ function activeItem(item: WorkItem, itemId: string): void {
   if (item.id !== itemId || item.snapshot.private !== false) deny(403);
   if (!Number.isFinite(Date.parse(item.expiresAt)) || Date.parse(item.expiresAt) <= Date.now()) deny(410);
   if (!/^[a-f0-9]{40}$/u.test(item.snapshot.baseSha)) deny();
+}
+
+export function generationObservations(value: unknown): GenerationObservations {
+  if (value === undefined) return { status: 'unavailable', tokens: [] };
+  if (!value || typeof value !== 'object') deny();
+  const observation = value as GenerationObservations;
+  if (!['observed', 'unavailable'].includes(observation.status) || !Array.isArray(observation.tokens)
+    || observation.tokens.length > 8192 || observation.status === 'unavailable' && observation.tokens.length !== 0) deny();
+  const tokens = observation.tokens.map(token => {
+    if (!token || typeof token.token !== 'string' || encoder.encode(token.token).byteLength > 16_384
+      || new TextDecoder('utf-8', { ignoreBOM: true }).decode(encoder.encode(token.token)) !== token.token
+      || typeof token.logprob !== 'number' || !Number.isFinite(token.logprob) || token.logprob > 0
+      || token.bytes !== null && (!Array.isArray(token.bytes) || token.bytes.length > 16_384
+        || token.bytes.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255))) deny();
+    return { token: token.token, bytes: token.bytes === null ? null : [...token.bytes], logprob: token.logprob };
+  });
+  if (encoder.encode(JSON.stringify(tokens)).byteLength > 2_097_152) deny();
+  return { status: observation.status, tokens };
 }
 
 export function createGeneration(dependencies: GenerationDependencies) {
@@ -91,7 +111,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
           expiresAt: item.expiresAt,
           outputDigest: createHash('sha256').update(decoded.rawOutput).digest('hex'),
           model: observation.model,
-          settings: { ...observation.settings }
+          settings: { ...observation.settings },
+          observations: generationObservations(observation.observations)
         };
         const current = await readItem(owner, itemId, active);
         if (JSON.stringify(current) !== identity) deny(409);
