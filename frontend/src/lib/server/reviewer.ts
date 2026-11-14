@@ -41,7 +41,7 @@ function frozenInput(input: ReviewerInput): ReviewerInput {
       && text(requirement.id, 128) && text(requirement.criterion, 8192) && typeof requirement.mandatory === 'boolean'
       && ['supplied', 'inferred', 'owner_confirmed', 'trusted_baseline'].includes(requirement.provenance)));
   valid(unique(input.requirements.map(requirement => requirement.id)));
-  valid(Array.isArray(input.nodes) && input.nodes.length <= 512 && Array.from(input.nodes).every(node => record(node, ['id', 'path'])
+  valid(Array.isArray(input.nodes) && input.nodes.length <= 2000 && Array.from(input.nodes).every(node => record(node, ['id', 'path'])
     && text(node.id, 128) && text(node.path, 1024)) && unique(input.nodes.map(node => node.id)));
   valid(Array.isArray(input.files) && input.files.length > 0 && input.files.length <= 32 && Array.from(input.files).every(file =>
     record(file, ['path', 'original', 'replacement']) && text(file.path, 1024)
