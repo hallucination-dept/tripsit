@@ -177,3 +177,23 @@ test('accepts extractor-sized graphs through 2000 nodes and denies 2001 without 
   assert.equal((await reviewer.review({ ...input(), nodes }, new AbortController().signal)).status, 'unavailable');
   assert.equal(calls, 2);
 });
+
+test('requests JSON object output and ignores provider token probabilities', async () => {
+  let calls = 0;
+  const reviewer = createReviewer({ ...configuration, fetcher: async (_url, init) => {
+    calls++;
+    const request = JSON.parse(String(init?.body));
+    assert.deepEqual(request.response_format, { type: 'json_object' });
+    assert(!('authorProbabilities' in JSON.parse(request.messages[1].content)));
+    return response(body(schema(), {
+      choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(schema()) },
+        logprobs: { content: [{ token: 'probability must not become evidence', logprob: -0.01 }] } }],
+      token_probabilities: [{ token: 'probability must not become evidence', probability_percent: 99 }]
+    }));
+  } });
+  const result = await reviewer.review(input(), new AbortController().signal);
+  assert.equal(result.status, 'completed');
+  assert.equal(calls, 1);
+  assert(!JSON.stringify(result).includes('probability must not become evidence'));
+  if (result.status === 'completed') assert.deepEqual(result.claims, schema().claims);
+});
