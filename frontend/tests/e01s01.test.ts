@@ -80,7 +80,7 @@ import { createIntake } from '../src/lib/server/work-items.ts';
 test('owner filtering precedes GitHub and private storage requires verified admission',async()=>{
  let writes=0, auths=0;
  const publicSnapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
- const stored={id:'item',snapshot:publicSnapshot,createdAt:'now',expiresAt:'later'};
+ const stored={id:'item',snapshot:publicSnapshot,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2030-01-01T00:00:00Z'};
  const store={create:async()=>{writes++;return stored;},get:async(owner:string)=>owner==='owner'?stored:null,list:async()=>[stored]};
  const github={snapshot:async()=>({...publicSnapshot,private:true}),authorize:async()=>{auths++;}};
  const service=createIntake({store,github});
@@ -140,7 +140,7 @@ test('public intake persists only the selected owner and newly frozen snapshot',
  const snapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
  let ownerWritten='';
  const service=createIntake({
-  store:{create:async(owner,value)=>{ownerWritten=owner;assert.deepEqual(value,snapshot);return{id:'new-item',snapshot:value,createdAt:'now',expiresAt:'later'};},get:async()=>null,list:async()=>[]},
+  store:{create:async(owner,value)=>{ownerWritten=owner;assert.deepEqual(value,snapshot);return{id:'new-item',snapshot:value,createdAt:'2026-01-01T00:00:00Z',expiresAt:'2030-01-01T00:00:00Z'};},get:async()=>null,list:async()=>[]},
   github:{snapshot:async()=>snapshot,authorize:async()=>{}}
  });
  const created=await service.create('owner',{repository:'team/repo',issueNumber:2},new AbortController().signal);
