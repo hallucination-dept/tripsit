@@ -8,6 +8,24 @@ bcps: 3
 depends_on:
 - e02s01
 - e02s02
+preparatory_subtask:
+  status: complete_offline_core_only
+  scope: Offline deterministic ordering only; no checks execute and dependent live behavior remains disabled.
+  plan:
+  - RED then GREEN mandatory inclusion outside optional budget, impact-first ordering and explicit missing-signal/unknown-impact inspection.
+  - Use numerical mean negative selected-token logprob only for exact spans with matching model/settings/revision.
+  - Bound and validate inputs/budgets, deterministic ID ties and explicit optional omissions with reasons.
+  verify: cd frontend && node --experimental-strip-types tests/priorities.test.ts
+  preflight: cd frontend && npm run check && npm run build
+  limits: No execution, correctness percentage, UI/API or full-story acceptance claim.
+  verification:
+    native: 6 passed; node --experimental-strip-types tests/priorities.test.ts exited 0.
+    preflight: npm run check && npm run build exited 0; Svelte 0 errors and 0 warnings.
+    red_green:
+    - c0206a3 -> ad8f4e8
+    - 6492955 -> d81ef63
+    tooling: No repository verify-tdd-red-commit script; actual separate RED failures and GREEN runs recorded.
+    remaining: Trusted graph/mapping inputs, live feasibility, owner API/UI, actual execution and revision-bound UAT remain unimplemented here.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
