@@ -167,6 +167,33 @@ class HttpProbeTests(unittest.TestCase):
 
 
 class AggregationTests(unittest.TestCase):
+    def test_process_failures_invalid_output_and_deadlines_never_export_output(self):
+        import os
+        import sys
+        from unittest.mock import patch
+        for script, timeout in [("print('not-json-secret')", 2),
+                                ("print('{}'); raise SystemExit(1)", 2),
+                                ("import time; time.sleep(2)", .03),
+                                ("print('x' * 65537)", 2)]:
+            with self.subTest(script=script), patch.dict(gates.CONTROLS, {
+                    'authenticated_browser': ([sys.executable, '-c', script], timeout)}):
+                self.assertIsNone(gates.execute_control('authenticated_browser', os.environ))
+        with patch.dict(gates.CONTROLS, {'authenticated_browser': (
+                [sys.executable, '-c', "print('{\"status\":\"passed_configured_browser_checks\"}')"], 2)}):
+            self.assertEqual(gates.execute_control('authenticated_browser', os.environ),
+                             {'status': 'passed_configured_browser_checks'})
+
+    def test_configuration_change_invalidates_executed_results(self):
+        from unittest.mock import patch
+        with api() as (env, _):
+            def changed(*_):
+                env['TRIPSIT_LIVE_BASE_SHA'] = 'b' * 40
+                return True
+            with patch.object(gates, 'execute_control', side_effect=changed):
+                report = gates.run_gate(env, verify_controls=True)
+        self.assertEqual(report['evidence_status'], 'stale')
+        self.assertFalse(report['accepted'])
+
     def test_missing_configuration_does_not_start_controls(self):
         from unittest.mock import patch
         with patch.object(gates, 'execute_control') as execute:
