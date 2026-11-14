@@ -5,12 +5,15 @@ import { IntakeError } from './intake.ts';
 import { createRecords } from './records.ts';
 import { createIntake } from './work-items.ts';
 
-export async function intakeRuntime(headers: Headers, owner: string, signal: AbortSignal) {
+export async function githubRuntime(headers: Headers, owner: string, signal: AbortSignal) {
   if (!GITHUB_APP_ID || !GITHUB_APP_PRIVATE_KEY || !/^[1-9]\d*$/.test(GITHUB_APP_ID)) {
     throw new IntakeError(503, 'GitHub issue intake requires a configured GitHub App installation.');
   }
   const token = await linkedGitHubToken(auth.api, headers, owner, signal);
   signal.throwIfAborted();
-  const github = createGitHub({ appId: GITHUB_APP_ID, privateKey: GITHUB_APP_PRIVATE_KEY, ...token });
-  return createIntake({ store: createRecords(database), github });
+  return createGitHub({ appId: GITHUB_APP_ID, privateKey: GITHUB_APP_PRIVATE_KEY, ...token });
+}
+
+export async function intakeRuntime(headers: Headers, owner: string, signal: AbortSignal) {
+  return createIntake({ store: createRecords(database), github: await githubRuntime(headers, owner, signal) });
 }

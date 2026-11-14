@@ -24,6 +24,12 @@ function text(value: unknown, limit: number): string {
   if (typeof value !== 'string' || Buffer.byteLength(value) > limit) throw new IntakeError(502, 'GitHub returned invalid or oversized content.');
   return value;
 }
+export function githubRepository(repository: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(repository) || ['.', '..'].includes(repository.split('/')[1])) {
+    throw new IntakeError(400, 'Select a valid owner/repository.');
+  }
+  return repository;
+}
 function jwt(appId: string, key: string): string {
   const now = Math.floor(Date.now() / 1000);
   const data = [ { alg: 'RS256', typ: 'JWT' }, { iat: now - 60, exp: now + 540, iss: appId } ]
@@ -32,7 +38,7 @@ function jwt(appId: string, key: string): string {
 }
 
 export function createGitHub(options: Options) {
-  async function request(path: string, token: string, signal: AbortSignal, body?: unknown): Promise<ObjectValue> {
+  async function requestJson(path: string, token: string, signal: AbortSignal, body?: unknown) {
     try {
       signal.throwIfAborted();
       const deadline = AbortSignal.any([signal, AbortSignal.timeout(10_000)]);
@@ -46,16 +52,38 @@ export function createGitHub(options: Options) {
         await response.body?.cancel();
         throw new IntakeError([401,403,404].includes(response.status) ? 403 : 502, 'GitHub access is unavailable or no longer authorized.');
       }
-      return object(await readJson(response, 1024 * 1024, deadline));
+      return { value: await readJson(response, 1024 * 1024, deadline),
+        hasNext: /<[^>]+>;\s*rel="next"/.test(response.headers.get('Link') ?? '') };
     } catch (cause) {
       if (cause instanceof IntakeError && cause.status === 403) throw cause;
       throw new IntakeError(502, 'GitHub did not complete a valid bounded request.');
     }
   }
 
-  async function authorize(repository: string, signal: AbortSignal, expectedId?: number) {
+  async function request(path: string, token: string, signal: AbortSignal, body?: unknown): Promise<ObjectValue> {
+    return object((await requestJson(path, token, signal, body)).value);
+  }
+
+  async function verifyUser(signal: AbortSignal) {
     const user = await request('/user', options.userToken, signal);
     if (String(id(user.id)) !== options.accountId) throw new IntakeError(403, 'The linked GitHub identity could not be verified.');
+  }
+
+  async function pages(path: string, token: string, signal: AbortSignal, budget: { remaining: number }, field?: string) {
+    const rows: unknown[] = [];
+    for (let page = 1; budget.remaining > 0; page++) {
+      budget.remaining--;
+      const result = await requestJson(`${path}${path.includes('?') ? '&' : '?'}per_page=100&page=${page}`, token, signal);
+      const values = field ? object(result.value)[field] : result.value;
+      if (!Array.isArray(values) || values.length > 100) throw new IntakeError(502, 'GitHub returned an invalid discovery page.');
+      rows.push(...values);
+      if (!result.hasNext) return { rows, complete: true };
+    }
+    return { rows, complete: false };
+  }
+
+  async function authorize(repository: string, signal: AbortSignal, expectedId?: number) {
+    await verifyUser(signal);
     const repo = await request(`/repos/${repository}`, options.userToken, signal);
     const repositoryId = id(repo.id);
     if (expectedId !== undefined && repositoryId !== expectedId) throw new IntakeError(403, 'Repository identity has changed.');
@@ -73,6 +101,49 @@ export function createGitHub(options: Options) {
   }
 
   return {
+    repositories: async (signal: AbortSignal) => {
+      await verifyUser(signal);
+      const budget = { remaining: 5 };
+      const installations = await pages('/user/installations', options.userToken, signal, budget, 'installations');
+      let complete = installations.complete;
+      const repositories = new Map<number, { id: number; fullName: string; private: boolean }>();
+      for (const value of installations.rows) {
+        const installation = object(value);
+        if (String(id(installation.app_id)) !== options.appId) continue;
+        if (installation.suspended_at !== null) {
+          if (typeof installation.suspended_at !== 'string') throw new IntakeError(502, 'GitHub returned invalid installation metadata.');
+          continue;
+        }
+        if (!budget.remaining) { complete = false; break; }
+        const accessible = await pages(`/user/installations/${id(installation.id)}/repositories`, options.userToken, signal, budget, 'repositories');
+        complete = complete && accessible.complete;
+        for (const value of accessible.rows) {
+          const repository = object(value);
+          const fullName = text(repository.full_name, 201);
+          if (!/^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9_.-]{1,100}$/.test(fullName) || ['.', '..'].includes(fullName.split('/')[1]) || typeof repository.private !== 'boolean') {
+            throw new IntakeError(502, 'GitHub returned invalid repository metadata.');
+          }
+          const repositoryId = id(repository.id);
+          repositories.set(repositoryId, { id: repositoryId, fullName, private: repository.private });
+        }
+      }
+      return { repositories: [...repositories.values()].sort((a, b) => a.fullName.localeCompare(b.fullName)), complete };
+    },
+    issues: async (repository: string, signal: AbortSignal) => {
+      githubRepository(repository);
+      const current = await authorize(repository, signal);
+      const result = await pages(`/repos/${current.repository}/issues?state=open&sort=updated&direction=desc`, current.token, signal, { remaining: 5 });
+      const issues = new Map<number, { id: number; number: number; title: string; updatedAt: string }>();
+      for (const value of result.rows) {
+        const issue = object(value);
+        if ('pull_request' in issue) continue;
+        const updatedAt = text(issue.updated_at, 64);
+        if (!Number.isFinite(Date.parse(updatedAt))) throw new IntakeError(502, 'GitHub returned invalid issue metadata.');
+        const issueId = id(issue.id);
+        issues.set(issueId, { id: issueId, number: id(issue.number), title: text(issue.title, 4096), updatedAt });
+      }
+      return { issues: [...issues.values()], complete: result.complete };
+    },
     authorize: async (repository: string, repositoryId: number, signal: AbortSignal) => {
       const current = await authorize(repository, signal, repositoryId);
       if (current.private) throw new IntakeError(503, 'Private issue storage awaits verified isolation and retention controls.');

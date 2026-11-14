@@ -70,6 +70,7 @@ test('pagination follows fixed-origin numbered pages and exposes exhausted page 
 test('identity mismatch, removed access, malformed pages and invalid repository input fail closed', async () => {
   await assert.rejects(() => fixture({ '/user': { id: 99 } }).github.repositories(new AbortController().signal), IntakeError);
   await assert.rejects(() => fixture({ '/user/installations?per_page=100&page=1': { installations: 'invalid' } }).github.repositories(new AbortController().signal), IntakeError);
+  await assert.rejects(() => fixture({ '/user/installations?per_page=100&page=1': { installations: [{ id: 7, app_id: 9 }] } }).github.repositories(new AbortController().signal), IntakeError);
   await assert.rejects(() => fixture({ '/repos/team/repo': new Response('sensitive upstream', { status: 403 }) }).github.issues('team/repo', new AbortController().signal), (error: IntakeError) => error.status === 403 && !error.message.includes('sensitive'));
   const denied = fixture();
   await assert.rejects(() => denied.github.issues('../user', new AbortController().signal), IntakeError);
