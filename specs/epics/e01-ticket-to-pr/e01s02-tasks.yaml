@@ -76,7 +76,7 @@ tasks:
 
 preparatory_subtasks:
 - id: candidate-output-decoder
-  status: failing
+  status: passing
   scope: Offline pure decoder only; no application integration or story completion.
   files:
   - frontend/src/lib/server/candidate-output.ts
