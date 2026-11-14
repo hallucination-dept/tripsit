@@ -13,15 +13,14 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  summary: 'Automatic discovery/refresh implemented and tested in e01s01: user/App-authorized
-    repositories and open issue metadata endpoints, select controls, initial loading
-    +60s polling with owner/repo cancellation, selection preservation, PR exclusion
-    and explicit partiallists. Userconfirmed auto-start later; no automatic work.
-    Two coding agents used separate worktrees; review A96/B96 no mustfix. Four discovery+four
-    controller+19intake+one auth tests pass, Chrome fixture2pass, check/build0 Svelte0/0.
-    Local server session69655 on localhost5173 serves changes. GitHub App Email addresses
-    read permission confirmed after userupdate. Fullstory live/private/deployed retention
-    stillnotcertified. No routine MD.'
+  summary: 'Professional UI polish complete: compact neutral appbar, readable typography/focus
+    styles, ticket/snapshot columns, separate editor and simplified sign-in. Default
+    Svelte favicon replaced with TripSit T. Page behavior script byte-identical, API/auth/discovery
+    contracts unchanged. check/build0 Svelte0/0,28 native regressions+2 Chrome harness
+    tests pass. Desktop/mobile/signin presentationfixtures exercised snapshot+reviewfallback
+    with no overflow; not real auth UAT. Local app localhost5173 active session69655.
+    Fullstory private/admission/deployed retention gates remain incomplete. Continue
+    code/tests with no routine MD.'
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -103,8 +102,8 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Automatic repository/issue discovery and refresh; explicit user selection
-  starts no automatic work
+active_work: Polish existing workspace UI without changing discovery, snapshot, auth
+  or review contracts
 implementation_plan:
   scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
     and open issues; refresh every60s; auto-start is deferred by user.
@@ -131,3 +130,53 @@ implementation_plan:
   bounds: No automatic ticket execution, no private-persistence bypass, no new dependencies,
     no routine Markdown reports
   status: implemented; local verification passed; automatic-start explicitly deferred
+ui_plan:
+  scope: Professional responsive workspace and sign-in visual refinement; preserve
+    all implemented flows, labels/keyboard access and honest availability states.
+    No new backend features or dependencies.
+  targets:
+  - frontend/src/routes/+page.svelte
+  - presentation stylesheet only if useful
+  - existing browser harness/fixtures only if necessary for intentional label/markup
+    changes
+  - frontend/src/lib/assets/favicon.svg
+  impact: Existing page is sole caller of discovery controller/auth client/intake/review
+    APIs. Preserve API calls, owner/session guards, IDs and Svelte runes; rendering/copy/CSS
+    only.
+  tasks:
+  - action: Restructure and style compact neutral workspace/sign-in with clearer task/detail/review
+      hierarchy
+    verify: cd frontend && npm run check && npm run build
+  - action: Visual browser checks desktop/mobile with isolated synthetic presentation
+      data, plus existing controller/auth/intake/Chrome regressions
+    verify: Native existing tests, real Chrome capture and no horizontal overflow
+      at1440/390 widths
+  - action: Integrate reviewed UI commit and push current PR
+    verify: git diff --check; live localhost page200; preserve functional flows
+  status: complete; rendered visual checks and regressions passed
+  verification:
+    check_build: passed; Svelte 0 errors/0 warnings
+    native_regressions: 28
+    chrome_harness_tests: 2
+    visual_fixtures: Desktop1440, mobile390 and sign-in1440 rendered in real Chrome;
+      no horizontal overflow; snapshot and review text fallback exercised using isolated
+      synthetic presentation API responses
+    behavior_script: byte-identical to repaired current main (3774b04)
+    dependencies_added: 0
+    markdown_reports_added: 0
+merge_investigation:
+  baseline: origin/main800094c, tree identical to merged branchfff8b24
+  reproduction: cd /tmp/tripsit-merge-audit/frontend && npm run check ->2 errors0warnings
+  errors:
+  - Dropped onMount import retained by e25b14f parent but missing in mergedpage
+  - GITHUB_APP_SLUG imported by github-app.ts but absent from private env schema
+  plan:
+  - Add only missing import and env declaration on isolated current-main fix branch
+  - Run check/build and existingnative regression tests
+  - Integrate latestmain/fix with isolated UI polish preserving both parents project+discovery
+    functionality; push reviewable follow-up without forcepush or merge tomain
+  verify: npm run check && npm run build; existingnative tests; compare preservedpagehandlers
+    and project controls
+  result: Repair PR 2 merged by user; current main 3774b04 integrated. Check/build
+    pass with Svelte 0 errors/0 warnings; Chrome harness 2 passing. Final project
+    controls preserved; real authenticated project and PR flow not exercised.
