@@ -2,7 +2,7 @@
 	import { untrack } from 'svelte';
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { createCandidateWorkspace } from '#lib/candidate-workspace.ts';
-	import { createCandidateInspection } from '#lib/candidate-inspection.ts';
+	import CandidateInspection from '#lib/CandidateInspection.svelte';
 	import { authClient } from '#lib/auth-client.js';
 	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
@@ -42,16 +42,6 @@
 	const candidateController = createCandidateWorkspace({ onChange: next => { candidateWorkspace = next; } });
 	let candidateWorkspace = $state(candidateController.state);
 	let candidatePaths = $state<string[]>([]);
-	const inspectionController = createCandidateInspection({ onChange: next => { inspection = next; } });
-	let inspection = $state(inspectionController.state);
-
-	$effect(() => {
-		const owner = $session.data?.user.id ?? '';
-		const itemId = selectedIssue?.id ?? '';
-		const candidate = candidateWorkspace.owner === owner && candidateWorkspace.itemId === itemId ? candidateWorkspace.candidate : null;
-		untrack(() => { void inspectionController.select(owner, itemId, candidate?.id ?? '', candidate?.candidate.baseSha ?? '', candidate?.candidate.outputDigest ?? ''); });
-		return () => untrack(() => inspectionController.stop());
-	});
 
 	$effect(() => {
 		const owner = $session.data?.user.id ?? '';
@@ -250,41 +240,9 @@
 						<p class="empty-note">Candidate {candidateWorkspace.candidate.id} · Expires {new Date(candidateWorkspace.candidate.candidate.expiresAt).toLocaleString()}</p>
 						{#each candidateWorkspace.candidate.candidate.files as file (file.path)}<details open class="candidate-file"><summary>{file.path}</summary><p class="empty-note">Blob {file.blobSha}</p><pre><code>{file.content}</code></pre></details>{/each}
 					</div>
-					<section class="panel candidate-preview" aria-labelledby="inspection-heading" aria-live="polite">
-						<div class="section-heading"><div><h3 id="inspection-heading">Impact and review packet</h3><p>Frozen evidence and open verification gaps. Human inspection required.</p></div></div>
-						{#if inspection.loading}<p class="empty-note">Loading candidate assessment…</p>{/if}
-						{#if inspection.error}<p class="error" role="alert">{inspection.error}</p>{/if}
-						{#if inspection.assessment}
-							{@const assessment = inspection.assessment}
-							{@const packet = assessment.packet}
-							<p class="empty-note inspection-identity">Base {packet.identity.baseSha}<br />Candidate digest {packet.identity.candidateDigest}<br />Policy {packet.identity.policyVersion} · Packet {packet.packetDigest}</p>
-							<h4>Downstream impact</h4><p>{packet.impact.summary}</p>
-							<p class="empty-note">{assessment.impact.coverage.extraction} · Semantic resolution: {assessment.impact.coverage.semanticResolution}. Supported import relationships do not establish behavioral correctness.</p>
-							<details class="snapshot-details"><summary>Affected nodes ({assessment.impact.impact.affected.length})</summary><ul>{#each assessment.impact.impact.affected as affected}<li>{affected.node.id}</li>{/each}</ul></details>
-							<details class="snapshot-details"><summary>Extraction gaps ({assessment.impact.gaps.length})</summary><ul>{#each assessment.impact.gaps as gap}<li>{gap.kind}: {gap.path} — {gap.detail}</li>{/each}</ul></details>
-							<h4>Requirement coverage</h4><ul class="requirements-list">{#each packet.requirementCoverage as requirement}<li><strong>{requirement.id}: {requirement.criterion}</strong><p>{requirement.status} · {requirement.checkIds.length} linked checks · {requirement.executionIds.length} execution records</p><p class="empty-note">Source: {requirement.source.name} {requirement.source.version}</p></li>{/each}</ul>
-							<h4>Token signal</h4><p>{packet.tokenSignal.reason} ({packet.tokenSignal.observedTokens} observed tokens.)</p>
-							<h4>Independent review</h4>
-							<p class="empty-note">Public repository context is sent only when you request a review. Model claims and proposed checks are unverified.</p>
-							<button class="button-primary" type="button" onclick={() => inspectionController.review()} disabled={inspection.reviewing || !assessment.reviewerConfigured}>{inspection.reviewing ? 'Requesting independent review…' : 'Request independent review'}</button>
-							{#if !assessment.reviewerConfigured}<p class="empty-note">Independent reviewer is not configured.</p>{/if}
-							{#if inspection.reviewError}<p class="error" role="alert">{inspection.reviewError}</p>{/if}
-							{#if !assessment.reviews.length}<p class="empty-note">No independent review is recorded for this candidate.</p>{/if}
-							{#each assessment.reviews as stored (stored.id)}<div class="candidate-file">
-								{#if stored.result.status === 'unavailable'}<p>Review unavailable: {stored.result.reason}</p>{:else}
-									<p class="empty-note">{stored.result.model} · {new Date(stored.createdAt).toLocaleString()} · {stored.result.destination}</p><p class="empty-note">Retention: {stored.result.retentionDisclosure}</p>
-									<ul>{#each stored.result.claims as claim}<li><strong>{claim.id} · {claim.stance}</strong>: {claim.statement}<p class="empty-note">Requirements: {claim.requirementIds.join(', ') || 'None'} · Nodes: {claim.nodeIds.join(', ') || 'None'}</p>{#if claim.counterexample}<p>Counterexample: {claim.counterexample}</p>{/if}</li>{/each}</ul>
-									<details class="snapshot-details"><summary>Proposed checks ({stored.result.checks.length}) · Not executed</summary><ul>{#each stored.result.checks as check}<li>{check.id}: {check.description}</li>{/each}</ul></details>
-								{/if}
-							</div>{/each}
-							<details class="snapshot-details"><summary>Evidence conflicts ({packet.conflicts.length})</summary><ul>{#each packet.conflicts as conflict}<li>{conflict.requirementId}: claims {conflict.claimIds.join(', ')} · executions {conflict.executionIds.join(', ') || 'None'}</li>{/each}</ul></details>
-							<h4>Verification plan</h4><p class="empty-note">{packet.checkPlan.mandatory.length} mandatory · {packet.checkPlan.selected.length} optional selected · {packet.checkPlan.omitted.length} omitted. Optional budget: {packet.checkPlan.budget.optionalChecks} checks, {packet.checkPlan.budget.perCheckMs / 1000}s each, {packet.checkPlan.budget.totalMs / 1000}s total.</p>
-							{#if !packet.executions.length}<p>No trusted execution evidence is available. This candidate is not acceptance-ready.</p>{/if}
-							{#each packet.executions as execution}<p>{execution.id} · {execution.checkId}</p>{/each}
-							<details class="snapshot-details"><summary>Packet gaps ({packet.gaps.length})</summary><ul>{#each packet.gaps as gap}<li>{gap.kind}: {gap.reference}</li>{/each}</ul></details>
-							<p class="privacy-note">{packet.humanInspection.reasons.join(' ')}</p>
-						{/if}
-					</section>
+					<CandidateInspection owner={$session.data.user.id} itemId={selectedIssue.id}
+						candidateId={candidateWorkspace.candidate.id} baseSha={selectedIssue.snapshot.baseSha}
+						candidateDigest={candidateWorkspace.candidate.candidate.outputDigest} />
 				{/if}
 			</section>
 		{/if}
@@ -443,8 +401,6 @@
 	#candidate-files { min-height: 150px; }
 	.candidate-preview { margin-top: 18px; padding: 20px; }
 	.candidate-preview p { overflow-wrap: anywhere; }
-	.candidate-preview h4 { margin: 24px 0 10px; }
-	.candidate-preview li { overflow-wrap: anywhere; }
 	.candidate-file { margin-top: 18px; border-top: 1px solid #e7ebf1; padding-top: 14px; }
 	.candidate-file summary { overflow-wrap: anywhere; font-size: 13px; font-weight: 600; cursor: pointer; }
 	.candidate-file pre { overflow: auto; max-height: 420px; padding: 14px; background: #f6f8fb; font-size: 12px; line-height: 1.7; border: 1px solid #e7ebf1; border-radius: 5px; }

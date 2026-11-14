@@ -35,10 +35,13 @@ test('assessment routes enforce auth, owner, CSRF, exact empty JSON, queries, UU
   try {
     const { GET } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/assessment/+server.ts');
     const { POST } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/assessment/reviews/+server.ts');
+    const { POST: legacyPost } = await import('../src/routes/api/work-items/[id]/candidates/[candidateId]/reviews/+server.ts');
     const event = (request: Request, owner: string | null = 'owner', id = itemId, candidate = candidateId) => ({ request, locals: { user: owner ? { id: owner } : null }, params: { id, candidateId: candidate } });
     const request = (body = '{}', origin = 'http://localhost', query = '', signal?: AbortSignal) => new Request(base + '/reviews' + query, { method: 'POST', headers: { origin, 'Content-Type': 'application/json' }, body, signal });
     assert.equal((await GET(event(new Request(base), null))).status, 401);
     assert.equal((await POST(event(request(), null))).status, 401);
+    assert.equal((await legacyPost(event(request(), null))).status, 401);
+    assert.equal((await legacyPost(event(request('{}', 'https://other.example')))).status, 403);
     assert.equal(calls, 0);
     assert.equal((await POST(event(request('{}', 'https://other.example')))).status, 403);
     for (const body of ['null', '[]', '{', '{"result":"passed"}', '{"url":"https://evil.example"}']) assert.equal((await POST(event(request(body)))).status, 400);
@@ -93,7 +96,7 @@ test('assessment runtime shares candidate admission services and uses only confi
       '#lib/auth.js': 'export const database={};',
       './generation-runtime.ts': 'export const candidateServices=(...args)=>globalThis.assessmentServices(...args);',
       './assessment.ts': 'export const createAssessment=dependencies=>globalThis.assessmentFactory(dependencies);',
-      './reviewer.ts': 'export const createReviewer=options=>globalThis.assessmentReviewer(options);',
+      './reviewer.ts': 'export const createReviewer=options=>globalThis.assessmentReviewer(options);export const reviewerConfigured=options=>Boolean(options.url&&options.token&&options.model&&options.retentionDisclosure);',
       './review-records.ts': 'export const createReviewRecords=()=>globalThis.assessmentReviewStore;'
     };
     return mocks[specifier] ? { url: `data:text/javascript,${encodeURIComponent(mocks[specifier])}`, shortCircuit: true } : next(specifier, context);

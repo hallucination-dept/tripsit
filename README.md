@@ -193,3 +193,27 @@ Candidate code is not executed, committed or published by this increment. Exact
 output-to-code token mapping remains unavailable. Applying migration 002 to a
 configured production database requires explicit authorization; the runtime refuses
 generation before its storage tables exist.
+
+Candidate inspection now shows bounded JavaScript/TypeScript static import impact,
+source references, coverage gaps and a revision-bound review packet. Static imports
+do not establish semantic call resolution or behavioral correctness. Other languages
+and omitted source context remain explicit gaps.
+
+Independent review is manual and public-source only. Configure all four server-only
+values to enable it: `REVIEWER_API_URL` (base URL), `REVIEWER_API_KEY`, `REVIEWER_MODEL`
+and `REVIEWER_RETENTION_DISCLOSURE`. Missing or invalid configuration keeps review
+unavailable. Claims and suggested checks are model proposals, not trusted execution
+evidence. Up to eight review artifacts share their candidate snapshot's expiry and
+purge cascade; older policy identities are preserved as stale evidence. No new
+database migration is required for review history.
+
+With the app running locally, reproduce synthetic presentation checks from `frontend/`:
+
+```bash
+node --experimental-strip-types scripts/workspace-presentation.mjs
+```
+
+These checks mock all protected API data and cover desktop/mobile layouts, escaped
+model text, explicit review and the unavailable-provider state. They do not establish
+real authenticated UAT. Controlled execution, human decisions and PR publication
+remain separate unfinished stages.
