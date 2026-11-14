@@ -102,8 +102,7 @@ verification:
     must_fix: 0
     scope: local implementation, not full story acceptance
   github_app_email_permission: read confirmed
-active_work: Polish existing workspace UI without changing discovery, snapshot, auth
-  or review contracts
+active_work: Remove duplicate legacy project flow before resuming next packages
 implementation_plan:
   scope: Extend e01s01 intake UI to automatically discover accessible installed repositories
     and open issues; refresh every60s; auto-start is deferred by user.
@@ -180,3 +179,28 @@ merge_investigation:
   result: Repair PR 2 merged by user; current main 3774b04 integrated. Check/build
     pass with Svelte 0 errors/0 warnings; Chrome harness 2 passing. Final project
     controls preserved; real authenticated project and PR flow not exercised.
+cleanup_plan:
+  reason: User requests removing accidentally merged duplicate project subsystem before continuing.
+  next_packages: Held in isolated worktrees; no decoder or policy code integrated.
+  scope:
+  - Remove legacy project database helpers, project APIs, manual PR form, duplicated issue UI and migration command.
+  - Remove direct jose dependency; retain transitive auth dependency and lockfile consistency.
+  - Keep authenticated GitHub install redirect and fixed setup callback for externally configured URL compatibility.
+  - Preserve automatic discovery/polling, owner-scoped issue snapshots, Better Auth and code review.
+  bounds: No database/schema changes or deletion of existing project records; no live private/generation enablement.
+  tasks:
+  - action: Delete obsolete flow and simplify installation entrypoints; add focused routing tests.
+    verify: cd frontend && node --experimental-strip-types tests/github-install.test.ts
+  - action: Run retained regressions, frontend preflight and desktop/mobile presentation checks.
+    verify: cd frontend && npm run check && npm run build; native intake/auth/discovery tests; Chrome fixture checks
+  - action: Review deletion boundary and publish cleanup PR for human review.
+    verify: git diff --check; no legacy project callers; clean package lock
+  status: Implemented; ready for human review before merging.
+  verification:
+    routing_tests: 2 passed; auth, missing configuration and fixed redirect covered.
+    retained_tests: 28 intake/auth/discovery, 2 browser configuration and 2 Chrome harness passed.
+    preflight: npm run check and npm run build passed; Svelte 0 errors and 0 warnings.
+    visual: Synthetic desktop1440/mobile390/signin checks pass without overflow; no requests to removed project APIs.
+    review: Independent deletion-boundary review found no must-fix findings.
+    package_lock: Regenerated offline; jose remains required by Better Auth transitively.
+    limitations: Live authenticated installation roundtrip not rerun; existing database table/data untouched.

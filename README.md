@@ -125,8 +125,10 @@ requires `GITHUB_APP_ID` and a PEM `GITHUB_APP_PRIVATE_KEY`, server-side only, f
 GitHub App installed on the selected repository with Contents/Issues read access.
 The logged-in user's OAuth token must independently access the repository; the
 app installation does not grant that user access. Missing configuration disables
-intake without changing the existing code review flow. No merge/publish operation
-is added by this slice.
+intake without changing the existing code review flow. The installation link uses
+`GITHUB_APP_SLUG`; the setup callback returns to the workspace, where accessible
+repositories and open issues are discovered automatically. No merge/publish
+operation is added by this slice.
 
 For an explicitly disposable **local** PostgreSQL database named
 `tripsit_e01s01_test`, set `TRIPSIT_TEST_DATABASE_URL` and run from `frontend/`:
@@ -144,7 +146,7 @@ Better Auth tables. The development script refuses non-local or differently name
 databases and never falls back to `DATABASE_URL`. Applying a production migration
 or configuring a production purge schedule requires explicit authorization.
 
-The signed-in page accepts `owner/repository` and an issue number. It snapshots
+The signed-in page discovers repositories and open issues and refreshes every minute. It snapshots
 supplied issue text and an immutable base SHA; it does not infer or confirm
 acceptance criteria. Reads recheck owner and repository access. The latest 20
 retained snapshots can be reloaded. Seven-day expiry blocks reads, and the purge
