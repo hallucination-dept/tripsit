@@ -12,13 +12,15 @@ project_cycle:
     to_phase: 4
     status: authorized
 handoff:
-  next_skill: kickoff-branch
-  summary: 'e01s01 detailed plan/impact complete: reuse existing GitHub OAuth and
-    pg pool, installed explicit local accountId token contract verified; independently
-    authorize user and App repository access. Eight failing/unrun e01s01 tasks, 56
-    total. Plan consistency selfcheck passes; missing upstream helper replaced by
-    existing local validator. Next checkpoint specs and create feature isolation from
-    clean baseline before TDD; no new login flow, application code or production mutations.'
+  next_skill: develop-tdd
+  summary: 'e01s01 public intake slice implemented and locally checked: existing OAuth,
+    owner/user-App repository intersection, immutable snapshots, escaped owner UI,
+    actual disposable PostgreSQL owner-isolation/concurrency/expiry tests. Tasks1-6
+    local commands pass; task7 actual live probes/private admission/periodic retention
+    and task8 authenticated browser UAT remain failing. Private persistence is always
+    refused. live_gates.py is a failclosed admission reporter stub, not actual service
+    probe implementation. Parent independent review pending; stay step4 and do not
+    start dependent story. Worktree /tmp/tripsit-e01s01.'
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -32,12 +34,13 @@ user_constraints:
 active_epic: e01
 active_story: e01s01
 epic_cycle:
-  step: 3
+  step: 4
   story_bcps: 5
   completed_steps:
   - 0
   - 1
   - 2
+  - 3
 metrics:
   story_start: '2026-11-14T19:06:28.446784+00:00'
 environment:
@@ -45,3 +48,9 @@ environment:
   npm: 10.9.9
   dependencies: npm ci passed after escalated retry; lockfile unchanged
   preflight: npm run check && npm run build passed; 0 errors, 0 warnings
+vcs:
+  kind: git
+  branch: feat/e01s01-issue-intake
+  worktree: /tmp/tripsit-e01s01
+  primary_root: /home/u786288/projects/ohjunction/tripsit
+  checkpoint: 3b855c5

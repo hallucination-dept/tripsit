@@ -16,7 +16,7 @@ tasks:
   verify: cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
@@ -33,7 +33,7 @@ tasks:
   verify: cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
@@ -49,7 +49,7 @@ tasks:
   verify: cd frontend && node --experimental-strip-types --test tests/e01s01-db.test.ts
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
@@ -65,7 +65,7 @@ tasks:
   verify: cd frontend && node --experimental-strip-types --test tests/e01s01.test.ts
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
@@ -83,7 +83,7 @@ tasks:
     && (cd frontend && npm run check && npm run build)
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:
@@ -98,7 +98,7 @@ tasks:
     && (cd frontend && npm run check && npm run build)
   risk: P0
   security: high
-  status: failing
+  status: passing
   allure:
     severity: critical
     categories:

@@ -37,5 +37,5 @@ plan:
 build:
   status: in_progress
   active_story: e01s01
-  current_step: 3
-  next_skill: kickoff-branch
+  current_step: 4
+  next_skill: develop-tdd

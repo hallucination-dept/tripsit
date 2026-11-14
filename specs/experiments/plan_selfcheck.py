@@ -46,13 +46,14 @@ def main() -> None:
                 assert '**Before:**' in spec and '**After:**' in spec
             tasks = read_yaml(capsule / story['tasks'])
             assert tasks['story_id'] == sid and tasks['spec'] == story['spec']
-            assert tasks['status'] == 'failing' and tasks['type'] == 'feat' and tasks['context'] == 'domain'
+            assert tasks['status'] in {'failing', 'passing'} and tasks['type'] == 'feat' and tasks['context'] == 'domain'
+            assert (tasks['status'] == 'passing') == all(task['status'] == 'passing' for task in tasks['tasks'])
             assert tasks['bcps'] == story['bcps']
             for dependency in tasks['depends_on']:
                 assert dependency in scope_ids and positions[dependency] < positions[sid], (sid, dependency)
             assert len(tasks['tasks']) >= 3
             for task in tasks['tasks']:
-                assert task['status'] == 'failing' and task['risk'] in {'P0', 'P1', 'P2', 'P3'}
+                assert task['status'] in {'failing', 'passing'} and task['risk'] in {'P0', 'P1', 'P2', 'P3'}
                 assert task['verify'] and shlex.split(task['verify'])
                 assert 'verify:' in spec and task['verify'] in spec
                 assert task['allure']['severity'] in {'critical', 'high', 'normal', 'minor'}
@@ -69,8 +70,8 @@ def main() -> None:
                      '--require-executions', '--report']:
         assert required in evaluation_command
     assert positions['e01s03'] < positions['e05s01']
-    print(f'PASS: {len(release["epics"])} epics, {len(seen)} scope stories, {task_count} unrun tasks, {total_bcps} BCP; YAML, sections, IDs, WSJF and dependencies consistent.')
-    print('Application tests, UAT and live gates remain unrun; command paths are implementation deliverables.')
+    print(f'PASS: {len(release["epics"])} epics, {len(seen)} scope stories, {task_count} task entries, {total_bcps} BCP; YAML, sections, IDs, WSJF and dependencies consistent.')
+    print('This checks artifact consistency only; execution evidence lives in specs/verifications/ and task status ledgers.')
 
 
 if __name__ == '__main__':
