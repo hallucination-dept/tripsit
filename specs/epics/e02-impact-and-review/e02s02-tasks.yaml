@@ -7,6 +7,16 @@ status: failing
 bcps: 5
 depends_on:
 - e02s01
+reviewer_client_subtask:
+  status: planned
+  scope: Callable bounded public-only reviewer client and strict requirement/node-linked model-proposal schema.
+  plan:
+  - RED then GREEN validated frozen input, independently prompted endpoint call, conflicting claims and exact cross-references.
+  - Reject extra authority/execution fields; bounded Unicode/prompt/response and cancellation; zero private/unconfigured dispatch.
+  - Record source-free prompt/response digests, model/destination/retention disclosure and explicit unavailable results.
+  verify: cd frontend && node --experimental-strip-types tests/reviewer.test.ts
+  preflight: cd frontend && npm run check && npm run build
+  limits: Parent owns runtime/persistence/routes/UI; no private admission, actual execution or full-story acceptance.
 tasks:
 - id: 1
   description: Define regression fixtures and assert the happy path, edge cases and
