@@ -55,3 +55,23 @@ stories:
     remaining: Real authenticated owner-flow UAT; no compliance claims or owner-confirmation records.
     implementation: Versioned trusted controls, provenance, applicability/gaps, authorized snapshot
       policy endpoint and UI implemented.
+  e02s01:
+    status: todo
+    preparation_status: Complete offline core only; draft, not integrated
+    branch: feat/impact-core
+    worktree: /tmp/tripsit-impact-core
+    checkpoint: 08a6b2d
+    pr: https://github.com/hallucination-dept/tripsit/pull/7
+    verification: 7 native tests, frontend check/build and independent review pass.
+    remaining: Actual extraction/coordinator/API/UI integration and full story acceptance; no live
+      execution enabled.
+  e03s01:
+    status: todo
+    preparation_status: Complete offline core only; draft, not integrated
+    branch: feat/e03s01-priority-core
+    worktree: /tmp/tripsit-priority-core
+    checkpoint: 387553c
+    pr: https://github.com/hallucination-dept/tripsit/pull/8
+    verification: 6 native tests, frontend check/build and independent review pass.
+    remaining: Actual extraction/coordinator/API/UI integration and full story acceptance; no live
+      execution enabled.

@@ -251,5 +251,13 @@ current_feature_verification:
   migration: frontend/migrations/002_candidates.sql ready and tested; not applied to configured production database.
   remaining: Full private/live acceptance, isolated Git commit staging, exact span mapping, deployed cancellation verification, controlled execution and revision-bound publication.
   next_parallel_work:
-  - e02s01 bounded reverse impact core in /tmp/tripsit-impact-core, not integrated.
-  - e03s01 deterministic verification priority core in /tmp/tripsit-priority-core, not integrated.
+  - e02s01 reverse impact core complete offline; draft PR 7, seven tests/check/build pass, not integrated.
+  - e03s01 priority core complete offline; draft PR 8, six tests/check/build pass, not integrated.
+delivery_checkpoint:
+  candidate_pr: https://github.com/hallucination-dept/tripsit/pull/6
+  candidate_status: Ready for review; migration002 approval requested, not yet applied.
+  impact_draft: https://github.com/hallucination-dept/tripsit/pull/7
+  priorities_draft: https://github.com/hallucination-dept/tripsit/pull/8
+  review_results: Post-read access revocation, disconnected upstream work, missing token bytes, conflicting impact identities and sparse impact inputs fixed with regression tests.
+  production_changes: None; no migration/deployment/merge performed by agent.
+  development_app: localhost5173 serves integrated candidate/policy workflow; storage will refuse generation until migration002 is authorized/applied.

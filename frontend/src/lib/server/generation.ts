@@ -51,9 +51,9 @@ export function generationObservations(value: unknown): GenerationObservations {
     if (!token || typeof token.token !== 'string' || encoder.encode(token.token).byteLength > 16_384
       || new TextDecoder('utf-8', { ignoreBOM: true }).decode(encoder.encode(token.token)) !== token.token
       || typeof token.logprob !== 'number' || !Number.isFinite(token.logprob) || token.logprob > 0
-      || token.bytes !== null && (!Array.isArray(token.bytes) || token.bytes.length > 16_384
+      || token.bytes != null && (!Array.isArray(token.bytes) || token.bytes.length > 16_384
         || token.bytes.some(byte => !Number.isInteger(byte) || byte < 0 || byte > 255))) deny();
-    return { token: token.token, bytes: token.bytes === null ? null : [...token.bytes], logprob: token.logprob };
+    return { token: token.token, bytes: token.bytes == null ? null : [...token.bytes], logprob: token.logprob };
   });
   if (encoder.encode(JSON.stringify(tokens)).byteLength > 2_097_152) deny();
   return { status: observation.status, tokens };
