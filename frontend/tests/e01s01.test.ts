@@ -147,3 +147,68 @@ test('public intake persists only the selected owner and newly frozen snapshot',
  assert.equal(ownerWritten,'owner');
  assert.equal(created.id,'new-item');
 });
+
+test('get never releases a snapshot that expires while repository authorization waits',async()=>{
+ let now=1000;
+ const snapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
+ const item={id:'expiring',snapshot,createdAt:new Date(0).toISOString(),expiresAt:new Date(2000).toISOString()};
+ const service=createIntake({store:{create:async()=>item,get:async()=>item,list:async()=>[item]},github:{snapshot:async()=>snapshot,authorize:async()=>{now=2001;}}},()=>now);
+ await assert.rejects(()=>service.get('owner','expiring',new AbortController().signal),(e:IntakeError)=>e.status===404);
+});
+
+test('list rechecks expiry at complete response and deduplicates exact repository authority per request',async()=>{
+ let now=1000, calls=0;
+ const snapshot=await fixture().github.snapshot('team/repo',2,new AbortController().signal);
+ const first={id:'one',snapshot,createdAt:new Date(0).toISOString(),expiresAt:new Date(2000).toISOString()};
+ const second={...first,id:'two',expiresAt:new Date(5000).toISOString()};
+ const third={...second,id:'three',snapshot:{...snapshot,repository:'other/repo',repositoryId:6}};
+ const service=createIntake({store:{create:async()=>first,get:async()=>first,list:async()=>[first,second,third]},github:{snapshot:async()=>snapshot,authorize:async(repo)=>{calls++;if(repo==='other/repo')now=2001;}}},()=>now);
+ const listed=await service.list('owner',new AbortController().signal);
+ assert.deepEqual(listed.map(item=>item.id),['two','three']);
+ assert.equal(calls,2);
+});
+
+test('HTTP deadline returns even when an underlying action ignores cancellation',async()=>{
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),10);
+ try {
+  const response=await withIntake(new Request('https://tripsit.test/api/work-items',{signal:controller.signal}),'owner',async()=>new Promise(()=>{}));
+  assert.equal(response.status,504);
+ } finally {clearTimeout(timer);}
+});
+
+import { selectedAfterReload } from '../src/lib/issue-selection.ts';
+import { linkedGitHubToken } from '../src/lib/server/github.ts';
+
+test('reload selection clears omitted snapshots and adopts refreshed source',()=>{
+ assert.equal(selectedAfterReload({id:'one',title:'old'},[]),null);
+ assert.deepEqual(selectedAfterReload({id:'one',title:'old'},[{id:'one',title:'new'}]),{id:'one',title:'new'});
+});
+
+test('auth token wiring selects local account ID and aborts after delayed auth before token work',async()=>{
+ const account={id:'local',accountId:'42',providerId:'github',userId:'owner'};
+ let selected='';
+ const api={listUserAccounts:async()=>[account],getAccessToken:async(input:{body:{accountId:string}})=>{selected=input.body.accountId;return{accessToken:'user-secret'};}};
+ const result=await linkedGitHubToken(api,new Headers(),'owner',new AbortController().signal);
+ assert.equal(selected,'local');
+ assert.deepEqual(result,{userToken:'user-secret',accountId:'42'});
+ const controller=new AbortController();
+ api.listUserAccounts=async()=>{controller.abort();return[account];};
+ selected='';
+ await assert.rejects(()=>linkedGitHubToken(api,new Headers(),'owner',controller.signal));
+ assert.equal(selected,'');
+});
+
+test('wrong App identity and oversized upstream issue bodies fail closed',async()=>{
+ await assert.rejects(()=>fixture({'/repos/team/repo/installation':{id:7,app_id:8,suspended_at:null}}).github.snapshot('team/repo',2,new AbortController().signal),IntakeError);
+ await assert.rejects(()=>fixture({'/repos/team/repo/issues/2':{id:20,number:2,title:'large',body:'x'.repeat(128*1024+1)}}).github.snapshot('team/repo',2,new AbortController().signal),IntakeError);
+ await assert.rejects(()=>fixture({'/user':new Response('x'.repeat(1024*1024+1))}).github.snapshot('team/repo',2,new AbortController().signal),IntakeError);
+});
+
+test('upstream fetch is cancelled when the request deadline aborts',async()=>{
+ const controller=new AbortController();
+ const timer=setTimeout(()=>controller.abort(),10);
+ const github=createGitHub({appId:'9',privateKey:key,userToken:'user',accountId:'42',fetcher:async(_url,init)=>new Promise((_resolve,reject)=>{init?.signal?.addEventListener('abort',()=>reject(new Error('transport aborted')),{once:true});})});
+ try {await assert.rejects(()=>github.snapshot('team/repo',2,controller.signal),IntakeError);}
+ finally {clearTimeout(timer);}
+});
