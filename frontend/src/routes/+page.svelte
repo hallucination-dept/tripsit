@@ -153,6 +153,7 @@
 		<section aria-labelledby="issue-heading">
 			<h2 id="issue-heading">Select a GitHub issue</h2>
 			<p>Use your existing GitHub sign-in. Repository access and a TripSit GitHub App installation are required. Private issue storage is awaiting verification.</p>
+			{#if discovery.owner === $session.data.user.id}
 			<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
 				<label for="repository">Repository</label>
 				<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
@@ -172,6 +173,7 @@
 			{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p>No open issues in this repository.</p>{/if}
 			{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p>Only part of the available list was returned. Automatic refresh will check again.</p>{/if}
 			<button type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button>
+			{:else}<p aria-live="polite">Discovering repositories and issues…</p>{/if}
 			<button type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button>
 			{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
 			{#if intakeOwner === $session.data.user.id}
