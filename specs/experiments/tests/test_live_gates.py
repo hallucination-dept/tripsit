@@ -54,6 +54,14 @@ def api(mode='ok'):
         def respond(self):
             cookie = self.headers.get('Cookie')
             calls.append((self.command, self.path, cookie))
+            if mode == 'slow-headers':
+                try:
+                    for byte in b'HTTP/1.1 200 OK\r\nX-Drip: ' + b'x' * 30 + b'\r\nContent-Type: application/json\r\nContent-Length: 2\r\n\r\n{}':
+                        self.connection.sendall(bytes([byte]))
+                        time.sleep(.01)
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                return
             if self.command == 'POST':
                 selected = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 assert selected == {'repository': 'team/repo', 'issueNumber': 2}
@@ -135,6 +143,16 @@ class HttpProbeTests(unittest.TestCase):
                 self.assertEqual(report['public_api']['status'], 'failed')
                 self.assertEqual(len(calls), 1)
                 self.assertNotIn('secret', json.dumps(report))
+
+    def test_dripping_headers_cannot_extend_absolute_deadline(self):
+        with api('slow-headers') as (env, calls):
+            start = time.monotonic()
+            report = gates.run_probes(env, timeout=.08)
+            elapsed = time.monotonic() - start
+        self.assertEqual(report['public_api']['status'], 'failed')
+        self.assertEqual(len(calls), 1)
+        self.assertLess(elapsed, .3, 'Dripped bytes must not reset the total request deadline')
+        self.assertNotIn('secret', json.dumps(report))
 
     def test_missing_configuration_never_sends_requests(self):
         report = gates.run_probes({})
