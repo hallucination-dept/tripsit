@@ -1,10 +1,10 @@
-# TripSit
+# tripsit.dev
 
-TripSit is a code review tool powered by Gemma 4 31B running on Modal.
+tripsit.dev is a code review tool powered by Gemma 4 31B running on Modal.
 
 ## Configure the web app
 
-TripSit uses Better Auth with PostgreSQL. It supports GitHub OAuth and
+tripsit.dev uses Better Auth with PostgreSQL. It supports GitHub OAuth and
 email/password accounts. The review API requires a signed-in user.
 
 ```bash
@@ -113,5 +113,73 @@ Once the public Aiven URL is known:
 4. Redeploy the Runtime application after changing its environment variables.
 
 Aiven Runtime builds the selected Git commit, but Git pushes do not themselves
-trigger redeployments. Use **Redeploy** in the Aiven Runtime UI for later
-commits, or add a separate CI deployment step with an Aiven API token.
+trigger redeployments by default. This repository includes a GitHub Action that
+redeploys the Aiven Runtime application after each push to `main`. Add these
+GitHub repository secrets before relying on it:
+
+| Secret | Value |
+| --- | --- |
+| `AIVEN_TOKEN` | Aiven API token with permission to deploy the Runtime app |
+| `AIVEN_PROJECT` | Aiven project name |
+| `AIVEN_APP_NAME` | Aiven Runtime application service name |
+
+The workflow triggers Aiven's **Deploy latest commit** operation, so Aiven
+builds the newest commit from the Runtime app's configured branch.
+
+## Connect GitHub repositories
+
+tripsit.dev uses a **GitHub App** for repositories, issues, and pull requests. This
+is intentionally separate from the GitHub OAuth App used to sign users in: each
+person chooses the exact repositories to install the app on, and tripsit.dev uses a
+short-lived installation token rather than a personal access token.
+
+Create a GitHub App at **GitHub → Settings → Developer settings → GitHub Apps
+→ New GitHub App** with these production settings:
+
+| GitHub App field | Value |
+| --- | --- |
+| Homepage URL | `https://tripsit.dev` |
+| Callback URL | `https://tripsit.dev/api/github/app/callback` |
+| Setup URL | `https://tripsit.dev/api/github/app/callback` |
+| Request user authorization (OAuth) during installation | Disabled |
+| Webhook | Disabled (not used yet) |
+| Where can this GitHub App be installed? | Any account, unless it is only for your own account |
+| Repository metadata | Read-only |
+| Repository contents | Read-only |
+| Issues | Read-only |
+| Pull requests | Read and write |
+
+Do not grant Administration, Actions, or organization permissions. Generate a
+private key for the App and save the downloaded PEM file; GitHub only shows the
+private key at creation time.
+
+Set these in Aiven Runtime after creating the App:
+
+| Key | Aiven type | Source |
+| --- | --- | --- |
+| `GITHUB_APP_ID` | Variable | The numeric App ID |
+| `GITHUB_APP_CLIENT_ID` | Variable | GitHub App client ID |
+| `GITHUB_APP_SLUG` | Variable | The app's URL slug (`github.com/apps/<slug>`) |
+| `GITHUB_APP_CLIENT_SECRET` | Secret | Generated GitHub App client secret |
+| `GITHUB_APP_PRIVATE_KEY` | Secret | Full PEM private key, including BEGIN/END lines |
+
+tripsit.dev uses the setup callback to start GitHub's normal user-authorization
+flow, then verifies the user can access the selected installation. These values
+are different from `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`, which remain
+the credentials for the existing sign-in OAuth App. For local development,
+create a second GitHub App with callback and setup URL
+`http://localhost:5173/api/github/app/callback` and put its distinct values in
+`frontend/.env`.
+
+Create the project table once against the production database (using a local
+`frontend/.env` that contains the production `DATABASE_URL`):
+
+```bash
+cd frontend
+npm run projects:migrate
+```
+
+After deployment, a signed-in user can choose **Add project**, select the
+allowed repositories on GitHub, and return to tripsit.dev. The project switcher
+lists the connected repositories; the selected project shows open issues and
+can create a pull request from an existing branch.

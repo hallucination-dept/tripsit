@@ -1,6 +1,6 @@
-# TripSit frontend
+# tripsit.dev frontend
 
-SvelteKit frontend for TripSit. It uses Better Auth with PostgreSQL and proxies
+SvelteKit frontend for tripsit.dev. It uses Better Auth with PostgreSQL and proxies
 authenticated review requests to the Modal-hosted Gemma API.
 
 ## Setup
@@ -23,6 +23,7 @@ environment-variable list, production callback URL, and Aiven deployment steps.
 npm run check        # Svelte and TypeScript diagnostics
 npm run build        # production build
 npm run auth:check   # validate Better Auth setup after credentials are set
+npm run projects:migrate # create the connected-GitHub-project table
 ```
 
 The production image uses `@sveltejs/adapter-node` and starts with
