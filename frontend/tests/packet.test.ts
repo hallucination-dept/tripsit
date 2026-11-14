@@ -22,6 +22,8 @@ test('missing execution/mapping/impact stays inspection-required with no fabrica
   assert.equal(result.requirementCoverage.find(row => row.id === requirementId)?.status, 'unavailable');
   assert.equal(result.checkPlan.mandatory.length, 1);
   assert.equal(result.executions.length, 0);
+  assert.equal(result.verification.status, 'unavailable');
+  assert.equal(result.verification.mandatoryRerunRequired, true);
   assert.equal(result.tokenSignal.mapping, 'unavailable');
   assert.equal(result.impact.status, 'unavailable');
   assert(result.gaps.some(gap => gap.kind === 'missing_execution'));
@@ -105,4 +107,63 @@ test('requires actual owner, bounds inputs and renders deterministic data-only o
   const forward = fixture(); forward.checks!.push(bound(check('other')));
   const reversed = structuredClone(forward); reversed.checks!.reverse(); reversed.policy.data.requirements.reverse();
   assert.deepEqual(buildPacket('owner', forward), buildPacket('owner', reversed));
+});
+
+
+test('same code identity cannot carry executions across PRs or disclose another owner artifacts', () => {
+  const input = fixture(); input.executions = [bound(execution())];
+  input.pr = { id: 'different-pr', isNew: true };
+  assert.equal(buildPacket('owner', input).requirementCoverage.find(row => row.id === requirementId)?.status, 'unavailable');
+  input.executions = [bound({ ...execution(), id: 'other-owner-secret', runnerId: 'private-runner' }, { ...identity, ownerId: 'other' })];
+  const serialized = JSON.stringify(buildPacket('owner', input));
+  assert(!serialized.includes('other-owner-secret'));
+  assert(!serialized.includes('private-runner'));
+});
+
+test('trusted check definitions remain inspectable and malformed/missing controls cannot be hidden', () => {
+  const input = fixture();
+  const result = buildPacket('owner', input);
+  assert.equal(result.checkDefinitions[0].definitionDigest, check().definitionDigest);
+  assert.equal(result.checkDefinitions[0].oracleDigest, check().oracleDigest);
+  assert.equal(result.checkDefinitions[0].provenance, 'trusted_policy');
+  for (const mutate of [
+    (value: PacketInput) => { value.checks![0].data.mandatory = undefined as never; },
+    (value: PacketInput) => { value.checks![0].data.impact = 'invented' as never; },
+    (value: PacketInput) => { value.checks![0].data.definitionDigest = 'missing'; },
+    (value: PacketInput) => { value.policy.data.requirements[0].mandatory = false; },
+    (value: PacketInput) => { value.tokenMapping = bound({ mapping: 'exact', observedTokens: 0, reason: 'No observations' }); }
+  ]) { const changed = fixture(); mutate(changed); assert.throws(() => buildPacket('owner', changed), /Invalid review packet/); }
+});
+
+
+test('unresolved impact references force mandatory rerun and duplicate reuse assessments are rejected', () => {
+  const input = fixture(); input.impact = bound({ summary: 'Known supplied scope', unknown: false, nodeIds: [], gaps: [] });
+  input.checks![0].data.nodeIds = ['missing-node'];
+  const result = buildPacket('owner', input);
+  assert.equal(result.impact.unknown, true);
+  assert.equal(result.verification.mandatoryRerunRequired, true);
+  assert(result.gaps.some(gap => gap.kind === 'check_impact_unresolved'));
+  const assessment = bound({ id: 'assessment', executionId: 'run', sourceIdentity: identity, prId: 'pr-1', provenance: 'trusted_coordinator' as const, unaffected: true,
+    definitionDigest: hash('e'), environmentDigest: hash('f'), dependencyDigest: hash('1'), oracleDigest: hash('2') });
+  input.reuse = [assessment, { ...assessment, data: { ...assessment.data, id: 'other-assessment', unaffected: false } }];
+  assert.throws(() => buildPacket('owner', input), /Invalid review packet/);
+});
+
+
+test('claim graph references and counterexamples remain plain text with explicit unresolved linkage', () => {
+  const input = fixture(); input.checks = []; input.executions = [];
+  input.impact = bound({ summary: 'Known scope', unknown: false, nodeIds: ['known'], gaps: [] });
+  input.reviews = [bound({ id: 'review', reviewer: 'independent-model', claimedExecutions: [],
+    claims: [{ id: 'counterexample', requirementIds: [requirementId], nodeIds: ['missing', 'known'],
+      proposition: 'Unchanged consumer fails', verdict: 'contradicts', counterexample: '<img src=x onerror=bad()>' }] })];
+  const result = buildPacket('owner', input);
+  assert.deepEqual(result.reviewerClaims[0].claims[0].nodeIds, ['known', 'missing']);
+  assert.equal(result.reviewerClaims[0].claims[0].counterexample, '<img src=x onerror=bad()>');
+  assert(result.gaps.some(gap => gap.kind === 'claim_impact_unresolved'));
+  assert.equal(result.impact.unknown, true);
+  assert.equal(result.checkDefinitions.length, 0);
+  assert.equal(result.checkPlan.mandatory.length, 0);
+  assert.equal(result.verification.status, 'unavailable');
+  input.reviews[0].data.claims[0].counterexample = 'x'.repeat(8193);
+  assert.throws(() => buildPacket('owner', input), /Invalid review packet/);
 });
