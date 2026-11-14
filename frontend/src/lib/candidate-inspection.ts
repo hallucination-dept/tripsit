@@ -125,8 +125,9 @@ export function createCandidateInspection(options: Options = {}) {
         const data = await request(`${path(selected)}/reviews`, signal, true);
         if (!current(revision, selected, controller)) return;
         if (!object(data) || !storedReview(data.review, selected, identity)) throw new InspectionError('Review does not match the selected revision or is invalid.');
+        const stored = data.review;
         const refreshed = await load(selected, signal);
-        if (!refreshed.reviews.some(review => review.id === data.review.id)) throw new InspectionError('Stored review is unavailable in refreshed assessment.');
+        if (!refreshed.reviews.some(review => review.id === stored.id)) throw new InspectionError('Stored review is unavailable in refreshed assessment.');
         if (current(revision, selected, controller)) publish({ assessment: refreshed });
       } catch (cause) { if (current(revision, selected, controller)) publish({ reviewError: cause instanceof InspectionError ? cause.message : 'Independent review is unavailable.' }); }
       finally { if (current(revision, selected, controller)) publish({ reviewing: false }); }
