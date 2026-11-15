@@ -100,16 +100,16 @@ def _json(value, depth=0):
 
 
 def verified_revision(revision, identity, files):
+    if not re.fullmatch(r'[a-f0-9]{40}', identity['baseSha']): raise ValueError()
     if not isinstance(revision, dict) or set(revision) != {'commitSha', 'treeSha', 'commitObject'}: raise ValueError()
     if any(not isinstance(revision[k], str) or not re.fullmatch(r'[a-f0-9]{40}', revision[k]) for k in ('commitSha', 'treeSha')): raise ValueError()
     if not isinstance(revision['commitObject'], str) or len(revision['commitObject']) > 21848: raise ValueError()
     raw = base64.b64decode(revision['commitObject'], validate=True)
     if not raw or len(raw) > 16384 or base64.b64encode(raw).decode() != revision['commitObject']: raise ValueError()
     if hashlib.sha1(f'commit {len(raw)}\0'.encode() + raw).hexdigest() != revision['commitSha']: raise ValueError()
-    headers, separator, _message = raw.partition(b'\n\n')
-    lines = headers.split(b'\n')
-    if not separator or sum(line.startswith(b'tree ') for line in lines) != 1 or sum(line.startswith(b'parent ') for line in lines) != 1: raise ValueError()
-    if b'tree ' + revision['treeSha'].encode() not in lines or b'parent ' + identity['baseSha'].encode() not in lines: raise ValueError()
+    pattern = (rb'tree ' + revision['treeSha'].encode() + rb'\nparent ' + identity['baseSha'].encode()
+        + rb'\nauthor TripSit <tripsit@localhost> (-?[0-9]+) \+0000\ncommitter TripSit <tripsit@localhost> \1 \+0000\n\nStage candidate\n')
+    if not re.fullmatch(pattern, raw): raise ValueError()
     root = {}
     for file in files:
         if file['mode'] not in ('100644', '100755') or '\0' in file['content']: raise ValueError()

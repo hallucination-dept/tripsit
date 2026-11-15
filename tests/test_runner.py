@@ -5,6 +5,7 @@ import copy
 import hashlib
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 import sys
 import unittest
@@ -30,7 +31,7 @@ def exact_fixture():
     file=value['files'][0]
     tree=b'100755 value.mjs\0'+bytes.fromhex(file['blobSha'])
     tree_sha=hashlib.sha1(f'tree {len(tree)}\0'.encode()+tree).hexdigest()
-    commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor Fixture <fixture@example.test> 0 +0000\ncommitter Fixture <fixture@example.test> 0 +0000\n\nFixture\n'.encode()
+    commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor TripSit <tripsit@localhost> 0 +0000\ncommitter TripSit <tripsit@localhost> 0 +0000\n\nStage candidate\n'.encode()
     value['revision']={'treeSha':tree_sha,'commitSha':hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest(),
                        'commitObject':base64.b64encode(commit).decode()}
     return value
@@ -56,6 +57,7 @@ class FakeSandbox:
 class RunnerTests(unittest.IsolatedAsyncioTestCase):
     def test_complete_revision_validates_commit_parent_tree_modes_and_files(self):
         value=exact_fixture()
+        self.assertEqual(subprocess.run(['git','hash-object','-t','commit','--stdin'],input=base64.b64decode(value['revision']['commitObject']),capture_output=True,check=True).stdout.decode().strip(),value['revision']['commitSha'])
         self.assertEqual(runner.validate_request(value),value)
         for change in [lambda v:v['revision'].update(commitSha='a'*40),
                        lambda v:v['revision'].update(treeSha='a'*40),
@@ -77,13 +79,34 @@ class RunnerTests(unittest.IsolatedAsyncioTestCase):
         subhash=hashlib.sha1(f'tree {len(subtree)}\0'.encode()+subtree).digest()
         root=b'40000 src\0'+subhash
         tree_sha=hashlib.sha1(f'tree {len(root)}\0'.encode()+root).hexdigest()
-        commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\n\nFixture\n'.encode()
+        commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor TripSit <tripsit@localhost> 0 +0000\ncommitter TripSit <tripsit@localhost> 0 +0000\n\nStage candidate\n'.encode()
         value['revision']={'treeSha':tree_sha,'commitSha':hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest(),
                            'commitObject':base64.b64encode(commit).decode()}
         value['checks'][0]['path']=first['path']
         self.assertEqual(runner.validate_request(value),value)
         value['files'].pop()
         with self.assertRaises(runner.RunnerError): runner.validate_request(value)
+
+    def test_exact_revision_rejects_sha256_parent_even_with_matching_commit(self):
+        value=exact_fixture()
+        value['identity']['baseSha']='f'*64
+        tree_sha=value['revision']['treeSha']
+        commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor TripSit <tripsit@localhost> 0 +0000\ncommitter TripSit <tripsit@localhost> 0 +0000\n\nStage candidate\n'.encode()
+        value['revision']['commitSha']=hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest()
+        value['revision']['commitObject']=base64.b64encode(commit).decode()
+        with self.assertRaises(runner.RunnerError): runner.validate_request(value)
+
+    def test_exact_revision_rejects_malformed_commit_even_when_hash_matches(self):
+        original=exact_fixture()
+        raw=base64.b64decode(original['revision']['commitObject'])
+        author=b'author TripSit <tripsit@localhost> 0 +0000\n'
+        committer=b'committer TripSit <tripsit@localhost> 0 +0000\n'
+        for commit in (raw.replace(author,b''),raw.replace(committer,b''),raw.replace(author,author+author),
+                       raw.replace(committer,b'committer invalid\n')):
+            value=copy.deepcopy(original)
+            value['revision']['commitSha']=hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest()
+            value['revision']['commitObject']=base64.b64encode(commit).decode()
+            with self.assertRaises(runner.RunnerError): runner.validate_request(value)
 
     async def test_verified_revision_echoed_without_changing_legacy_response(self):
         sandbox=FakeSandbox({'controls':{key:True for key in runner.PROBE_CONTROLS}})
