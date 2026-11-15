@@ -43,10 +43,15 @@ try{
  await command('Page.navigate',{url:`http://127.0.0.1:${server.address().port}`});
  await waitFor("document.querySelector('#issue-number')?.value==='1' && !document.querySelector('#issue-number').disabled");
  await evaluate("document.querySelector('[aria-labelledby=\"issue-heading\"] button[type=submit]').click()");
- await waitFor("Boolean(document.querySelector('.issue-body') && document.querySelector('#candidate-files option'))");
- await evaluate("const files=document.querySelector('#candidate-files');files.options[0].selected=true;files.dispatchEvent(new Event('change',{bubbles:true}));");
- await waitFor("!document.querySelector('#candidate-files').closest('form').querySelector('button[type=submit]').disabled");
- await evaluate("document.querySelector('#candidate-files').closest('form').querySelector('button[type=submit]').click()");
+ await waitFor("Boolean(document.querySelector('.issue-body') && (document.querySelector('#implement-issue') || document.querySelector('#candidate-files option')))");
+ if(await evaluate("Boolean(document.querySelector('#implement-issue'))")){
+  await waitFor("!document.querySelector('#implement-issue').disabled");
+  await evaluate("document.querySelector('#implement-issue').click()");
+ }else{
+  await evaluate("const files=document.querySelector('#candidate-files');files.options[0].selected=true;files.dispatchEvent(new Event('change',{bubbles:true}));");
+  await waitFor("!document.querySelector('#candidate-files').closest('form').querySelector('button[type=submit]').disabled");
+  await evaluate("document.querySelector('#candidate-files').closest('form').querySelector('button[type=submit]').click()");
+ }
  await waitFor("document.querySelector('.candidate-preview')?.textContent.includes('retained candidate fixture')");
  const retained="Boolean(document.querySelector('.issue-body') && document.querySelector('.candidate-preview')?.textContent.includes('retained candidate fixture') && document.querySelector('#issue-number').value==='1')";
  for(const failure of ['repository-failure','issue-failure']){
