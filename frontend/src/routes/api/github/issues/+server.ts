@@ -7,5 +7,5 @@ export async function GET({ request, locals, url }) {
     const repository = githubRepository(url.searchParams.get('repository') ?? '');
     const github = await githubRuntime(request.headers, locals.user!.id, signal);
     return github.issues(repository, signal);
-  });
+  }, 105_000);
 }
