@@ -57,7 +57,7 @@ test('changed repository IDs and linked/App identities deny source', async () =>
     assert(!calls.some(call => call.path.includes('/git/')));
   }
   const { github, calls } = fixture();
-  await assert.rejects(() => github.files({ ...snapshot, private: 'invalid' as any }, signal()), IntakeError);
+  await assert.rejects(() => github.files(JSON.parse(JSON.stringify({ ...snapshot, private: 'invalid' })), signal()), IntakeError);
   assert.equal(calls.length, 0);
 });
 
