@@ -24,5 +24,6 @@ export const variables = defineEnvVars({
 	GITHUB_APP_CLIENT_SECRET: { schema: (value) => value },
 	GITHUB_APP_ID: { schema: (value) => value },
 	GITHUB_APP_SLUG: { schema: (value) => value },
-	GITHUB_APP_PRIVATE_KEY: { schema: (value) => value }
+	// Hosted env vars often hold the PEM on one line with literal "\n"; restore the line breaks OpenSSL needs.
+	GITHUB_APP_PRIVATE_KEY: { schema: (value) => value?.replace(/\\n/g, '\n') }
 });
