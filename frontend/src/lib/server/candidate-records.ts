@@ -1,6 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import { IntakeError } from './intake.ts';
 import { generationObservations } from './generation.ts';
+import { generationSettingsDigest, mapCandidateTokenBytes } from './candidate-output.ts';
 import type { GeneratedCandidate, StoredCandidate } from './generation.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> };
@@ -33,9 +35,21 @@ function serialize(candidate: GeneratedCandidate): string {
     }
     return { path: file.path, originalBlob: file.originalBlob, blobSha: file.blobSha, content: Buffer.from(file.content).toString('base64') };
   });
+  if (candidate.tokenByteMapping !== undefined) {
+    const stored = candidate.tokenByteMapping;
+    if (!stored || Buffer.byteLength(JSON.stringify(stored)) > 262_500 || !['direct', 'agent'].includes(stored.mode) || observations?.status !== 'observed')
+      throw new IntakeError(400, 'Candidate token mapping is invalid.');
+    const mapped = mapCandidateTokenBytes(candidate.rawOutput, new Map(candidate.files.map(file => [file.path, file.originalBlob])),
+      observations.tokens, candidate.model, generationSettingsDigest(candidate.settings), stored.mode);
+    if (mapped.status !== 'exact' || !isDeepStrictEqual(stored, { ...mapped, mode: stored.mode,
+      observationsDigest: sha(new TextEncoder().encode(JSON.stringify(observations))) })
+      || mapped.files.some((file, index) => file.path !== files[index]?.path || file.blobSha !== files[index]?.blobSha))
+      throw new IntakeError(400, 'Candidate token mapping is invalid.');
+  }
   const payload = JSON.stringify({ baseSha: candidate.baseSha, expiresAt: candidate.expiresAt,
     outputDigest: candidate.outputDigest, model: candidate.model, settings: candidate.settings,
     ...(observations === undefined ? {} : { observations }),
+    ...(candidate.tokenByteMapping === undefined ? {} : { tokenByteMapping: candidate.tokenByteMapping }),
     mapping: { status: candidate.mapping.status, reason: candidate.mapping.reason },
     rawOutput: Buffer.from(candidate.rawOutput).toString('base64'), files });
   if (Buffer.byteLength(payload) > 4_194_304) throw new IntakeError(400, 'Candidate storage input exceeds the limit.');

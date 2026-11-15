@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { decodeCandidateOutput, type CandidateOutput } from './candidate-output.ts';
+import { decodeCandidateOutput, generationSettingsDigest, mapCandidateTokenBytes, type CandidateOutput, type TokenByteMapping } from './candidate-output.ts';
 import { IntakeError, whileActive, type IssueSnapshot } from './intake.ts';
 import type { WorkItem } from './records.ts';
 
@@ -16,6 +16,7 @@ export type GeneratedCandidate = Omit<CandidateOutput, 'files'> & {
   model: string;
   settings: GenerationSettings;
   observations?: GenerationObservations;
+  tokenByteMapping?: Extract<TokenByteMapping, { status: 'exact' }> & { mode: 'direct' | 'agent'; observationsDigest: string };
 };
 export type StoredCandidate = { id: string; candidate: GeneratedCandidate };
 export type GenerationDependencies = {
@@ -74,6 +75,15 @@ export function generationObservations(value: unknown): GenerationObservations {
   });
   if (encoder.encode(JSON.stringify(tokens)).byteLength > 2_097_152) deny();
   return { status: observation.status, tokens };
+}
+
+function tokenMapping(candidate: GeneratedCandidate, mode: 'direct' | 'agent'): GeneratedCandidate['tokenByteMapping'] {
+  if (candidate.observations?.status !== 'observed') return undefined;
+  const mapping = mapCandidateTokenBytes(candidate.rawOutput, new Map(candidate.files.map(file => [file.path, file.originalBlob])),
+    candidate.observations.tokens, candidate.model, generationSettingsDigest(candidate.settings), mode);
+  // shortcut: mappings above 256 KiB stay unavailable, upgrade when larger payloads are supported.
+  if (mapping.status !== 'exact' || encoder.encode(JSON.stringify(mapping)).length > 262_144) return undefined;
+  return { ...mapping, mode, observationsDigest: createHash('sha256').update(JSON.stringify(candidate.observations)).digest('hex') };
 }
 
 export function createGeneration(dependencies: GenerationDependencies) {
@@ -182,6 +192,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
         baseSha: item.snapshot.baseSha, expiresAt: item.expiresAt,
         outputDigest: createHash('sha256').update(observation.rawOutput).digest('hex'), model: observation.model,
         settings: { ...observation.settings }, observations: generationObservations(observation.observations) };
+      const mapped = tokenMapping(candidate, 'agent');
+      if (mapped) candidate.tokenByteMapping = mapped;
       await fresh();
       return whileActive(() => dependencies.store.create(owner, itemId, candidate), signal);
     }
@@ -223,6 +235,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
           settings: { ...observation.settings },
           observations: generationObservations(observation.observations)
         };
+        const mapped = tokenMapping(candidate, 'direct');
+        if (mapped) candidate.tokenByteMapping = mapped;
         const current = await readItem(owner, itemId, active);
         if (JSON.stringify(current) !== identity) deny(409);
         return whileActive(() => dependencies.store.create(owner, itemId, candidate), active);

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
 import { createCandidateRecords } from '../src/lib/server/candidate-records.ts';
+import { mapCandidateTokenBytes } from '../src/lib/server/candidate-output.ts';
 
 const owner = "owner'); DROP TABLE tripsit_candidates;--";
 const itemId = '11111111-1111-4111-8111-111111111111';
@@ -14,6 +15,37 @@ const candidate = () => ({ baseSha: 'a'.repeat(40), expiresAt: '2026-01-08T00:00
   files: [{ path: '雪.ts', originalBlob: null, content,
     blobSha: createHash('sha1').update(`blob ${content.byteLength}\0`).update(content).digest('hex') }],
   mapping: { status: 'unavailable' as const, reason: 'No exact token mapping.' } });
+
+test('exact mappings round trip and reject changed source, observation, settings or span', async () => {
+  let payload = '';
+  const store = createCandidateRecords({ async query(sql, values = []) {
+    if (sql.includes('INSERT INTO')) { payload = values[7] as string; return { rows: [{ id }] }; }
+    return { rows: [{ id, payload: JSON.parse(payload) }] };
+  } }, () => now);
+  const data = new TextEncoder().encode(JSON.stringify({ files: [{ path: '雪.ts', originalBlob: null, content: new TextDecoder().decode(content) }] }));
+  const observations = { status: 'observed' as const, tokens: [{ token: 'data', bytes: Array.from(data), logprob: -1 }] };
+  const mapping = mapCandidateTokenBytes(data, new Map([['雪.ts', null]]), observations.tokens, 'fixture', createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(candidate().settings).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)))).digest('hex'));
+  assert.equal(mapping.status, 'exact'); if (mapping.status !== 'exact') return;
+  const value = { ...candidate(), rawOutput: data, outputDigest: createHash('sha256').update(data).digest('hex'), observations, tokenByteMapping: { ...mapping, mode: 'direct' as const, observationsDigest: createHash('sha256').update(JSON.stringify(observations)).digest('hex') } };
+  await store.create(owner, itemId, value);
+  assert.deepEqual((await store.get(owner, itemId, id))?.candidate.tokenByteMapping, value.tokenByteMapping);
+  const intact = payload;
+  const reordered = JSON.parse(intact);
+  reordered.settings = Object.fromEntries(Object.entries(reordered.settings).reverse());
+  reordered.tokenByteMapping = Object.fromEntries(Object.entries(reordered.tokenByteMapping).reverse());
+  payload = JSON.stringify(reordered);
+  assert.deepEqual((await store.get(owner, itemId, id))?.candidate.tokenByteMapping, value.tokenByteMapping);
+  for (const mutate of [
+    (record: any) => { record.tokenByteMapping.files[0].segments[0].fileEnd++; },
+    (record: any) => { record.observations.tokens[0].bytes[0]++; },
+    (record: any) => { record.observations.tokens[0].logprob = -2; },
+    (record: any) => { record.settings.temperature = 1; },
+    (record: any) => { record.tokenByteMapping.files[0].blobSha = 'b'.repeat(40); }
+  ]) {
+    const record = JSON.parse(intact); mutate(record); payload = JSON.stringify(record);
+    await assert.rejects(() => store.get(owner, itemId, id), { status: 503 });
+  }
+});
 
 test('candidate storage binds owners and snapshots, serializes exact bytes and checks readiness', async () => {
   const calls: Array<{ sql: string; values: unknown[] }> = [];

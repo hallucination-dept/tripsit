@@ -3,6 +3,7 @@ import { posix } from 'node:path';
 import { IntakeError, whileActive, type IssueSnapshot } from './intake.ts';
 import type { WorkItem } from './records.ts';
 import type { StoredCandidate, GenerationContext } from './generation.ts';
+import { generationSettingsDigest } from './candidate-output.ts';
 import { buildImpact, type ImpactFile } from './impact-extractor.ts';
 import { snapshotPolicy } from './snapshot-policy.ts';
 import type { ReviewIdentity, StoredReview } from './review-records.ts';
@@ -81,7 +82,7 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     }
     const identity: ReviewIdentity = { ownerId: owner, itemId, candidateId, baseSha: item.snapshot.baseSha,
       candidateDigest: stored.candidate.outputDigest, snapshotDigest: policy.snapshotDigest, policyVersion: policy.policy.version };
-    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: createHash('sha256').update(JSON.stringify(stored.candidate.settings)).digest('hex'), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0 };
+    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: generationSettingsDigest(stored.candidate.settings), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0 };
     const stamp = JSON.stringify([identity, generation, item.expiresAt, stored.candidate.files.map(file => [file.path, file.originalBlob, file.blobSha])]);
     return { item, stored, identity, generation, stamp, policy: policy.policy };
   }

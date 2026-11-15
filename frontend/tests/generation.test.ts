@@ -34,6 +34,19 @@ test('generates inert exact bytes, blob identity and unavailable mapping, then r
   assert.deepEqual(f.calls, { intake: 5, github: 1, model: 1, store: 1 });
 });
 
+test('records exact token byte mapping only when provider bytes reconstruct output', async () => {
+  for (const exact of [true, false]) {
+    const f = fixture(); const generate = f.dependencies.model.generate;
+    f.dependencies.model.generate = async prompt => {
+      const result = await generate(prompt);
+      return { ...result, observations: { status: 'observed', tokens: [{ token: 'provider', bytes: exact ? Array.from(result.rawOutput) : null, logprob: -1 }] } };
+    };
+    const candidate = (await f.service.create('owner', 'item', ['a.ts'], f.signal)).candidate;
+    assert.equal(candidate.tokenByteMapping?.status, exact ? 'exact' : undefined);
+    assert.equal(candidate.mapping.status, 'unavailable');
+  }
+});
+
 test('denies unauthorized, malformed, expired and invalid selection before any model or storage', async () => {
   for (const mode of ['owner', 'malformed', 'expired', 'empty', 'too-many', 'unsafe', 'duplicate']) {
     const f = fixture();
@@ -181,6 +194,18 @@ function agentFixture(privateRepository = false) {
   };
   return { ...f, originals, reads, prompts, dependencies, service: createGeneration(dependencies) };
 }
+
+test('autonomous mapping binds the original framed response to server-owned file identities', async () => {
+  const f = agentFixture();
+  f.dependencies.github.files = async () => [];
+  const rawOutput = bytes(' ```json\n{"files":[{"path":"new.ts","content":"é\\n"}]}\n``` ');
+  f.dependencies.model.generate = async () => ({ rawOutput, model: 'gemma', settings: {},
+    observations: { status: 'observed', tokens: [{ token: 'original', bytes: Array.from(rawOutput), logprob: -1 }] } });
+  const candidate = (await f.service.create('owner', 'item', undefined, f.signal)).candidate;
+  assert.deepEqual(candidate.rawOutput, rawOutput);
+  assert.equal(candidate.tokenByteMapping?.mode, 'agent');
+  assert.equal(candidate.tokenByteMapping?.files[0].blobSha, blob('é\n'));
+});
 
 test('autonomously reads additional frozen source then implements a change without human file selection', async () => {
   for (const privateRepository of [false]) {
