@@ -14,7 +14,6 @@ export function createIntake({ store, github }: Dependencies, clock = () => Date
   }
   async function permitted(item: WorkItem, signal: AbortSignal, checked = new Set<string>()) {
     signal.throwIfAborted();
-    if (item.snapshot.private) throw new IntakeError(503, 'Private issue storage awaits verified isolation and retention controls.');
     const key = JSON.stringify([item.snapshot.repository, item.snapshot.repositoryId]);
     if (!checked.has(key)) {
       await github.authorize(item.snapshot.repository, item.snapshot.repositoryId, signal);
@@ -29,7 +28,7 @@ export function createIntake({ store, github }: Dependencies, clock = () => Date
       signedIn(owner);
       const selected = parseIntake(input);
       const snapshot = await github.snapshot(selected.repository, selected.issueNumber, signal);
-      if (snapshot.private) throw new IntakeError(503, 'Private issue storage awaits verified isolation and retention controls.');
+      await github.authorize(snapshot.repository, snapshot.repositoryId, signal);
       signal.throwIfAborted();
       return store.create(owner, snapshot);
     },
