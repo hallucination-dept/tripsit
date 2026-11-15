@@ -36,18 +36,19 @@ export function createPublication({database,intake,generation,github,fetcher,acc
   if (!Number.isSafeInteger(item.snapshot.issueNumber) || item.snapshot.issueNumber < 1) throw stale();
   async function admitted() {
    const result = await query(`SELECT r.body,r.packet_digest,r.source_digest,r.snapshot_digest,r.commit_sha,p.payload,s.payload AS snapshot,
-     t.tree_sha,t.objects,t.base_sha,t.output_digest,d.id AS decision_id,d.inspection,d.deep_inspection,d.unchecked_scope,d.residual_risk
+     t.tree_sha,t.objects,t.base_sha,t.output_digest,d.id AS decision_id,d.inspection,d.deep_inspection,d.unchecked_scope,d.residual_risk,d.outcome_epoch,e.version AS current_epoch
      FROM tripsit_revision_packets r JOIN tripsit_candidate_payloads p ON p.candidate_id=r.candidate_id
      JOIN tripsit_candidates c ON c.id=p.candidate_id JOIN tripsit_work_items w ON w.id=p.work_item_id
      JOIN tripsit_snapshots s ON s.work_item_id=w.id JOIN tripsit_candidate_stages t ON t.candidate_id=c.id
      JOIN LATERAL (SELECT * FROM tripsit_human_decisions WHERE packet_id=r.id AND owner_id=$1 AND expires_at>now() ORDER BY created_at DESC,id DESC LIMIT 1) d ON d.decision='accept'
+     JOIN tripsit_outcome_epochs e ON e.owner_id=$1 AND e.repository_id=(s.payload->>'repositoryId')::bigint
      WHERE r.id=$4 AND c.id=$3 AND w.id=$2 AND r.owner_id=$1 AND c.owner_id=$1 AND w.owner_id=$1 AND t.owner_id=$1
        AND r.expires_at>now() AND c.expires_at>now() AND w.expires_at>now() AND t.expires_at>now()
        AND r.commit_sha=t.commit_sha AND t.base_sha=s.payload->>'baseSha' AND t.output_digest=c.output_digest`,[owner,itemId,candidateId,packetId]);
    const row=result.rows[0];
    if (!row || typeof row.body !== 'string' || Buffer.byteLength(row.body)>2097152 || typeof row.packet_digest !== 'string'
      || digest(row.body)!==row.packet_digest || digest(canonical(row.payload))!==row.source_digest || digest(canonical(row.snapshot))!==row.snapshot_digest
-     || canonical(item.snapshot)!==canonical(row.snapshot) || row.deep_inspection !== true || ![row.inspection,row.unchecked_scope,row.residual_risk].every(value => typeof value==='string' && value.trim())) throw stale();
+     || canonical(item.snapshot)!==canonical(row.snapshot) || row.outcome_epoch == null || row.outcome_epoch !== row.current_epoch || row.deep_inspection !== true || ![row.inspection,row.unchecked_scope,row.residual_risk].every(value => typeof value==='string' && value.trim())) throw stale();
    let packet; try { packet=JSON.parse(row.body); } catch { throw stale(); }
    const policy=snapshotPolicy(item);
    if (packet?.acceptanceReady!==false || packet.candidateCommit!==row.commit_sha || packet.identity?.ownerId!==owner
@@ -117,6 +118,7 @@ export function createPublication({database,intake,generation,github,fetcher,acc
   if (await remote.ref(branch,signal)!==stage.commitSha || await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
   if (initial.manifest.status!=='operator_asserted') throw stale();
   const required = initial.manifest.controls.map(row=>`${row.id}: ${row.applicability === 'not_applicable' ? 'not applicable' : 'passed exercised checks'}`).join('\n');
+  await guard();
   try { await remote.createPull(branch,access.branch,`TripSit: issue #${item.snapshot.issueNumber}`,`${marker}\n\nCloses #${item.snapshot.issueNumber}\n\nRevision: ${stage.commitSha}\nPacket: ${initial.packet_digest}\n\nMandatory policy evidence:\n${required}\n\nEvidence and merge protection remain subject to human review.`,signal); } catch { /* A lost response is reconciled by reading GitHub. */ }
   const found=await findPull(); if (!found) throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.');
   return finish(found);

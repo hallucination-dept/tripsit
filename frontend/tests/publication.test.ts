@@ -25,7 +25,7 @@ function fixture(accepted=true) {
  const commit=stage.objects.find(object=>object.type==='commit')!;
  const evidence={exactRevision:{commitSha:stage.commitSha,treeSha:stage.rootSha,commitObject:commit.content},expectedCases:{required:1},admission:{status:'passed',environmentDigest:definition.environmentDigest},checks:[definition],executions:[{...definition,checkId:check.id,collector:'trusted_runner',status:'completed',result:'passed',exitCode:0,executedTests:1}]};
  const body=JSON.stringify(packet), packetDigest=sha(body);
- const row={body,packet_digest:packetDigest,source_digest:sha(canonical(payload)),snapshot_digest:sha(canonical(snapshot)),commit_sha:stage.commitSha,payload,snapshot,tree_sha:stage.rootSha,objects:stage.objects,base_sha:snapshot.baseSha,output_digest:candidate.outputDigest,decision_id:'decision',inspection:'inspected',deep_inspection:true,unchecked_scope:'none',residual_risk:'none'};
+ const row={body,packet_digest:packetDigest,source_digest:sha(canonical(payload)),snapshot_digest:sha(canonical(snapshot)),commit_sha:stage.commitSha,payload,snapshot,tree_sha:stage.rootSha,objects:stage.objects,base_sha:snapshot.baseSha,output_digest:candidate.outputDigest,decision_id:'decision',outcome_epoch:'1',current_epoch:'1',inspection:'inspected',deep_inspection:true,unchecked_scope:'none',residual_risk:'none'};
  let operation:any; let ref:string|null=null; let pull:any; let objectIndex=0; let postPulls=0; let writeCalls=0; let accessAllowed=true; let visible=true; let baseCurrent=snapshot.baseSha;
  const database={async query(sql:string,values:any[]=[]){
   if(sql.includes('JOIN LATERAL')) return {rows:accepted?[row]:[]};
@@ -49,7 +49,7 @@ function fixture(accepted=true) {
  };
  const acceptance=async()=>({assessment:{identity:packet.identity,verifications:[{identity:packet.identity,result:evidence}]} as never,manifest,checks:[check]});
  const service=createPublication({database,intake:{async get(owner){if(owner!=='owner')throw Error('denied');return item;}},generation:{async get(){return {id:candidateId,candidate:candidate as never};}},github,fetcher,acceptance});
- return {service,stats:()=>({postPulls,writeCalls}),revoke:()=>{accessAllowed=false;},changeBase:()=>{baseCurrent='f'.repeat(40);},showPull:(value:boolean)=>{visible=value;},stage};
+ return {service,stats:()=>({postPulls,writeCalls}),revoke:()=>{accessAllowed=false;},changeBase:()=>{baseCurrent='f'.repeat(40);},showPull:(value:boolean)=>{visible=value;},staleOutcome:()=>{row.current_epoch='2';},stage};
 }
 
 test('refuses missing acceptance before any GitHub write',async()=>{
@@ -80,4 +80,8 @@ test('publishes exact staged commit and reconciles lost PR response without dupl
  const writes=f.stats().writeCalls;const second=await f.service.publish('owner',itemId,candidateId,packetId,new AbortController().signal);
  assert.deepEqual(second,first);assert.equal(f.stats().writeCalls,writes);assert.equal(f.stats().postPulls,1);
  f.revoke();await assert.rejects(f.service.publish('owner',itemId,candidateId,packetId,new AbortController().signal));assert.equal(f.stats().writeCalls,writes);
+});
+
+test('a newer owner outcome invalidates acceptance before any write',async()=>{
+ const f=fixture();f.staleOutcome();await assert.rejects(f.service.publish('owner',itemId,candidateId,packetId,new AbortController().signal),{status:409});assert.equal(f.stats().writeCalls,0);
 });

@@ -13,7 +13,7 @@ const snapshot={ repositoryId:1, repository:'a/b', private:false, issueNumber:1,
 const item={ id:itemId, snapshot, createdAt:'2026-01-01T00:00:00.000Z', expiresAt:'2099-01-01T00:00:00.000Z' };
 const policy=snapshotPolicy(item), identity={ ownerId:'owner',itemId,candidateId,baseSha:snapshot.baseSha,candidateDigest:'b'.repeat(64),snapshotDigest:policy.snapshotDigest,policyVersion:policy.policy.version };
 const body=JSON.stringify({identity,candidateCommit:'c'.repeat(40),acceptanceReady:false});
-const payload={reviews:[]};
+const payload={reviews:[],files:[{path:'x.py'}]};
 const digest=(text:string)=>createHash('sha256').update(text).digest('hex');
 const canonical=(value:unknown)=>JSON.stringify(value,(_key,entry)=>entry && typeof entry==='object' && !Array.isArray(entry) ? Object.fromEntries(Object.keys(entry).sort().map(key=>[key,entry[key]])) : entry);
 const row={payload,snapshot,body,packet_digest:digest(body),source_digest:digest(canonical(payload)),snapshot_digest:digest(canonical(snapshot)),commit_sha:'c'.repeat(40),base_sha:snapshot.baseSha,output_digest:identity.candidateDigest};
@@ -23,7 +23,7 @@ test('decisions are owner scoped, idempotent, and reject a concurrent evidence a
  const pool=new pg.Pool({connectionString:testDatabaseUrl(process.env.TRIPSIT_TEST_DATABASE_URL),connectionTimeoutMillis:5000});
  const client=await pool.connect();
  try {
-  for(const migration of ['001_work_items.sql','002_candidates.sql','003_candidate_staging.sql','004_revision_packets.sql','005_human_decisions.sql','007_owner_acceptance.sql']) await client.query(await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['001_work_items.sql','002_candidates.sql','003_candidate_staging.sql','004_revision_packets.sql','005_human_decisions.sql','007_owner_acceptance.sql','008_owner_outcomes.sql','009_outcome_scrutiny.sql']) await client.query(await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8'));
   await client.query('INSERT INTO tripsit_work_items VALUES ($1,$2,$3,$4,$5,$6)',[itemId,'owner','digest','intake',item.createdAt,item.expiresAt]);
   await client.query('INSERT INTO tripsit_snapshots VALUES ($1,$2)',[itemId,JSON.stringify(snapshot)]);
   await client.query('INSERT INTO tripsit_candidates VALUES ($1,$2,$3,$4,$5)',[candidateId,'owner',identity.candidateDigest,item.createdAt,item.expiresAt]);
@@ -60,13 +60,23 @@ test('decisions are owner scoped, idempotent, and reject a concurrent evidence a
   await client.query('UPDATE tripsit_revision_packets SET body=$2,packet_digest=$3 WHERE id=$1',[packetId,acceptBody,digest(acceptBody)]);
   const accepted=await createHumanDecision({database:pool,intake,acceptance}).record('owner',itemId,candidateId,packetId,{...input,requestId:'66666666-6666-4666-8666-666666666666',decision:'accept',deepInspection:true},signal);
   assert.equal(accepted.decision,'accept');
+  let resumeOutcome!:()=>void, readOutcome!:()=>void;
+  const holdOutcome=new Promise<void>(resolve=>resumeOutcome=resolve), observedOutcome=new Promise<void>(resolve=>readOutcome=resolve);
+  const racing=createHumanDecision({intake,acceptance,database:{async query(sql:string,values?:unknown[]){const result=await pool.query(sql,values);if(sql.startsWith('SELECT e.version')){readOutcome();await holdOutcome;}return result;}}});
+  const pendingOutcome=racing.record('owner',itemId,candidateId,packetId,{...input,requestId:'88888888-8888-4888-8888-888888888888',decision:'accept',deepInspection:true},signal);
+  await observedOutcome;
+  await client.query(`INSERT INTO tripsit_owner_outcomes VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,now())`,['99999999-9999-4999-8999-999999999999','owner','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',1,'x.py',digest(acceptBody),row.commit_sha,accepted.id,'escape','high',1]);
+  resumeOutcome(); await assert.rejects(pendingOutcome,{status:409});
+  await assert.rejects(createHumanDecision({database:pool,intake,acceptance}).record('owner',itemId,candidateId,packetId,{...input,requestId:'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',decision:'accept',deepInspection:true},signal),{status:409});
+  const followed=await createHumanDecision({database:pool,intake,acceptance}).record('owner',itemId,candidateId,packetId,{...input,requestId:'cccccccc-cccc-4ccc-8ccc-cccccccccccc',decision:'accept',deepInspection:true,regressionFollowup:'Added regression check.'},signal);
+  assert.equal(followed.decision,'accept');
   let resumeAccept!:()=>void, loadedAccept!:()=>void;
   const pauseAccept=new Promise<void>(resolve=>resumeAccept=resolve), readyAccept=new Promise<void>(resolve=>loadedAccept=resolve);
   const delayedAccept=createHumanDecision({intake,acceptance,database:{async query(sql:string,values?:unknown[]){const result=await pool.query(sql,values);if(sql.startsWith('SELECT')){loadedAccept();await pauseAccept;}return result;}}});
   const pendingAccept=delayedAccept.record('owner',itemId,candidateId,packetId,{...input,requestId:'77777777-7777-4777-8777-777777777777',decision:'accept',deepInspection:true},signal);
   await readyAccept; await client.query("UPDATE tripsit_candidate_payloads SET payload=jsonb_set(payload,'{reviews}','[{}]'::jsonb) WHERE candidate_id=$1",[candidateId]);
   resumeAccept(); await assert.rejects(pendingAccept,{status:409});
-  assert.equal((await client.query("SELECT count(*)::int AS count FROM tripsit_human_decisions WHERE decision='accept'")).rows[0].count,1);
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM tripsit_human_decisions WHERE decision='accept'")).rows[0].count,2);
 
  } finally {client.release();await pool.end();}
 });

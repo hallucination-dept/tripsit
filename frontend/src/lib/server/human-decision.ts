@@ -68,7 +68,7 @@ export function createHumanDecision({ database, intake, acceptance }: Dependenci
    if (!owner) throw new IntakeError(401, 'Sign in before reading decisions.');
    if (![itemId, candidateId, packetId].every(uuid)) throw invalid();
    await whileActive(() => intake.get(owner, itemId, signal), signal);
-   const result = await query(`SELECT d.id,d.decision,d.inspection,d.deep_inspection,d.unchecked_scope,d.residual_risk,d.created_at
+   const result = await query(`SELECT d.id,d.decision,d.inspection,d.deep_inspection,d.regression_followup,d.unchecked_scope,d.residual_risk,d.created_at
     FROM tripsit_human_decisions d JOIN tripsit_revision_packets r ON r.id=d.packet_id
     JOIN tripsit_candidate_payloads p ON p.candidate_id=r.candidate_id JOIN tripsit_candidates c ON c.id=p.candidate_id
     JOIN tripsit_work_items w ON w.id=p.work_item_id
@@ -77,16 +77,17 @@ export function createHumanDecision({ database, intake, acceptance }: Dependenci
     ORDER BY d.created_at,d.id LIMIT 16`, [owner,itemId,candidateId,packetId]);
    await whileActive(() => intake.get(owner, itemId, signal), signal);
    return result.rows.map(row => ({ id: row.id, decision: row.decision, inspection: row.inspection,
-    deepInspection: row.deep_inspection, uncheckedScope: row.unchecked_scope, residualRisk: row.residual_risk, createdAt: row.created_at, historical: true as const }));
+    deepInspection: row.deep_inspection, regressionFollowup: row.regression_followup, uncheckedScope: row.unchecked_scope, residualRisk: row.residual_risk, createdAt: row.created_at, historical: true as const }));
   },
   async record(owner: string, itemId: string, candidateId: string, packetId: string, input: unknown, signal: AbortSignal) {
    if (!owner) throw new IntakeError(401, 'Sign in before recording a decision.');
    if (![itemId, candidateId, packetId].every(uuid) || !input || typeof input !== 'object' || Array.isArray(input)) throw invalid();
    const value = input as Record<string, unknown>;
-   if (![ 'decision,inspection,requestId,residualRisk,uncheckedScope', 'decision,deepInspection,inspection,requestId,residualRisk,uncheckedScope' ].includes(Object.keys(value).sort().join(',')) || !uuid(value.requestId)
+   if (Object.keys(value).some(key=>!['decision','deepInspection','inspection','regressionFollowup','requestId','residualRisk','uncheckedScope'].includes(key)) || !uuid(value.requestId)
     || !text(value.inspection) || !text(value.uncheckedScope) || !text(value.residualRisk)) throw invalid();
    if (value.decision !== 'accept' && value.decision !== 'revise' && value.decision !== 'escalate') throw invalid();
    if (value.deepInspection !== undefined && typeof value.deepInspection !== 'boolean') throw invalid();
+   if (value.regressionFollowup !== undefined && (typeof value.regressionFollowup !== 'string' || Buffer.byteLength(value.regressionFollowup)>4096)) throw invalid();
    const item = await whileActive(() => intake.get(owner, itemId, signal), signal);
    const selected = await query(`SELECT p.payload,s.payload AS snapshot,r.body,r.packet_digest,r.source_digest,r.snapshot_digest,r.commit_sha,t.base_sha,t.output_digest,t.tree_sha,t.objects
     FROM tripsit_revision_packets r JOIN tripsit_candidate_payloads p ON p.candidate_id=r.candidate_id
@@ -106,15 +107,25 @@ export function createHumanDecision({ database, intake, acceptance }: Dependenci
     || packet.identity?.itemId!==itemId || packet.identity?.candidateId!==candidateId || packet.identity?.baseSha!==item.snapshot.baseSha
     || packet.identity?.candidateDigest!==row.output_digest || row.base_sha!==item.snapshot.baseSha
     || packet.identity?.policyVersion!==policy.policy.version || packet.identity?.snapshotDigest!==policy.snapshotDigest) throw stale();
+   let outcomeEpoch: unknown = null;
    if (value.decision === 'accept') {
     if (value.deepInspection !== true) throw stale();
     if (!acceptance) throw stale();
     const current = await whileActive(() => acceptance(owner,itemId,candidateId,signal),signal);
     assertAcceptanceEvidence(packet,row,item,current);
+    await query(`INSERT INTO tripsit_outcome_epochs(owner_id,repository_id,version) VALUES($1,$2,0) ON CONFLICT(owner_id,repository_id) DO NOTHING`,[owner,item.snapshot.repositoryId]);
+    const files = Array.isArray((row.payload as any)?.files) ? (row.payload as any).files.map((file: any)=>file.path) : [];
+    if (!files.length || files.some((path:unknown)=>typeof path!=='string')) throw stale();
+    const scrutiny = await query(`SELECT e.version,EXISTS(SELECT 1 FROM tripsit_owner_outcomes o
+      WHERE o.owner_id=$1 AND o.repository_id=$2 AND o.area=ANY($3::text[]) AND o.kind='escape') AS required
+      FROM tripsit_outcome_epochs e WHERE e.owner_id=$1 AND e.repository_id=$2`,[owner,item.snapshot.repositoryId,files]);
+    if (scrutiny.rows.length!==1 || scrutiny.rows[0].version===undefined || typeof scrutiny.rows[0].required!=='boolean') throw stale();
+    outcomeEpoch=scrutiny.rows[0].version;
+    if (scrutiny.rows[0].required && !text(value.regressionFollowup)) throw new IntakeError(409,'Record regression follow-up for the affected area before acceptance.');
    }
    await whileActive(() => intake.get(owner,itemId,signal),signal);
    const now=new Date(), id=randomUUID();
-   const inserted = await query(`WITH locked AS (SELECT r.id,r.expires_at FROM tripsit_revision_packets r
+   const inserted = await query(`WITH gate AS (UPDATE tripsit_outcome_epochs SET version=version WHERE owner_id=$1 AND repository_id=$24 AND version=$25 RETURNING version), locked AS (SELECT r.id,r.expires_at FROM tripsit_revision_packets r
     JOIN tripsit_candidate_payloads p ON p.candidate_id=r.candidate_id JOIN tripsit_candidates c ON c.id=p.candidate_id
     JOIN tripsit_work_items w ON w.id=p.work_item_id JOIN tripsit_snapshots s ON s.work_item_id=w.id
     JOIN tripsit_candidate_stages t ON t.candidate_id=c.id
@@ -126,19 +137,21 @@ export function createHumanDecision({ database, intake, acceptance }: Dependenci
       AND t.tree_sha=$21 AND t.objects=$22::jsonb
       AND p.payload=$8::jsonb AND s.payload=$9::jsonb
     FOR UPDATE OF p FOR SHARE OF r,c,w,s,t)
-    INSERT INTO tripsit_human_decisions(id,packet_id,owner_id,request_id,decision,inspection,unchecked_scope,residual_risk,created_at,expires_at,deep_inspection)
-    SELECT $10,id,$1,$12,$13,$14,$15,$16,$11,expires_at,$23 FROM locked
-    WHERE (SELECT count(*) FROM tripsit_human_decisions d WHERE d.packet_id=locked.id)<16
-       OR EXISTS (SELECT 1 FROM tripsit_human_decisions d WHERE d.packet_id=locked.id AND d.request_id=$12)
+    INSERT INTO tripsit_human_decisions(id,packet_id,owner_id,request_id,decision,inspection,unchecked_scope,residual_risk,created_at,expires_at,deep_inspection,regression_followup,outcome_epoch)
+    SELECT $10,id,$1,$12,$13,$14,$15,$16,$11,expires_at,$23,$26,$25 FROM locked
+    WHERE ($13<>'accept' OR EXISTS(SELECT 1 FROM gate)) AND ((SELECT count(*) FROM tripsit_human_decisions d WHERE d.packet_id=locked.id)<16
+       OR EXISTS (SELECT 1 FROM tripsit_human_decisions d WHERE d.packet_id=locked.id AND d.request_id=$12))
     ON CONFLICT(packet_id,request_id) DO UPDATE SET request_id=EXCLUDED.request_id
     WHERE tripsit_human_decisions.owner_id=EXCLUDED.owner_id AND tripsit_human_decisions.decision=EXCLUDED.decision
       AND tripsit_human_decisions.inspection=EXCLUDED.inspection AND tripsit_human_decisions.unchecked_scope=EXCLUDED.unchecked_scope
       AND tripsit_human_decisions.residual_risk=EXCLUDED.residual_risk
       AND tripsit_human_decisions.deep_inspection=EXCLUDED.deep_inspection
-    RETURNING id,created_at`, [owner,itemId,candidateId,packetId,row.body,row.packet_digest,row.commit_sha,JSON.stringify(row.payload),JSON.stringify(row.snapshot),id,now,value.requestId,value.decision,value.inspection,value.uncheckedScope,value.residualRisk,row.base_sha,row.output_digest,row.source_digest,row.snapshot_digest,row.tree_sha,JSON.stringify(row.objects),value.deepInspection===true]);
+      AND tripsit_human_decisions.regression_followup=EXCLUDED.regression_followup
+      AND tripsit_human_decisions.outcome_epoch IS NOT DISTINCT FROM EXCLUDED.outcome_epoch
+    RETURNING id,created_at`, [owner,itemId,candidateId,packetId,row.body,row.packet_digest,row.commit_sha,JSON.stringify(row.payload),JSON.stringify(row.snapshot),id,now,value.requestId,value.decision,value.inspection,value.uncheckedScope,value.residualRisk,row.base_sha,row.output_digest,row.source_digest,row.snapshot_digest,row.tree_sha,JSON.stringify(row.objects),value.deepInspection===true,item.snapshot.repositoryId,outcomeEpoch,value.regressionFollowup??'']);
    if (!inserted.rows[0]) throw stale();
    return { id: inserted.rows[0].id, owner, packetId, packetDigest: row.packet_digest, candidateCommit: row.commit_sha,
-    decision: value.decision, inspection: value.inspection, deepInspection: value.deepInspection===true, uncheckedScope: value.uncheckedScope, residualRisk: value.residualRisk, createdAt: inserted.rows[0].created_at };
+    decision: value.decision, inspection: value.inspection, deepInspection: value.deepInspection===true, regressionFollowup: value.regressionFollowup??'', uncheckedScope: value.uncheckedScope, residualRisk: value.residualRisk, createdAt: inserted.rows[0].created_at };
   }
  };
 }

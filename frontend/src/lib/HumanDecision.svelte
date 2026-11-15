@@ -5,6 +5,7 @@
   let history = $state<Array<{id:string;decision:string;inspection:string;uncheckedScope:string;residualRisk:string;createdAt:string}>>([]);
   let inspection = $state(''), uncheckedScope = $state(''), residualRisk = $state('');
   let deepInspection = $state(false);
+  let regressionFollowup = $state('');
   let decision = $state<'accept' | 'revise' | 'escalate'>('revise');
   let error = $state(''), success = $state(''), busy = $state(false);
   let publicationUrl = $state('');
@@ -42,11 +43,11 @@
     event.preventDefault(); if (!packet) return;
     busy = true; error = ''; success = '';
     try {
-      const result = await post(`${path}/packet/${encodeURIComponent(packet.id)}/decisions`, { requestId, decision, inspection, uncheckedScope, residualRisk, deepInspection });
+      const result = await post(`${path}/packet/${encodeURIComponent(packet.id)}/decisions`, { requestId, decision, inspection, uncheckedScope, residualRisk, deepInspection, regressionFollowup });
       if (result?.decision?.packetDigest !== packet.packetDigest || result?.decision?.candidateCommit !== packet.packet.candidateCommit
         || result?.decision?.decision !== decision) throw new Error('The recorded decision did not match the frozen packet.');
       await loadHistory(packet.id);
-      success = `Recorded ${decision} for this frozen revision.`; requestId = crypto.randomUUID(); inspection = ''; uncheckedScope = ''; residualRisk = ''; deepInspection = false;
+      success = `Recorded ${decision} for this frozen revision.`; requestId = crypto.randomUUID(); inspection = ''; uncheckedScope = ''; residualRisk = ''; deepInspection = false; regressionFollowup = '';
     } catch (cause) { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'The decision is unavailable.'; }
     finally { busy = false; }
   }
@@ -85,6 +86,7 @@
       <label>Decision <select bind:value={decision}><option value="revise">Request revision</option><option value="escalate">Escalate</option><option value="accept">Accept revision</option></select></label>
       <label>Completed inspection <textarea bind:value={inspection} required maxlength="4096"></textarea></label>
       {#if decision === 'accept'}<label><input type="checkbox" bind:checked={deepInspection} required /> I completed deeper inspection of the changed code, affected behavior, and evidence gaps.</label>{/if}
+      {#if decision === 'accept'}<label>Regression follow-up for reported escapes <textarea bind:value={regressionFollowup} maxlength="4096"></textarea></label>{/if}
       <label>Unchecked scope and why <textarea bind:value={uncheckedScope} required maxlength="4096"></textarea></label>
       <label>Residual risk <textarea bind:value={residualRisk} required maxlength="4096"></textarea></label>
       <button type="submit" disabled={busy}>Record decision</button>
