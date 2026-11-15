@@ -631,3 +631,12 @@ incremental_release_plan:
   refresh_slice: Independent ready PR for polling state preservation and repository switching; isolated verification in progress.
   workflow_slice: PR9 autonomous implementation + automatic graph-linked critique stays under verification until real-item502 is resolved. Actual synthetic Gemma agent and critic provider probes passed; browser4states and192 native tests passed.
   constraints: Existing story acceptance is preserved; component/module completion is not full-story completion. No new service deployment or extra private admission prompt.
+
+implementation_harness_plan:
+  user_instruction: Hashes are not model input; use a proper coding system prompt and optimization loop, preferably Pi/OpenCode rather than accumulating ad hoc protocol patches.
+  hash_boundary: Model receives issue, paths, source and tool feedback only. Server owns original blob and artifact hashes, revision validation and persisted provenance.
+  immediate_fix: Remove listing/context hashes from model data, derive candidate originalBlob server-side from inspected frozen source, preserve exact original model text/digest; real item502 dry run must pass.
+  pi_stream: Isolated prototype of Pi SDK with in-memory sessions, configured buffered Gemma provider and frozen-repository tools. Prove compatibility using synthetic public fixture before adding/wiring dependency. No new deployment.
+  system_prompt: Agent owns investigation, edits and self-check/refinement. It reads source before editing, uses tool feedback to recover, and hands the resulting revision/graph to independent assessment. Human input steers/escalates/decides.
+  integration: Keep generation coordinator/persistence/review graph contracts; replace low-level hand-written tool loop with tested harness if compatible. Do not discard working revision binding or linked assessments.
+  verification: Prompt-boundary regressions, tool/history/refinement fixture, configured real issue dry run, harness provider compatibility probe and frontend preflight.
