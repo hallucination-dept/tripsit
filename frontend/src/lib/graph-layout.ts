@@ -1,29 +1,44 @@
 import type { ElkNode } from 'elkjs/lib/elk-api';
 import type { Edge, Node, NodeHandle } from '@xyflow/svelte';
 import type { ChangeGraph, ChangeKind, GraphNode } from '#lib/server/change-graph.ts';
+import { flagLabels, type AgentFlag } from '#lib/flag-levels.ts';
 
 // Card geometry. GraphCard.svelte renders with the same numbers so the layout and the DOM agree.
 export const geometry = { fileWidth: 280, folderWidth: 220, head: 50, row: 24, listPadding: 4 };
+// Review flags are comment bubbles right of the card. A right-triangle notch at the bubble's top-left corner points at
+// the row they are about. Their text is pre-wrapped into fixed-height lines, so bubble sizes are known before rendering.
+export const bubbleGeometry = { width: 270, gutter: 12, notch: 7, pad: 6, line: 15, icon: 12, iconGap: 6, text: 11, charWidth: 6.8, closedLines: 2,
+	// Below this zoom, closed bubbles shrink to their kind icon and an expand chevron.
+	iconBelowZoom: 0.8 };
+export type BubbleMode = 'icon' | 'preview' | 'open';
+// Open bubbles always show everything; closed ones show a two-line preview, or only an icon when zoomed out.
+export const bubbleMode = (open: boolean, zoom: number): BubbleMode => open ? 'open' : zoom < bubbleGeometry.iconBelowZoom ? 'icon' : 'preview';
 
 // A top-level outline item of a file; classes hold their methods as children.
 export type SymbolEntry = { node: GraphNode; children: GraphNode[]; primary: boolean };
-export type Card = { id: string; node: GraphNode; breadcrumb: string; entries: SymbolEntry[]; extras: number };
+export type Card = { id: string; node: GraphNode; breadcrumb: string; entries: SymbolEntry[]; extras: number; flags: AgentFlag[] };
 export type CardRow =
 	| { type: 'symbol'; id: string; node: GraphNode; depth: number; toggle: string | null; open: boolean }
 	| { type: 'more'; id: string; count: number; open: boolean };
+// `top` is relative to the node; `anchor` is the y of the row (or header) the tail points at.
+export type Bubble = { id: string; flag: AgentFlag; open: boolean; lines: string[]; top: number; height: number; anchor: number };
 export type CardModel = {
 	graph: ChangeGraph; cards: Map<string, Card>;
 	owner: Map<string, string>; // symbol id → card id
 	host: Map<string, string>; // method id → class id
 	defaults: Set<string>; // ids open on first render
 };
-export type CardData = { card: Card; rows: CardRow[]; open: boolean };
+export type CardData = { card: Card; rows: CardRow[]; open: boolean; bubbles: Bubble[]; cardHeight: number };
 export type CardFlowNode = Node<CardData, 'card'>;
 // `change` is 'modified' when a merged connection both gained and lost (or kept) references.
 // `labelT` places the badge along the curve, staggered so parallel connections do not stack their badges.
 export type CardEdgeData = { changed: boolean; change: ChangeKind; count: number; members: string[]; labelT: number };
 // Shared with the card components through Svelte context.
-export type GraphUi = { readonly selected: string | null; select: (id: string) => void; toggle: (id: string) => void };
+export type GraphUi = {
+	readonly selected: string | null; select: (id: string) => void; toggle: (id: string) => void;
+	// Review flags on a node, and on a card including its symbols.
+	flags: (id: string) => AgentFlag[]; cardFlags: (id: string) => AgentFlag[];
+};
 type Anchor = { card: string; handle: string };
 type Box = { x: number; y: number; width: number; height: number };
 
@@ -34,12 +49,12 @@ export const changeLabels: Record<ChangeKind, string> = { added: 'added', modifi
 
 // Files become cards holding their symbol outline; untouched folders and the "other files" buckets become small cards.
 // Folders that contain focus files are not drawn; each file card names its folder instead.
-export function buildCardModel(graph: ChangeGraph): CardModel {
+export function buildCardModel(graph: ChangeGraph, flags: AgentFlag[] = []): CardModel {
 	const cards = new Map<string, Card>(), owner = new Map<string, string>(), host = new Map<string, string>(), defaults = new Set<string>();
 	for (const node of graph.nodes) {
 		if (node.kind === 'symbol' || (node.kind === 'directory' && node.group)) continue;
 		const breadcrumb = node.kind === 'others' ? node.path || '/' : dirOf(node.path) || '/';
-		cards.set(node.id, { id: node.id, node, breadcrumb, entries: [], extras: 0 });
+		cards.set(node.id, { id: node.id, node, breadcrumb, entries: [], extras: 0, flags: [] });
 	}
 	for (const card of cards.values()) {
 		const symbols = graph.nodes.filter(node => node.kind === 'symbol' && node.parent === card.id);
@@ -60,11 +75,82 @@ export function buildCardModel(graph: ChangeGraph): CardModel {
 		card.extras = card.entries.filter(entry => !entry.primary).length;
 		if (card.entries.length) defaults.add(card.id);
 	}
+	for (const flag of flags) {
+		const card = flag.nodeId ? cards.get(flag.nodeId) ?? cards.get(owner.get(flag.nodeId) ?? '') : undefined;
+		card?.flags.push(flag);
+	}
 	return { graph, cards, owner, host, defaults };
+}
+
+export const cardWidth = (card: Card) => card.node.kind === 'file' ? geometry.fileWidth : geometry.folderWidth;
+// Greedy word wrap to a fixed number of characters; words longer than a line are split.
+export function wrapText(text: string, width: number): string[] {
+	const lines: string[] = [];
+	let current = '';
+	for (const word of text.split(/\s+/).filter(Boolean)) {
+		let rest = word;
+		while (rest.length > width) {
+			if (current) { lines.push(current); current = ''; }
+			lines.push(rest.slice(0, width)); rest = rest.slice(width);
+		}
+		if (!rest) continue;
+		if (!current) current = rest;
+		else if (current.length + 1 + rest.length <= width) current += ` ${rest}`;
+		else { lines.push(current); current = rest; }
+	}
+	if (current) lines.push(current);
+	return lines;
+}
+
+// A closed bubble shows the kind and the start of the reason in two lines; an open one adds the confidence, the
+// whole reason and the alternatives.
+export function bubbleLines(flag: AgentFlag, open: boolean): string[] {
+	const { width, pad, icon, iconGap, charWidth, closedLines } = bubbleGeometry;
+	const chars = Math.max(12, Math.floor((width - 2 * pad - 2 - icon - iconGap) / charWidth));
+	if (open) {
+		return [...wrapText(`${flagLabels[flag.kind]} · ${flag.confidence} confidence`, chars), ...wrapText(flag.reason, chars),
+			...(flag.alternatives ? wrapText(`Alternatives: ${flag.alternatives}`, chars) : [])];
+	}
+	const lines = wrapText(`${flagLabels[flag.kind]}: ${flag.reason}`, chars);
+	if (lines.length <= closedLines) return lines;
+	const kept = lines.slice(0, closedLines), last = kept[closedLines - 1];
+	kept[closedLines - 1] = `${last.length >= chars ? last.slice(0, chars - 1) : last}…`;
+	return kept;
+}
+export const bubbleHeight = (lines: string[]) => 2 * bubbleGeometry.pad + lines.length * bubbleGeometry.line;
+
+const headCenter = 1 + geometry.head / 2;
+const rowCenter = (index: number) => 2 + geometry.head + geometry.listPadding + index * geometry.row + geometry.row / 2;
+
+// Each bubble's top edge (and the notch's tip) sits at the middle of its row; bubbles may overlap. Flags on the file,
+// or on rows that are not shown, point at the card header.
+export function cardBubbles(card: Card, rows: CardRow[], open: Set<string>): Bubble[] {
+	if (!card.flags.length) return [];
+	const index = new Map(rows.map((row, position) => [row.id, position]));
+	const anchored = card.flags.map(flag => {
+		const position = flag.nodeId ? index.get(flag.nodeId) : undefined;
+		return { flag, anchor: position === undefined ? headCenter : rowCenter(position) };
+	}).sort((a, b) => a.anchor - b.anchor);
+	return anchored.map(({ flag, anchor }) => {
+		const id = `flag:${flag.id}`, isOpen = open.has(id), lines = bubbleLines(flag, isOpen), height = bubbleHeight(lines);
+		return { id, flag, open: isOpen, lines, top: anchor, height, anchor };
+	});
+}
+
+// The flow node holds the card and, when it has flags, the bubble column.
+export function nodeSize(card: Card, rows: CardRow[], bubbles: Bubble[]) {
+	const size = cardSize(card, rows);
+	if (!bubbles.length) return { ...size, cardHeight: size.height };
+	const bottom = Math.max(...bubbles.map(bubble => bubble.top + bubble.height));
+	return { width: size.width + bubbleGeometry.gutter + bubbleGeometry.width, height: Math.max(size.height, bottom), cardHeight: size.height };
 }
 
 // Rows a card shows for the current open state: edited symbols and their neighbours, then "N more" for the rest.
 export function visibleRows(card: Card, open: Set<string>): CardRow[] {
+	return outlineRows(card, open);
+}
+
+function outlineRows(card: Card, open: Set<string>): CardRow[] {
 	if (!card.entries.length || !open.has(card.id)) return [];
 	const everything = open.has(`more:${card.id}`);
 	const rows: CardRow[] = [];
@@ -79,8 +165,7 @@ export function visibleRows(card: Card, open: Set<string>): CardRow[] {
 }
 
 export function cardSize(card: Card, rows: CardRow[]) {
-	const width = card.node.kind === 'file' ? geometry.fileWidth : geometry.folderWidth;
-	return { width, height: 2 + geometry.head + (rows.length ? 1 + geometry.listPadding * 2 + rows.length * geometry.row : 0) };
+	return { width: cardWidth(card), height: 2 + geometry.head + (rows.length ? 1 + geometry.listPadding * 2 + rows.length * geometry.row : 0) };
 }
 
 // An edge end attaches to its symbol's row when visible, else to the class row that folds it, else to the card header.
@@ -145,20 +230,18 @@ export function bezier(sx: number, sy: number, sourceSide: 'l' | 'r', tx: number
 const labelPositions = [0.5, 0.32, 0.68, 0.2, 0.8, 0.42, 0.58];
 
 // Edges leave and enter rows from the side facing the other card; between stacked cards they loop on the right.
-function sides(from: Box, to: Box): ['l' | 'r', 'l' | 'r'] {
-	if (to.x >= from.x + from.width) return ['r', 'l'];
-	if (to.x + to.width <= from.x) return ['l', 'r'];
-	return ['r', 'r'];
+// A card with flag bubbles on its right uses its left side instead, so edges never run through the bubbles.
+function sides(from: Box, to: Box, fromBubbles: boolean, toBubbles: boolean): ['l' | 'r', 'l' | 'r'] {
+	const [out, into]: ['l' | 'r', 'l' | 'r'] = to.x >= from.x + from.width ? ['r', 'l'] : to.x + to.width <= from.x ? ['l', 'r'] : ['r', 'r'];
+	return [fromBubbles && out === 'r' ? 'l' : out, toBubbles && into === 'r' ? 'l' : into];
 }
 
 // Handle anchors come from the fixed card geometry rather than DOM measurement: Svelte Flow forgets measured
 // handles whenever the node objects are replaced, which happens on every re-layout.
 const left = 'left' as NodeHandle['position'], right = 'right' as NodeHandle['position'];
 export function cardHandles(rows: CardRow[], width: number): NodeHandle[] {
-	const anchors = [{ key: 'head', y: 1 + geometry.head / 2 }];
-	rows.forEach((row, index) => {
-		if (row.type === 'symbol') anchors.push({ key: row.id, y: 2 + geometry.head + geometry.listPadding + index * geometry.row + geometry.row / 2 });
-	});
+	const anchors = [{ key: 'head', y: headCenter }];
+	rows.forEach((row, index) => { if (row.type === 'symbol') anchors.push({ key: row.id, y: rowCenter(index) }); });
 	return anchors.flatMap(({ key, y }): NodeHandle[] => [
 		{ id: `in-l:${key}`, type: 'target', position: left, x: 0, y: y - 0.5, width: 1, height: 1 },
 		{ id: `out-l:${key}`, type: 'source', position: left, x: 0, y: y - 0.5, width: 1, height: 1 },
@@ -171,7 +254,8 @@ export function cardHandles(rows: CardRow[], width: number): NodeHandle[] {
 export async function layoutCards(model: CardModel, open: Set<string>): Promise<{ nodes: CardFlowNode[]; edges: Edge[] }> {
 	const cards = [...model.cards.values()];
 	const rows = new Map(cards.map(card => [card.id, visibleRows(card, open)]));
-	const sizes = new Map(cards.map(card => [card.id, cardSize(card, rows.get(card.id)!)]));
+	const bubbles = new Map(cards.map(card => [card.id, cardBubbles(card, rows.get(card.id)!, open)]));
+	const sizes = new Map(cards.map(card => [card.id, nodeSize(card, rows.get(card.id)!, bubbles.get(card.id)!)]));
 	const links = cardLinks(model, open);
 	const pairs = new Map<string, { id: string; sources: string[]; targets: string[] }>();
 	for (const link of links) {
@@ -186,21 +270,23 @@ export async function layoutCards(model: CardModel, open: Set<string>): Promise<
 			'elk.algorithm': 'layered', 'elk.direction': 'DOWN',
 			'elk.layered.spacing.nodeNodeBetweenLayers': '56', 'elk.spacing.nodeNode': '32', 'elk.spacing.componentComponent': '48'
 		},
-		children: cards.map(card => ({ id: card.id, ...sizes.get(card.id)! })),
+		children: cards.map(card => ({ id: card.id, width: sizes.get(card.id)!.width, height: sizes.get(card.id)!.height })),
 		edges: [...pairs.values()]
 	});
 	const boxes = new Map<string, Box>();
 	for (const child of layout.children ?? []) {
 		const size = sizes.get(child.id)!;
-		boxes.set(child.id, { x: child.x ?? 0, y: child.y ?? 0, ...size });
+		boxes.set(child.id, { x: child.x ?? 0, y: child.y ?? 0, width: size.width, height: size.height });
 	}
 	const nodes = cards.map((card): CardFlowNode => {
 		const box = boxes.get(card.id)!;
 		return {
 			id: card.id, type: 'card', position: { x: box.x, y: box.y }, width: box.width, height: box.height,
 			style: `width:${box.width}px;height:${box.height}px;`, connectable: false,
-			handles: cardHandles(rows.get(card.id)!, box.width),
-			data: { card, rows: rows.get(card.id)!, open: open.has(card.id) }
+			// Bubbles keep their screen size when zoomed out, so cards with bubbles are drawn above the others.
+			zIndex: bubbles.get(card.id)!.length ? 1 : 0,
+			handles: cardHandles(rows.get(card.id)!, cardWidth(card)),
+			data: { card, rows: rows.get(card.id)!, open: open.has(card.id), bubbles: bubbles.get(card.id)!, cardHeight: sizes.get(card.id)!.cardHeight }
 		};
 	});
 	const badges = new Map<string, number>();
@@ -208,7 +294,8 @@ export async function layoutCards(model: CardModel, open: Set<string>): Promise<
 		const pair = [link.source.card, link.target.card].sort().join('|');
 		const slot = link.change === 'unchanged' ? 0 : badges.get(pair) ?? 0;
 		if (link.change !== 'unchanged') badges.set(pair, slot + 1);
-		const [out, into] = sides(boxes.get(link.source.card)!, boxes.get(link.target.card)!);
+		const [out, into] = sides(boxes.get(link.source.card)!, boxes.get(link.target.card)!,
+			bubbles.get(link.source.card)!.length > 0, bubbles.get(link.target.card)!.length > 0);
 		return {
 			id: link.id, source: link.source.card, target: link.target.card,
 			sourceHandle: `out-${out}:${link.source.handle}`, targetHandle: `in-${into}:${link.target.handle}`, type: 'change',

@@ -12,12 +12,13 @@
 	} from '#lib/graph-layout.ts';
 	import type { RunFile } from '#lib/server/agent-runs.ts';
 	import type { ChangeGraph } from '#lib/server/change-graph.ts';
+	import { attention, byAttention, flagIndex, flagLabels, type AgentFlag } from '#lib/flag-levels.ts';
 
-	let { graph, files }: { graph: ChangeGraph; files: RunFile[] } = $props();
+	let { graph, files, flags = [] }: { graph: ChangeGraph; files: RunFile[]; flags?: AgentFlag[] } = $props();
 	const nodeTypes = { card: GraphCard };
 	const edgeTypes = { change: ChangeEdge };
 	// A plain copy: Svelte Flow node data must not hold reactive proxies from the page's run state.
-	const model = $derived(buildCardModel($state.snapshot(graph) as ChangeGraph));
+	const model = $derived(buildCardModel($state.snapshot(graph) as ChangeGraph, $state.snapshot(flags) as AgentFlag[]));
 	let open = $state<Set<string>>(new Set());
 	let selected = $state<string | null>(null);
 	let nodes = $state.raw<CardFlowNode[]>([]);
@@ -25,8 +26,11 @@
 	let layoutError = $state('');
 	let canvas = $state<HTMLElement>();
 
+	const index = $derived(flagIndex(flags, model.owner, new Set(model.cards.keys())));
 	const ui: GraphUi = {
 		get selected() { return selected; },
+		flags: (id: string) => index.byNode.get(id) ?? [],
+		cardFlags: (id: string) => index.byCard.get(id) ?? [],
 		select: (id: string) => { selected = selected === id ? null : id; },
 		toggle: (id: string) => {
 			const next = new Set(open);
@@ -76,9 +80,23 @@
 	const links = $derived(selected ? relations(model, selected) : null);
 	const diff = $derived(!item ? '' : item.kind === 'symbol' ? graph.symbolDiffs[item.id] ?? ''
 		: item.kind === 'file' ? files.find(file => file.path === item.path)?.diff ?? '' : '');
+	const itemFlags = $derived(item ? byAttention(index.byNode.get(item.id) ?? []) : []);
+	const flagPlace = (flag: AgentFlag) => flag.symbol ? `${flag.path} › ${flag.symbol}` : flag.path;
 	const lineClass = (line: string) => line.startsWith('@@') ? 'hunk' : line.startsWith('+') && !line.startsWith('+++') ? 'add'
 		: line.startsWith('-') && !line.startsWith('---') ? 'del' : '';
 </script>
+
+{#snippet flagEntry(flag: AgentFlag, linked: boolean)}
+	<li class="flag flag-{attention(flag)}">
+		<p class="flag-head"><span class="flag-kind">{flagLabels[flag.kind]}</span><span>{flag.confidence} confidence</span></p>
+		{#if linked}
+			{#if flag.nodeId}<button type="button" class="flag-place" onclick={() => { selected = flag.nodeId; }}>{flagPlace(flag)}</button>
+			{:else}<p class="flag-place">{flagPlace(flag)}</p>{/if}
+		{/if}
+		<p class="flag-reason">{flag.reason}</p>
+		{#if flag.alternatives}<p class="flag-alternatives">Alternatives: {flag.alternatives}</p>{/if}
+	</li>
+{/snippet}
 
 <div class="graph-shell">
 	<div class="canvas" bind:this={canvas}>
@@ -101,6 +119,11 @@
 			<h3>{item.kind === 'symbol' ? symbolLabel(item, false) : item.kind === 'others' ? `${item.files} other files` : item.label}</h3>
 			<p class="path"><code>{item.path || '/'}</code>{#if item.lines} · lines {item.lines}{/if}</p>
 			{#if item.change !== 'unchanged'}<p class="change change-{item.change}">{changeLabels[item.change]}</p>{/if}
+			{#if itemFlags.length}
+				<ul class="flags">
+					{#each itemFlags as flag (flag.id)}{@render flagEntry(flag, false)}{/each}
+				</ul>
+			{/if}
 			{#if links && (links.uses.length || links.usedBy.length)}
 				<dl class="relations">
 					{#if links.uses.length}<dt>Uses</dt><dd>{#each links.uses as name (name)}<span>{name}</span>{/each}</dd>{/if}
@@ -113,6 +136,12 @@
 				<p class="note">{item.change === 'unchanged' ? 'Unchanged. It is shown because it uses, or is used by, an edited part.' : 'No text diff is available (binary or too large).'}</p>
 			{/if}
 		{:else}
+			{#if flags.length}
+				<p class="eyebrow">Review flags · {flags.length}</p>
+				<ul class="flags">
+					{#each byAttention(flags) as flag (flag.id)}{@render flagEntry(flag, true)}{/each}
+				</ul>
+			{/if}
 			<p class="eyebrow">Details</p>
 			<p class="note">Select a file or symbol to see its diff and what it is connected to. Code that uses something sits above it. Badges mark what the change added, modified or removed, including connections; removed connections are dashed.</p>
 			<ul class="legend">
@@ -120,6 +149,7 @@
 				<li><span class="glyph">()=&gt;</span>arrow function</li>
 				<li><span class="glyph">new</span>constructor</li>
 				<li><span class="change change-added">added</span><span class="change change-modified">modified</span><span class="change change-deleted">removed</span></li>
+				<li><span class="flag-swatch flag-high"></span><span class="flag-swatch flag-medium"></span><span class="flag-swatch flag-low"></span>review flag, stronger = needs more attention</li>
 			</ul>
 		{/if}
 	</aside>
@@ -160,8 +190,23 @@
 	.diff .add { background: var(--added-bg); color: #bbf7d0; }
 	.diff .del { background: var(--deleted-bg); color: #fecaca; }
 	.diff .hunk { background: var(--info-bg); color: var(--info); }
+	.flags { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 8px; }
+	.flag { padding: 8px 10px; background: rgba(var(--flag-rgb), var(--flag-tint)); box-shadow: inset 2px 0 0 rgba(var(--flag-rgb), var(--flag-accent)); }
+	.flag-high { --flag-tint: .2; --flag-accent: 1; }
+	.flag-medium { --flag-tint: .12; --flag-accent: .7; }
+	.flag-low { --flag-tint: .06; --flag-accent: .45; }
+	.flag p { margin: 0; }
+	.flag-head { display: flex; justify-content: space-between; gap: 8px; color: var(--text-subtle); font: 400 10.5px/1.5 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+	.flag-kind { color: rgb(var(--flag-rgb)); font-weight: 600; }
+	.flag-place { display: block; margin: 4px 0 0; padding: 0; color: var(--text-muted); font: 400 11px/1.5 var(--font-mono); text-align: left; overflow-wrap: anywhere; }
+	button.flag-place { text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+	button.flag-place:hover { color: var(--text); }
+	.flag-reason { margin-top: 6px !important; color: var(--text); font: 400 12.5px/1.5 var(--font-sans); }
+	.flag-alternatives { margin-top: 4px !important; color: var(--text-muted); font: 400 11px/1.5 var(--font-mono); }
 	.legend { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; color: var(--text-muted); font: 400 11px/1.5 var(--font-mono); }
 	.legend li { display: flex; align-items: center; gap: 8px; }
+	.flag-swatch { width: 14px; height: 14px; background: rgba(var(--flag-rgb), var(--flag-tint)); box-shadow: inset 2px 0 0 rgba(var(--flag-rgb), var(--flag-accent)); }
+	.legend li .flag-swatch + .flag-swatch { margin-left: -6px; }
 	.glyph { display: inline-flex; justify-content: center; min-width: 30px; padding: 0 3px; border: 1px solid var(--border); color: var(--info); font: 500 9.5px/16px var(--font-mono); }
 	@media (max-width: 900px) {
 		.graph-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(420px, 1fr) auto; height: auto; }

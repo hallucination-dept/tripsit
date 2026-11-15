@@ -1,132 +1,149 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
-	import Spinner from '#lib/components/Spinner.svelte';
-	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
-	import { createCandidateWorkspace } from '#lib/candidate-workspace.ts';
-	import CandidateInspection from '#lib/CandidateInspection.svelte';
-	import OutcomeFeedback from '#lib/OutcomeFeedback.svelte';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
+	import Check from '@lucide/svelte/icons/check';
+	import ChevronDown from '@lucide/svelte/icons/chevron-down';
+	import Plus from '@lucide/svelte/icons/plus';
 	import { authClient } from '#lib/auth-client.js';
-	import { selectedAfterReload } from '#lib/issue-selection.ts';
+	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
+	import ChangeGraphView from '#lib/components/ChangeGraphView.svelte';
 	import Logo from '#lib/components/Logo.svelte';
-
-	type Token = { token: string; probability_percent: number };
+	import LoginWave from '#lib/components/LoginWave.svelte';
+	import FlagMarker from '#lib/components/FlagMarker.svelte';
+	import Spinner from '#lib/components/Spinner.svelte';
+	import type { RunDetail, RunStatus, RunSummary } from '#lib/server/agent-runs.ts';
 
 	const session = authClient.useSession();
-	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
-		repositoryId: number; repository: string; private: boolean; issueNumber: number; baseSha: string;
-		supplied: { title: string; body: string }; inferred: string[]; ownerConfirmed: string[];
-	} };
-	let issueItems = $state<IssueItem[]>([]);
-	let selectedIssue = $state<IssueItem | null>(null);
-	let intakeOwner = $state('');
-	let issueBusy = $state(false);
-	let issueError = $state('');
-	let code = $state('');
-	let tokens = $state<Token[]>([]);
-	let review = $state('');
-	let isLoading = $state(false);
-	let message = $state('');
-	let authMode = $state<'sign-in' | 'sign-up'>('sign-in');
-	let name = $state('');
-	let email = $state('');
-	let password = $state('');
+	const discoveryController = createIssueDiscovery({ onChange: next => { discovery = next; } });
+	let discovery = $state(discoveryController.state);
+	let instruction = $state('');
+	let runs = $state<RunSummary[]>([]);
+	let run = $state<RunDetail | null>(null);
+	let starting = $state(false);
+	let runsLoading = $state(false);
+	let opening = $state('');
+	let issueLoading = $state(0);
+	let error = $state('');
+	let pollTimer: ReturnType<typeof setTimeout> | undefined;
+	// Picked once per page load, so the heading varies between visits but not while you work.
+	const headline = Math.random() < 0.5 ? "Let's ship some features in" : "Let's fix some bugs in";
+	let owner = '';
+	// Onboarding: a new user first links GitHub, then installs the Tripsit agent (the GitHub App) on some repositories.
+	let githubLinked = $state<boolean | null>(null);
+	let linking = $state(false);
+	let linkError = $state(page.url.searchParams.get('github') === 'link-failed'
+		? 'GitHub could not be linked. Use a GitHub account with the same email as this Tripsit account, or sign out and continue with GitHub instead.' : '');
+	const onboarding = $derived(githubLinked === false ? 'connect'
+		: githubLinked && discovery.owner && !discovery.loading && !discovery.error && !discovery.repositories.length ? 'install' : null);
+
 	let authError = $state('');
 	let isAuthenticating = $state(false);
 
-	let intakeRequest = 0;
-	let intakeAbort: AbortController | undefined;
-	const discoveryController = createIssueDiscovery({ onChange: next => {
-		discovery = next;
-		const accessible = (item: IssueItem) => Date.parse(item.expiresAt) > Date.now() && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
-		issueItems = issueItems.filter(accessible);
-		if (selectedIssue && !accessible(selectedIssue)) selectedIssue = null;
-	} });
-	let discovery = $state(discoveryController.state);
-	const candidateController = createCandidateWorkspace({ onChange: next => { candidateWorkspace = next; } });
-	let candidateWorkspace = $state(candidateController.state);
+	const finished = (status: RunStatus) => status === 'done' || status === 'failed' || status === 'cancelled';
+	const statusLabel: Record<RunStatus, string> = { preparing: 'Preparing', running: 'Agent working', analyzing: 'Building graph', publishing: 'Opening PR', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
+	const time = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
 	$effect(() => {
-		const owner = $session.data?.user.id ?? '';
-		const itemId = selectedIssue?.id ?? '';
-		const baseSha = selectedIssue?.snapshot.baseSha ?? '';
-		untrack(() => { void candidateController.select(owner, itemId, baseSha); });
-		return () => untrack(() => candidateController.stop());
-	});
-
-	$effect(() => {
-		const owner = $session.data?.user.id ?? '';
+		const current = $session.data?.user.id ?? '';
 		untrack(() => {
-			intakeRequest++;
-			intakeAbort?.abort();
-			issueItems = []; selectedIssue = null; issueError = ''; issueBusy = false; intakeOwner = '';
-			void discoveryController.start(owner);
+			owner = current;
+			clearTimeout(pollTimer);
+			run = null; runs = []; error = '';
+			void discoveryController.start(current);
+			if (current) void loadRuns();
+			void checkGitHub(current);
+			// Links from pull request comments open a run directly: /?run=<id>.
+			const linked = page.url.searchParams.get('run');
+			if (current && linked) void openRun(linked);
 		});
-		return () => untrack(() => { intakeRequest++; intakeAbort?.abort(); discoveryController.stop(); });
+		return () => untrack(() => { clearTimeout(pollTimer); discoveryController.stop(); });
 	});
 
-	async function issueRequest(action: 'create' | 'list' | 'detail', id?: string) {
-		const owner = $session.data?.user.id;
-		if (!owner) return;
-		const requestId = ++intakeRequest;
-		intakeAbort?.abort();
-		intakeAbort = new AbortController();
-		const repository = discovery.repository;
-		const issueNumber = discovery.issueNumber;
-		issueBusy = true;
-		issueError = '';
-		try {
-			const response = await fetch(`/api/work-items${action === 'detail' ? `/${id}` : ''}`, {
-				...(action === 'create' ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ repository, issueNumber }) } : {}),
-				signal: AbortSignal.any([intakeAbort.signal, AbortSignal.timeout(30_000)])
-			});
-			const data = await response.json();
-			if ($session.data?.user.id !== owner || requestId !== intakeRequest || (action === 'create' && repository !== discovery.repository)) return;
-			intakeOwner = owner;
-			if (!response.ok) throw new Error(data.message ?? 'Issue intake failed.');
-			if (action === 'list') {
-				issueItems = data.items.filter((item: IssueItem) => discovery.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository));
-				selectedIssue = selectedAfterReload(selectedIssue, issueItems);
-			}
-			else selectedIssue = discovery.repositories.some(repo => repo.id === data.item.snapshot.repositoryId && repo.fullName === data.item.snapshot.repository) ? data.item : null;
-		} catch (error) {
-			if ($session.data?.user.id === owner && requestId === intakeRequest) {
-				issueError = error instanceof Error ? error.message : 'Issue intake failed.';
-				selectedIssue = null;
-				issueItems = [];
-			}
-		} finally { if (requestId === intakeRequest) issueBusy = false; }
+	async function api(path: string, init?: RequestInit) {
+		const response = await fetch(path, { cache: 'no-store', ...init, signal: AbortSignal.timeout(30_000) });
+		const data = await response.json().catch(() => ({}));
+		if (!response.ok) throw new Error(typeof data?.message === 'string' ? data.message : 'The request failed.');
+		return data;
+	}
+	const message = (cause: unknown) => cause instanceof Error ? cause.message : 'The request failed.';
+
+	async function checkGitHub(requester: string) {
+		githubLinked = null;
+		if (!requester) return;
+		const { data } = await authClient.listAccounts();
+		// If the account list is unavailable, fall back to the workspace and its discovery errors.
+		if (requester === owner) githubLinked = data ? data.some(account => account.providerId === 'github') : true;
 	}
 
-	function opacity(probability: number) {
-		return Math.max(0.1, Math.min(0.9, probability / 100));
+	async function connectGitHub() {
+		linking = true; linkError = '';
+		const result = await authClient.linkSocial({ provider: 'github', callbackURL: '/', errorCallbackURL: '/?github=link-failed' });
+		if (result.error) { linkError = result.error.message ?? 'Could not start GitHub linking.'; linking = false; }
 	}
 
-	async function submitReview() {
-		isLoading = true;
-		message = '';
-		tokens = [];
-		review = '';
+	async function loadRuns() {
+		const requester = owner;
+		runsLoading = true;
 		try {
-			const response = await fetch('/api/review', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) });
-			const data = await response.json();
-			if (!response.ok) throw new Error(data.message ?? data.detail ?? 'Review failed.');
-			tokens = data.tokens;
-			review = data.review;
-		} catch (error) {
-			message = error instanceof Error ? error.message : 'Review failed.';
-		} finally {
-			isLoading = false;
+			const data = await api('/api/agent-runs');
+			if (requester === owner) runs = data.runs;
+		} catch (cause) { if (requester === owner) error = message(cause); }
+		finally { if (requester === owner) runsLoading = false; }
+	}
+
+	function poll() {
+		clearTimeout(pollTimer);
+		if (!run || finished(run.status)) return;
+		const id = run.id;
+		pollTimer = setTimeout(async () => {
+			try {
+				const data = await api(`/api/agent-runs/${id}`);
+				if (run?.id !== id) return;
+				run = data.run;
+				if (finished(data.run.status)) void loadRuns();
+			} catch (cause) { if (run?.id === id) error = message(cause); }
+			if (run?.id === id) poll();
+		}, 2000);
+	}
+
+	async function openRun(id: string) {
+		error = ''; opening = id;
+		try {
+			run = (await api(`/api/agent-runs/${id}`)).run;
+			replaceState(`?run=${encodeURIComponent(id)}`, {});
+			poll();
 		}
+		catch (cause) { error = message(cause); }
+		finally { if (opening === id) opening = ''; }
 	}
 
-	async function submitEmailAuth() {
-		isAuthenticating = true;
-		authError = '';
-		const result = authMode === 'sign-in'
-			? await authClient.signIn.email({ email, password })
-			: await authClient.signUp.email({ name, email, password });
-		if (result.error) authError = result.error.message ?? 'Authentication failed.';
-		isAuthenticating = false;
+	async function startRun() {
+		starting = true; error = '';
+		try {
+			const data = await api('/api/agent-runs', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ repository: discovery.repository, instruction }) });
+			run = data.run;
+			poll();
+			void loadRuns();
+		} catch (cause) { error = message(cause); }
+		finally { starting = false; }
+	}
+
+	async function cancelRun() {
+		if (!run) return;
+		try { run = (await api(`/api/agent-runs/${run.id}/cancel`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })).run; }
+		catch (cause) { error = message(cause); }
+	}
+
+	async function useIssue(number: number) {
+		const repository = discovery.repository;
+		issueLoading = number; error = '';
+		try {
+			const { issue } = await api(`/api/github/issue?repository=${encodeURIComponent(repository)}&number=${number}`);
+			if (repository === discovery.repository) instruction = `Resolve GitHub issue #${issue.number}: ${issue.title}\n\n${issue.body}`.trim();
+		} catch (cause) { error = message(cause); }
+		finally { issueLoading = 0; }
 	}
 
 	async function signInWithGitHub() {
@@ -141,229 +158,333 @@
 </script>
 
 <svelte:head>
-	<title>TripSit — Review workspace</title>
-	<meta name="description" content="GitHub issue snapshots and code review with visible token likelihood." />
+	<title>tripsit.dev</title>
+	<meta name="description" content="Pick an issue or describe a feature, and the TripSit agent makes the pull request." />
 </svelte:head>
 
 <header class="appbar"><div class="appbar-inner">
 	<Logo />
 	{#if $session.data}
-		<nav aria-label="Workspace"><a href="#issue-heading">Issues</a><a href="#code-review">Code review</a><a href="/agent">Agent runs</a></nav>
+		{#if githubLinked && onboarding !== 'install'}<div class="repo-picker">
+			<label for="repository">Repository{#if discovery.loading && !discovery.repositories.length} <Spinner size={11} />{/if}</label>
+			<div class="select-wrap">
+				<select id="repository" value={discovery.repository} disabled={discovery.loading && !discovery.repositories.length}
+					onchange={(event) => discoveryController.selectRepository(event.currentTarget.value)}>
+					{#if !discovery.repositories.length}<option value="">{discovery.loading ? 'Loading repositories…' : 'No repositories available'}</option>{/if}
+					{#each discovery.repositories as repository (repository.id)}
+						<option value={repository.fullName}>{repository.fullName}{repository.private ? ' (private)' : ''}</option>
+					{/each}
+				</select>
+				<ChevronDown class="chevron" size={14} aria-hidden="true" />
+			</div>
+			<a class="add-repos" href="/api/github/connect" title="Install the Tripsit agent on more repositories or organizations"><Plus size={13} aria-hidden="true" /> Add repos</a>
+		</div>{/if}
 		<div class="account-bar"><strong title={$session.data.user.email}>{$session.data.user.name || $session.data.user.email}</strong><button class="button-quiet" onclick={() => authClient.signOut()}>Sign out</button></div>
-	{:else}<span class="appbar-caption">Code review workspace</span>{/if}
+	{:else if !$session.isPending}<span class="appbar-caption">Coding ticket agent</span>{/if}
 </div></header>
 
-<main class:auth-layout={!$session.data}>
-	{#if $session.data}
-		<div class="page-heading"><div><p class="eyebrow">Workspace</p><h1>Review workspace</h1><p class="intro">Capture a GitHub issue or take a closer look at a code change.</p></div></div>
-
-		<section aria-labelledby="issue-heading">
-			<div class="section-heading"><div><h2 id="issue-heading">GitHub issues</h2><p>Keep the problem and its code revision together.</p></div><a class="section-label" href="/api/github/connect">Install GitHub App</a></div>
-			<div class="intake-grid">
-				<div class="panel ticket-panel">
-					<div class="panel-heading"><p class="panel-title">Select an issue</p><span class="sync-state" aria-live="polite">{#if discovery.loading}<Spinner /> Refreshing…{:else}Refreshes every minute{/if}</span></div>
-					{#if discovery.owner === $session.data.user.id}
-						<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
-							<label for="repository">Repository{#if discovery.loading && !discovery.repositories.length} <Spinner />{/if}</label>
-							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || !discovery.repositories.length}>
-								<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
-								{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
-							</select>
-							<label for="issue-number">Open issue{#if discovery.loading && discovery.repository && !discovery.issues.length} <Spinner />{/if}</label>
-							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || !discovery.issues.length}>
-								<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
-								{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
-							</select>
-							<button class="button-primary capture-button" type="submit" disabled={issueBusy || !discovery.repository || !discovery.issueNumber}>{#if issueBusy}<Spinner /> Loading…{:else}Snapshot issue{/if}</button>
-						</form>
-						{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
-						{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p class="empty-note">No repositories found. Check the App installation and your repository access.</p>{/if}
-						{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p class="empty-note">No open issues in this repository.</p>{/if}
-						{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p class="notice">This is a partial list. Automatic refresh will check again.</p>{/if}
-						<div class="panel-footer"><span>No work starts automatically.</span><button class="button-quiet" type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button></div>
-					{:else}<p class="empty-note" aria-live="polite"><Spinner /> Discovering repositories and issues…</p>{/if}
-					<p class="privacy-note">Snapshots save issue text and its code revision for seven days.</p>
-				</div>
-				<div class="panel snapshot-panel">
-					<div class="panel-heading"><p class="panel-title">Snapshots</p><button class="button-quiet" type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button></div>
-					{#if issueError}<p class="error" role="alert">{issueError}</p>{/if}
-					{#if intakeOwner === $session.data.user.id && issueItems.length}
-						<ul class="snapshot-list">{#each issueItems as item (item.id)}<li><button class:active={selectedIssue?.id === item.id} type="button" disabled={issueBusy} onclick={() => issueRequest('detail', item.id)}>{item.snapshot.repository} #{item.snapshot.issueNumber}</button></li>{/each}</ul>
-					{/if}
-					{#if intakeOwner === $session.data.user.id && selectedIssue}
-						<div class="snapshot-content" aria-live="polite">
-							<p class="snapshot-reference">{selectedIssue.snapshot.repository} <span>#{selectedIssue.snapshot.issueNumber}</span></p>
-							<h3>{selectedIssue.snapshot.supplied.title}</h3>
-							<div class="commit-reference"><span>Base commit</span><code>{selectedIssue.snapshot.baseSha}</code></div>
-							<h4>Supplied issue text (unconfirmed)</h4>
-							<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
-							<details class="snapshot-details"><summary>Provenance & retention</summary><p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p><p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Expired source is unavailable.</p></details>
-						</div>
-					{:else}<div class="snapshot-empty"><p class="empty-title">No snapshot selected</p><p>Choose an issue and capture its current code revision, or reload your saved snapshots.</p></div>{/if}
-				</div>
+<main class:auth-layout={!$session.isPending && !$session.data}>
+	{#if $session.isPending}
+		<p class="note"><Spinner /> Loading your session…</p>
+	{:else if !$session.data}
+		<div class="login">
+			<section class="login-intro" aria-labelledby="auth-heading">
+				<h1 id="auth-heading"><span>Your agent writes the <code class="title-code">code</code>.</span> <span>We <span class="flagged-word">show<span class="title-flag"><FlagMarker kind="judgement_call" size={15} point="up" /></span></span> you where it
+					<!-- Drawn like an LLM's top next-token choices: the chosen word, then fainter alternatives on a branch. -->
+					<span class="branch">
+						<span class="option"><span class="twig"></span><span class="word">guessed.</span><small class="chance">61%</small></span>
+						<span class="option" aria-hidden="true"><span class="twig"></span><span class="word">assumed.</span><small class="chance">24%</small></span>
+						<span class="option" aria-hidden="true"><span class="twig"></span><span class="word">hallucinated.</span><small class="chance">8%</small></span>
+					</span></span></h1>
+				<p class="login-lede">tripsit turns your GitHub issues into pull requests and maps every change across your dependency
+					graph, with confidence scored on each node and every assumption flagged. Your review starts where the agent was
+					unsure.</p>
+				<ul class="login-points">
+					<li><span>01</span>Pick an issue or describe a feature</li>
+					<li><span>02</span>The agent writes the code and opens a PR</li>
+					<li><span>03</span>You review the change graph and merge</li>
+				</ul>
+			</section>
+			<section class="auth-card" aria-label="Sign in">
+				<h2>Get started</h2>
+				<p class="auth-intro">Sign in with the GitHub account that can see your repositories.</p>
+				<button class="github" onclick={signInWithGitHub} disabled={isAuthenticating}>
+					{#if isAuthenticating}<Spinner />{:else}<svg class="github-mark" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path fill="currentColor" d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>{/if}
+					Continue with GitHub
+				</button>
+				{#if authError}<p class="error" role="alert">{authError}</p>{/if}
+				<p class="auth-note">New here? Continuing with GitHub creates your account. You choose which repositories the agent can work on.</p>
+			</section>
+		</div>
+		<div class="login-wave"><LoginWave /></div>
+	{:else if onboarding}
+		<section class="onboarding" aria-labelledby="onboarding-heading">
+			<p class="eyebrow">Welcome to Tripsit</p>
+			<h1 id="onboarding-heading">{onboarding === 'connect' ? 'Connect your GitHub account' : 'Add the Tripsit agent to your GitHub'}</h1>
+			<p class="intro">{onboarding === 'connect'
+				? 'Tripsit works on GitHub repositories. Link your GitHub account so it can see the repositories you can work on.'
+				: 'Install the Tripsit agent on your account or an organization, and pick which repositories it may work on. You can change this at any time.'}</p>
+			<ol class="steps">
+				<li class:done={onboarding !== 'connect'} class:current={onboarding === 'connect'}>
+					<span class="step-mark">{#if onboarding !== 'connect'}<Check size={13} aria-label="Done" />{:else}1{/if}</span>
+					<div><strong>Connect GitHub</strong><p>Lets Tripsit list the repositories you have access to.</p></div>
+				</li>
+				<li class:current={onboarding === 'install'}>
+					<span class="step-mark">2</span>
+					<div><strong>Install the Tripsit agent</strong><p>Choose all repositories or only selected ones. For an organization, an owner may need to approve it.</p></div>
+				</li>
+				<li>
+					<span class="step-mark">3</span>
+					<div><strong>Ship it</strong><p>Pick an issue or describe a feature, and the agent opens a pull request for you to review.</p></div>
+				</li>
+			</ol>
+			<div class="onboarding-actions">
+				{#if onboarding === 'connect'}
+					<button class="button-primary" onclick={connectGitHub} disabled={linking}>{#if linking}<Spinner /> {/if}Connect GitHub</button>
+				{:else}
+					<a class="button-primary button-link" href="/api/github/connect">Install the Tripsit agent</a>
+					<button class="button-quiet" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>{#if discovery.loading}<Spinner /> {/if}Installed it? Check again</button>
+				{/if}
 			</div>
+			{#if linkError}<p class="error" role="alert">{linkError}</p>{/if}
 		</section>
+	{:else}
+		<div class="page-heading">
+			<div>
+				<p class="eyebrow">pi agent · Gemma 4</p>
+				<h1>{headline} <span class="repo-name">{discovery.repository || 'your repository'}</span></h1>
+				<p class="intro">Pick an issue or describe the feature, and the Tripsit agent will make the PR.</p>
+			</div>
+		</div>
 
-		{#if selectedIssue && intakeOwner === $session.data.user.id && candidateWorkspace.itemId === selectedIssue.id && candidateWorkspace.owner === $session.data.user.id}
-			<section class="review-section" aria-labelledby="implementation-heading">
-				<div class="section-heading"><div><h2 id="implementation-heading">Issue implementation</h2><p>The agent investigates the issue, implements changes and builds the review evidence.</p></div><span class="section-label">Agent driven · human in the loop</span></div>
-				<div class="intake-grid">
-					<div class="panel ticket-panel">
-						<h3>Requirements to verify</h3>
-						{#if candidateWorkspace.loading}<p class="empty-note" aria-live="polite"><Spinner /> Loading requirements and repository files…</p>{/if}
-						{#if candidateWorkspace.policyError}<p class="error" role="alert">{candidateWorkspace.policyError}</p>{/if}
-						{#if candidateWorkspace.policy}
-							<p class="empty-note">{candidateWorkspace.policy.version} · Unverified</p>
-							<ul class="requirements-list">{#each candidateWorkspace.policy.requirements as requirement (requirement.id)}<li>
-								<strong>{requirement.criterion}</strong><span class="requirement-state">{requirement.provenance === 'trusted_baseline' ? 'Trusted baseline' : 'Supplied intent'} · {requirement.applicability.replaceAll('_', ' ')}</span>
-								<p>{requirement.reason}</p>
-								<details><summary>Verification and source</summary><p>{requirement.verification}</p><p>{requirement.source.name} {requirement.source.version}</p></details>
-							</li>{/each}</ul>
-							<details class="snapshot-details"><summary>Open requirements gaps ({candidateWorkspace.policy.gaps.length})</summary><ul>{#each candidateWorkspace.policy.gaps as gap}<li>{gap.reason}</li>{/each}</ul></details>
-						{/if}
-					</div>
-					<form id="implementation-form" class="panel ticket-panel" onsubmit={(event) => { event.preventDefault(); candidateController.generate(); }}>
-						<h3>Implement this issue</h3>
-						<p class="empty-note">Gemma chooses the files to inspect, requests more context when needed, and generates the implementation against the captured revision.</p>
-						{#if candidateWorkspace.generationError}<p class="error" role="alert">{candidateWorkspace.generationError}</p>{/if}
-						<button id="implement-issue" class="button-primary capture-button" type="submit" disabled={candidateWorkspace.loading || candidateWorkspace.generating}>{#if candidateWorkspace.generating}<Spinner /> Agent investigating and implementing…{:else}Implement issue{/if}</button>
-						<p class="privacy-note">The resulting changes, impact graph and assessments guide your review. You can steer revisions before making a final decision.</p>
-					</form>
+		<div class="setup-grid">
+			<section class="panel form-panel" aria-labelledby="new-run-heading">
+				<h2 id="new-run-heading">New run</h2>
+				{#if discovery.issues.length}
+					<p class="field-label">Open issues <span class="hint">pick one to fill in the instruction</span></p>
+					<ul class="issue-shortcuts">
+						{#each discovery.issues.slice(0, 8) as issue (issue.id)}
+							<li><button type="button" class="shortcut" disabled={issueLoading !== 0} onclick={() => useIssue(issue.number)}>
+								<span class="number">#{issue.number}</span> {issue.title}{#if issueLoading === issue.number} <Spinner />{/if}
+							</button></li>
+						{/each}
+					</ul>
+				{:else if discovery.loading && discovery.repository}
+					<p class="note"><Spinner /> Loading open issues…</p>
+				{/if}
+				<label for="instruction">Instruction</label>
+				<textarea id="instruction" bind:value={instruction} maxlength="8000" placeholder="Describe the feature or change the agent should make."></textarea>
+				<div class="form-footer">
+					<span class="hint">{instruction.trim().length}/8000</span>
+					<button class="button-primary" disabled={starting || !discovery.repository || !instruction.trim() || (run !== null && !finished(run.status))} onclick={startRun}>
+						{#if starting}<Spinner /> Starting…{:else}Run agent{/if}
+					</button>
 				</div>
-				{#if candidateWorkspace.candidate}
-					<div class="panel candidate-preview" aria-live="polite">
-						<div class="section-heading"><div><h3>Agent implementation</h3><p>{candidateWorkspace.candidate.candidate.model} · Not executed or published</p></div></div>
-						<p class="empty-note">Candidate {candidateWorkspace.candidate.id} · Expires {new Date(candidateWorkspace.candidate.candidate.expiresAt).toLocaleString()}</p>
-						{#each candidateWorkspace.candidate.candidate.files as file (file.path)}<details open class="candidate-file"><summary>{file.path}</summary><p class="empty-note">Blob {file.blobSha}</p><pre><code>{file.content}</code></pre></details>{/each}
+				{#if discovery.error}<p class="error">{discovery.error}</p>{/if}
+				{#if error}<p class="error" role="alert">{error}</p>{/if}
+			</section>
+
+			<section class="panel runs-panel" aria-labelledby="runs-heading">
+				<div class="panel-heading"><h2 id="runs-heading">Recent runs</h2><button class="button-quiet" onclick={loadRuns} disabled={runsLoading}>{#if runsLoading}<Spinner /> {/if}Refresh</button></div>
+				{#if runs.length}
+					<ul class="run-list">
+						{#each runs as item (item.id)}
+							<li><button type="button" class:active={run?.id === item.id} onclick={() => openRun(item.id)}>
+								<span class="run-title">{item.instruction.split('\n')[0]}</span>
+								<span class="run-meta">{item.repository} · <span class="status status-{item.status}">{#if !finished(item.status)}<Spinner size={11} /> {/if}{statusLabel[item.status]}</span>{#if opening === item.id} <Spinner size={11} />{/if}{item.changedFiles !== null ? ` · ${item.changedFiles} files` : ''}{item.pullRequest ? ` · PR #${item.pullRequest.number}` : ''}</span>
+							</button></li>
+						{/each}
+					</ul>
+				{:else}
+					<p class="note">{#if runsLoading}<Spinner /> Loading runs…{:else}No runs yet. Runs are kept for seven days.{/if}</p>
+				{/if}
+			</section>
+		</div>
+
+		{#if run}
+			<section class="run-section" aria-labelledby="run-heading">
+				<div class="run-heading">
+					<div>
+						<p class="eyebrow">{run.repository} · {run.branch} · <code>{run.sha.slice(0, 7)}</code></p>
+						<h2 id="run-heading">{run.instruction.split('\n')[0]}</h2>
 					</div>
-					<CandidateInspection owner={$session.data.user.id} itemId={selectedIssue.id}
-						candidateId={candidateWorkspace.candidate.id} baseSha={selectedIssue.snapshot.baseSha}
-						candidateDigest={candidateWorkspace.candidate.candidate.outputDigest} />
-					{#key `${$session.data.user.id}:${selectedIssue.id}:${candidateWorkspace.candidate.id}`}
-						<OutcomeFeedback itemId={selectedIssue.id} candidateId={candidateWorkspace.candidate.id} files={candidateWorkspace.candidate.candidate.files} repository={selectedIssue.snapshot.repository} />
-					{/key}
+					<div class="run-actions">
+						{#if run.pullRequest}<a class="pull-request" href={run.pullRequest.url} target="_blank" rel="noopener noreferrer">Pull request #{run.pullRequest.number} ↗</a>{/if}
+						<span class="status status-{run.status}">{#if !finished(run.status)}<Spinner size={12} /> {/if}{statusLabel[run.status]}</span>
+						{#if !finished(run.status)}<button class="button-quiet" onclick={cancelRun}>Cancel</button>{/if}
+					</div>
+				</div>
+				{#if run.error}<p class="error">{run.error}</p>{/if}
+				{#if run.result?.publishNote}<p class="note">{run.result.publishNote}</p>{/if}
+
+				<details class="panel events" open={!finished(run.status)}>
+					<summary>Agent log ({run.events.length})</summary>
+					<ol>
+						{#each run.events as event, index (index)}
+							<li class="event event-{event.kind}"><time>{time(event.at)}</time><span>{event.text}</span></li>
+						{/each}
+					</ol>
+				</details>
+
+				{#if run.result}
+					{#if run.result.summary}
+						<div class="panel summary"><h3>Agent summary</h3><p>{run.result.summary}</p></div>
+					{/if}
+					<p class="graph-caption">
+						{run.result.files.length} changed file{run.result.files.length === 1 ? '' : 's'} ·
+						{run.result.graph.stats.files} files in the repository ·
+						{run.result.graph.stats.symbols} symbols shown{run.result.graph.stats.hiddenNeighbors ? ` · ${run.result.graph.stats.hiddenNeighbors} more neighbors collapsed` : ''}
+						{#if run.result.truncated} · some diffs were truncated{/if}
+					</p>
+					{#if run.result.files.length}
+						{#key run.id}<ChangeGraphView graph={run.result.graph} files={run.result.files} flags={run.result.flags ?? []} />{/key}
+					{:else}
+						<p class="note">The agent did not change any files.</p>
+					{/if}
 				{/if}
 			</section>
 		{/if}
-
-		<section id="code-review" class="review-section" aria-labelledby="code-review-heading">
-			<div class="section-heading"><div><h2 id="code-review-heading">Code review</h2><p>Inspect a change with model-generated feedback.</p></div><span class="section-label">Gemma</span></div>
-			<form class="panel editor-panel" onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
-				<label for="code">Code to review</label>
-				<textarea id="code" bind:value={code} required spellcheck="false" placeholder="Paste the code you want reviewed…"></textarea>
-				<div class="editor-footer"><span>Token likelihood is a model signal, not a correctness score.</span><button class="button-primary" type="submit" disabled={isLoading || !code.trim()}>{#if isLoading}<Spinner /> Reviewing…{:else}Review code{/if}</button></div>
-			</form>
-			{#if message}<p class="error" role="alert">{message}</p>{/if}
-			{#if tokens.length || review}
-				<section class="panel review-result" aria-live="polite">
-					<div class="panel-heading"><h2>Review</h2><p>Hover a token for its probability.</p></div>
-					<div class="review">{#if tokens.length}{#each tokens as item}<span class="token" style:background-color={`rgba(59, 130, 246, ${opacity(item.probability_percent)})`} title={`${item.probability_percent.toFixed(2)}% likely`}>{item.token}</span>{/each}{:else}{review}{/if}</div>
-					<p class="legend"><span class="low"></span>lower likelihood <span class="high"></span>higher likelihood</p>
-				</section>
-			{/if}
-		</section>
-	{:else}
-		<section class="auth-card" aria-labelledby="auth-heading">
-			<p class="eyebrow">Your review workspace</p><h1 id="auth-heading">{authMode === 'sign-in' ? 'Sign in to TripSit' : 'Create your account'}</h1>
-			<p class="auth-intro">Connect your repositories. Keep code reviews in context.</p>
-			<button class="github" onclick={signInWithGitHub} disabled={isAuthenticating}>{#if isAuthenticating}<Spinner /> {/if}Continue with GitHub</button>
-			<div class="divider"><span>or use email</span></div>
-			<form onsubmit={(event) => { event.preventDefault(); submitEmailAuth(); }}>
-				{#if authMode === 'sign-up'}<label for="name">Name</label><input id="name" bind:value={name} required autocomplete="name" />{/if}
-				<label for="email">Email</label><input id="email" bind:value={email} required type="email" autocomplete="email" />
-				<label for="password">Password</label><input id="password" bind:value={password} required type="password" minlength="8" autocomplete={authMode === 'sign-in' ? 'current-password' : 'new-password'} />
-				<button class="button-primary email-submit" type="submit" disabled={isAuthenticating}>{#if isAuthenticating}<Spinner /> Working…{:else}{authMode === 'sign-in' ? 'Sign in with email' : 'Create account'}{/if}</button>
-			</form>
-			{#if authError}<p class="error" role="alert">{authError}</p>{/if}
-			<button class="auth-switch" onclick={() => { authMode = authMode === 'sign-in' ? 'sign-up' : 'sign-in'; authError = ''; }}>{authMode === 'sign-in' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}</button>
-		</section>
 	{/if}
 </main>
 
 <style>
-	main { width: min(100%, 1232px); padding: 34px 28px 64px; margin: auto; }
-	.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 32px; }
-	.section-heading { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-bottom: 14px; }
-	.section-heading p { margin: 4px 0 0; color: var(--text-muted); font: 400 12px/1.5 var(--font-mono); }
-	.section-label { padding: 3px 8px; border: 1px solid var(--border); color: var(--text-muted); font: 500 11px/1.5 var(--font-mono); white-space: nowrap; text-decoration: none; }
-	a.section-label:hover { color: var(--text); border-color: var(--text); }
-	.intake-grid { display: grid; grid-template-columns: minmax(300px, .88fr) minmax(0, 1.3fr); gap: 18px; align-items: start; }
-	.ticket-panel, .snapshot-panel { padding: 20px; }
-	.panel-heading { display: flex; justify-content: space-between; gap: 12px; align-items: center; min-width: 0; margin-bottom: 19px; }
-	.panel-title { margin: 0; color: var(--text); font: 500 12px/1.5 var(--font-mono); }
-	.sync-state { color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); text-align: right; }
-	.capture-button { width: 100%; margin-top: 18px; }
-	.panel-footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
-	.privacy-note, .empty-note, .notice { margin: 14px 0 0; color: var(--text-subtle); font: 400 11px/1.6 var(--font-mono); }
-	.snapshot-list { list-style: none; margin: -4px 0 16px; padding: 0 0 12px; border-bottom: 1px solid var(--border); }
-	.snapshot-list button { width: 100%; padding: 8px 9px; margin-bottom: 4px; background: var(--surface-raised); border-color: var(--border); color: var(--text-muted); text-align: left; overflow-wrap: anywhere; }
-	.snapshot-list button:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
-	.snapshot-list button.active { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-	.snapshot-empty { min-height: 238px; display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; padding: 18px 24px 30px; color: var(--text-subtle); }
-	.snapshot-empty p { max-width: 300px; margin: 5px 0 0; font: 400 11px/1.6 var(--font-mono); }
-	.snapshot-empty .empty-title { color: var(--text-muted); font: 500 13px/1.5 var(--font-sans); }
-	.snapshot-reference { margin: 0 0 7px; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); overflow-wrap: anywhere; }
-	.snapshot-reference span { margin-left: 6px; }
-	h3 { margin: 0 0 16px; color: var(--text); font-size: 18px; font-weight: 600; line-height: 1.4; letter-spacing: -.3px; overflow-wrap: anywhere; }
-	.commit-reference { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 12px; padding-bottom: 18px; margin-bottom: 17px; border-bottom: 1px solid var(--border); color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
-	code { font-size: 12px; line-height: 1.7; color: var(--text-muted); overflow-wrap: anywhere; }
-	h4 { margin: 0 0 8px; color: var(--text-muted); font: 500 11px/1.5 var(--font-mono); }
-	.issue-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); font-size: 13px; line-height: 1.8; }
-	.snapshot-details { margin-top: 21px; padding-top: 13px; border-top: 1px solid var(--border); color: var(--text-subtle); font: 400 11px/1.6 var(--font-mono); }
-	summary { color: var(--text-muted); cursor: pointer; }
-	summary:hover { color: var(--text); }
-	.snapshot-details p { margin: 8px 0 0; }
-	.review-section { margin-top: 30px; }
-	.editor-panel { overflow: hidden; }
-	.editor-panel label { margin: 0; padding: 12px 17px; border-bottom: 1px solid var(--border); }
-	textarea { min-height: 228px; resize: vertical; border: 0; padding: 17px; font: 12px/1.8 var(--font-mono); }
-	.editor-footer { display: flex; justify-content: space-between; align-items: center; gap: 20px; padding: 12px 16px; border-top: 1px solid var(--border); color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
-	.editor-footer button { flex-shrink: 0; }
-	.review-result { margin-top: 16px; padding: 20px; }
-	.review-result .panel-heading { margin-bottom: 14px; }
-	.review-result .panel-heading p { color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); margin: 0; }
-	.review { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; line-height: 1.8; color: var(--text); }
-	.token { box-decoration-break: clone; -webkit-box-decoration-break: clone; }
-	.legend { margin: 16px 0 0; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
-	.low, .high { display: inline-block; width: 9px; height: 9px; margin: 0 5px 0 12px; background: rgb(var(--token-rgb)); vertical-align: 0; }
-	.low { opacity: .18; margin-left: 0; }
-	.high { opacity: .9; }
-	.auth-layout { display: flex; justify-content: center; padding-top: 70px; }
-	.auth-card { width: 100%; max-width: 400px; padding: 31px; background: var(--surface); border: 1px solid var(--border); }
-	.auth-card h1 { font-size: 25px; }
-	.auth-intro { color: var(--text-muted); font: 400 12px/1.6 var(--font-mono); margin: 12px 0 25px; }
-	.github { width: 100%; padding: 10px 16px; background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+	main { width: min(100%, 1400px); padding: 34px 44px 64px; margin: auto; }
+	/* The picker sits on the right, just before the account controls. */
+	.repo-picker { margin-left: auto; display: flex; align-items: center; gap: 10px; min-width: 0; }
+	.repo-picker + .account-bar { margin-left: 0; padding-left: 20px; border-left: 1px solid var(--border); align-self: stretch; }
+	.repo-picker label { margin: 0; color: var(--text-subtle); white-space: nowrap; }
+	/* Native arrows sit flush with the edge; a drawn chevron gets the same 12px inset as the text on the left. */
+	.select-wrap { position: relative; min-width: 0; color: var(--text-muted); }
+	.select-wrap:hover { color: var(--text); }
+	.repo-picker select { appearance: none; -webkit-appearance: none; width: auto; max-width: 340px; height: 34px; padding: 5px 38px 5px 12px; background: var(--surface); cursor: pointer; font: 500 12px/1.5 var(--font-mono); text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+	.repo-picker select:disabled { cursor: default; }
+	.select-wrap :global(.chevron) { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+	.page-heading { padding: 36px 0 44px; }
+	.onboarding { max-width: 620px; margin: 0 auto 30px; padding: 44px 0 0; }
+	.steps { list-style: none; margin: 28px 0 0; padding: 0; border: 1px solid var(--border); background: var(--surface); }
+	.steps li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 14px; padding: 16px 18px; color: var(--text-subtle); }
+	.steps li + li { border-top: 1px solid var(--border); }
+	.steps strong { display: block; font: 600 14px/1.5 var(--font-sans); color: var(--text-muted); }
+	.steps p { margin: 3px 0 0; font: 400 12px/1.6 var(--font-mono); }
+	.steps li.current strong, .steps li.done strong { color: var(--text); }
+	.step-mark { display: grid; place-items: center; width: 26px; height: 26px; border: 1px solid var(--border-strong); font: 500 12px/1 var(--font-mono); }
+	.steps li.current .step-mark { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+	.steps li.done .step-mark { border-color: var(--added); color: var(--added); }
+	.onboarding-actions { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; margin-top: 22px; }
+	.button-link { display: inline-block; padding: 9px 16px; text-decoration: none; font: 500 12px/1.5 var(--font-mono); }
+	.add-repos { display: inline-flex; align-items: center; gap: 4px; color: var(--text-muted); text-decoration: none; white-space: nowrap; font: 500 12px/1.5 var(--font-mono); }
+	.add-repos:hover { color: var(--text); }
+	.page-heading h1 { line-height: 1.25; }
+	/* The repository goes on its own line under the opening phrase. */
+	.repo-name { display: block; font-family: var(--font-mono); font-weight: 500; letter-spacing: -0.02em; overflow-wrap: anywhere; }
+	.intro { max-width: 760px; }
+	h3 { margin: 0 0 8px; color: var(--text-muted); font: 500 11px/1.5 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; }
+	.setup-grid { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(280px, .75fr); gap: 18px; align-items: start; }
+	.panel { padding: 20px; }
+	.panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+	.field-label { display: block; margin: 16px 0 7px; color: var(--text-muted); font: 500 11px/1.5 var(--font-mono); letter-spacing: 0.02em; }
+	textarea { min-height: 150px; resize: vertical; font: 12.5px/1.7 var(--font-mono); }
+	.hint { color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); letter-spacing: 0; }
+	.issue-shortcuts { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 200px; overflow: auto; }
+	.shortcut { width: 100%; padding: 6px 9px; text-align: left; background: var(--surface-raised); border-color: var(--border); color: var(--text-muted); overflow-wrap: anywhere; font-weight: 500; }
+	.shortcut:hover:not(:disabled) { border-color: var(--border-strong); color: var(--text); }
+	.number { color: var(--text-subtle); font-family: var(--font-mono); }
+	.form-footer { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+	.run-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-height: 420px; overflow: auto; }
+	.run-list button { width: 100%; text-align: left; padding: 8px 10px; display: grid; gap: 2px; background: var(--surface-raised); border-color: var(--border); color: var(--text); }
+	.run-list button:hover { border-color: var(--border-strong); }
+	.run-list button.active { border-color: var(--text); }
+	.run-title { font: 600 13px/1.5 var(--font-sans); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+	.run-meta { color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
+	.status { font: 500 11px/1.5 var(--font-mono); text-transform: uppercase; letter-spacing: 0.04em; }
+	.status-done { color: var(--added); }
+	.status-failed, .status-cancelled { color: var(--deleted); }
+	.status-preparing, .status-running, .status-analyzing, .status-publishing { color: var(--modified); }
+	.pull-request { padding: 4px 10px; border: 1px solid var(--border); color: var(--text); text-decoration: none; font: 500 12px/1.5 var(--font-mono); }
+	.pull-request:hover { border-color: var(--text); }
+	.run-section { margin-top: 30px; display: grid; gap: 14px; }
+	.run-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
+	.run-actions { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+	.events { padding: 12px 16px; }
+	.events summary { cursor: pointer; color: var(--text-muted); font: 500 11px/1.5 var(--font-mono); }
+	.events summary:hover { color: var(--text); }
+	.events ol { list-style: none; margin: 10px 0 0; padding: 0; max-height: 300px; overflow: auto; display: grid; gap: 3px; font: 400 11.5px/1.55 var(--font-mono); }
+	.event { display: grid; grid-template-columns: 74px minmax(0, 1fr); gap: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
+	.event time { color: var(--text-subtle); font-variant-numeric: tabular-nums; }
+	.event span { white-space: pre-wrap; overflow-wrap: anywhere; color: var(--text-muted); }
+	.event-tool span { font-family: var(--font-mono); }
+	.event-error span { color: var(--deleted); }
+	.event-assistant span { color: var(--text); font: 400 13px/1.6 var(--font-sans); }
+	.summary p { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--text-muted); }
+	.graph-caption { margin: 0; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
+	.note { color: var(--text-subtle); font: 400 11px/1.6 var(--font-mono); }
+	.error { margin: 12px 0 0; }
+	code { font-size: 12px; }
+	/* Sign-in: introduction on the left, card on the right, the logo's wave running along the bottom. */
+	.auth-layout { --wave: clamp(170px, 34vh, 340px); position: relative; width: 100%; min-height: calc(100svh - 65px); padding: 0 0 var(--wave); display: flex; flex-direction: column; justify-content: center; overflow: hidden; }
+	.login { position: relative; z-index: 1; width: min(100%, 1400px); margin: 0 auto; padding: 56px 44px 40px; display: grid; grid-template-columns: minmax(0, 1fr) minmax(320px, 400px); gap: 64px; align-items: center; }
+	.login-intro h1 { font-size: clamp(34px, 4.2vw, 56px); line-height: 1.18; letter-spacing: -0.045em; text-wrap: balance; }
+	.login-intro h1 > span { text-wrap: balance; }
+	/* "code" is set in mono, slightly smaller so it sits level with the Geist words around it. */
+	/* "code" is set like inline code: mono, on a raised chip with a hairline border. */
+	.title-code { font-family: var(--font-mono); font-size: 0.82em; font-weight: 500; letter-spacing: -0.03em; color: inherit; padding: 0 .16em; margin: 0 .04em; background: var(--surface-hover); border: 1px solid var(--border-strong); }
+	/* One sentence per line on wide screens; on phones they wrap naturally. */
+	.login-intro h1 > span { display: block; }
+	/* The branch: tree lines from "it" to each option. The stem runs into the chosen word; the trunk curves off it and
+	   each alternative leaves the trunk on a rounded elbow. These are the one place the square-corner rule is lifted,
+	   so the radius needs !important to beat the global reset. */
+	.branch { display: inline-flex; flex-direction: column; vertical-align: baseline; --trunk: .16em; --bend: .2em; }
+	.option { display: flex; align-items: center; }
+	.twig { position: relative; align-self: stretch; flex: none; width: .5em; margin-right: .14em; }
+	.twig::before, .twig::after { content: ''; position: absolute; border: 0 solid var(--text-subtle); }
+	/* Chosen row: the stem straight into the word, and the trunk bending down off it. */
+	.option:first-child .twig::before { left: -.12em; right: 0; top: calc(50% + .06em); border-top-width: 2px; }
+	.option:first-child .twig::after { top: calc(50% + .06em); bottom: 0; left: calc(var(--trunk) - var(--bend)); width: calc(var(--bend) + 2px);
+		border-top-width: 2px; border-right-width: 2px; border-top-right-radius: var(--bend) !important; }
+	/* Alternatives: a rounded elbow from the trunk into the word, and the trunk carrying on to the next row. */
+	.option + .option .twig::after { left: var(--trunk); right: 0; top: 0; height: calc(50% + 1px);
+		border-left-width: 2px; border-bottom-width: 2px; border-bottom-left-radius: var(--bend) !important; }
+	.option + .option:not(:last-child) .twig::before { left: var(--trunk); top: 50%; bottom: 0; border-left-width: 2px; }
+	.word { padding: .02em 0; }
+	.option + .option .word { font-size: .5em; padding: .12em 0; }
+	.option:nth-child(2) .word { opacity: .42; }
+	.option:nth-child(3) .word { opacity: .2; }
+	.chance { margin-left: .7rem; color: var(--text-subtle); font: 400 12px/1 var(--font-mono); letter-spacing: 0; }
+	.option + .option .chance { opacity: .7; }
+	/* A collapsed judgement-call flag, as on the graph, hanging below the second line and pointing up at "show". */
+	.flagged-word { position: relative; }
+	.title-flag { position: absolute; left: .08em; top: calc(100% + 12px); display: flex; font-size: 16px; line-height: 1; letter-spacing: 0; }
+	.login-lede { max-width: 600px; margin: clamp(32px, 4.2vw, 56px) 0 0; color: var(--text-muted); font-size: 17px; line-height: 1.65; }
+	.login-points { list-style: none; margin: 30px 0 0; padding: 0; display: grid; gap: 10px; }
+	.login-points li { display: flex; align-items: baseline; gap: 14px; color: var(--text); font: 400 13px/1.5 var(--font-mono); }
+	.login-points span { color: var(--text-subtle); }
+	.login-wave { position: absolute; left: 0; right: 0; bottom: 0; height: var(--wave); pointer-events: none; }
+	.auth-card { width: 100%; padding: 30px; background: var(--surface); border: 1px solid var(--border); }
+	.auth-intro { color: var(--text-muted); font: 400 12px/1.6 var(--font-mono); margin: 8px 0 22px; }
+	.github { width: 100%; padding: 11px 16px; display: flex; align-items: center; justify-content: center; gap: 10px; background: var(--accent); border-color: var(--accent); color: var(--accent-text); font-size: 13px; }
+	.github-mark { width: 16px; height: 16px; }
 	.github:hover:not(:disabled) { background: var(--bg); color: var(--accent); }
-	.divider { display: flex; align-items: center; gap: 12px; margin: 23px 0 0; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); }
-	.divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
-	.email-submit { width: 100%; margin-top: 21px; background: transparent; border-color: var(--border); color: var(--text); }
-	.email-submit:hover:not(:disabled) { border-color: var(--text); }
-	.auth-switch { width: 100%; margin-top: 20px; padding: 0; color: var(--text-muted); font-size: 11px; }
-	.auth-switch:hover { color: var(--text); }
-	.requirements-list { list-style: none; padding: 0; margin: 18px 0 0; }
-	.requirements-list > li { padding: 14px 0; border-top: 1px solid var(--border); font-size: 13px; }
-	.requirements-list strong { display: block; font-weight: 600; line-height: 1.6; }
-	.requirement-state { display: block; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); margin-top: 5px; }
-	.requirements-list p, .requirements-list summary { color: var(--text-muted); font: 400 11px/1.6 var(--font-mono); }
-	.candidate-preview { margin-top: 18px; padding: 20px; }
-	.candidate-preview p { overflow-wrap: anywhere; }
-	.candidate-file { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
-	.candidate-file summary { overflow-wrap: anywhere; font: 500 12px/1.5 var(--font-mono); }
-	.candidate-file pre { overflow: auto; max-height: 420px; padding: 14px; background: var(--surface-raised); border: 1px solid var(--border); font-size: 12px; line-height: 1.7; }
+	.auth-note { margin: 18px 0 0; color: var(--text-subtle); font: 400 11px/1.6 var(--font-mono); text-align: center; }
+	@media (max-width: 900px) {
+		main { padding: 26px 16px 40px; }
+		.setup-grid { grid-template-columns: minmax(0, 1fr); }
+		.page-heading { padding: 20px 0 30px; }
+		.onboarding { padding-top: 20px; }
+		.run-heading { flex-direction: column; }
+	}
 	@media (max-width: 760px) {
-		main { padding: 26px 20px 40px; }
-		.page-heading { margin-bottom: 26px; }
-		.intake-grid { grid-template-columns: minmax(0, 1fr); gap: 14px; }
-		.ticket-panel, .snapshot-panel { padding: 18px; }
-		.snapshot-empty { min-height: 190px; }
-		.auth-layout { padding-top: 40px; }
+		.repo-picker { order: 3; width: 100%; margin-left: 0; }
+		.repo-picker + .account-bar { margin-left: auto; padding-left: 0; border-left: 0; }
+		.select-wrap { flex: 1; }
+		.repo-picker select { width: 100%; max-width: none; }
+		.login { grid-template-columns: minmax(0, 1fr); gap: 32px; padding: 36px 20px 32px; }
+		.login-lede { font-size: 15px; }
+		.login-intro h1 > span { display: inline; }
+		/* The title wraps freely on phones, so the hanging flag would cover the next line. */
+		.title-flag { display: none; }
 	}
 	@media (max-width: 420px) {
-		main { padding-left: 16px; padding-right: 16px; }
-		.panel-heading { align-items: flex-start; }
-		.editor-footer { flex-wrap: wrap; gap: 12px; }
-		.editor-footer button { width: 100%; }
-		.auth-card { padding: 25px 22px; }
-		.panel-footer { gap: 8px; flex-wrap: wrap; }
+		.auth-card { padding: 24px 20px; }
+		.login { padding-left: 16px; padding-right: 16px; }
 	}
 </style>

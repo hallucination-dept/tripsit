@@ -4,8 +4,8 @@ tripsit.dev is a code review tool powered by Gemma 4 31B running on Modal.
 
 ## Configure the web app
 
-tripsit.dev uses Better Auth with PostgreSQL. It supports GitHub OAuth and
-email/password accounts. The review API requires a signed-in user.
+tripsit.dev uses Better Auth with PostgreSQL. Sign-in is GitHub only; email/password
+accounts are disabled. The API requires a signed-in user.
 
 ```bash
 cd frontend
@@ -36,10 +36,9 @@ npm run auth:migrate
 npm run dev
 ```
 
-Open the URL printed by Vite, create an account or sign in with GitHub, then
-paste code for review. The response is rendered token-by-token: darker blue
-highlight means a higher conditional probability for that token. Hover a token
-to see its exact percentage.
+Open the URL printed by Vite and continue with GitHub. New users are walked
+through installing the Tripsit agent (the GitHub App) on their repositories; then
+pick an issue or describe a feature and run the agent.
 
 ## Deploy the web app on Aiven Runtime
 

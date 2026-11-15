@@ -37,8 +37,9 @@ export const auth = betterAuth({
 	baseURL: BETTER_AUTH_URL,
 	secret: BETTER_AUTH_SECRET || 'replace-this-before-running-in-production',
 	database,
+	// GitHub is the only way in: Tripsit works on GitHub repositories, so every account needs it linked.
 	emailAndPassword: {
-		enabled: true
+		enabled: false
 	},
 	socialProviders:
 		GITHUB_APP_CLIENT_ID && GITHUB_APP_CLIENT_SECRET

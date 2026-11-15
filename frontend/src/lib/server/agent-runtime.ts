@@ -7,6 +7,7 @@ import { createAgentRunRecords } from './agent-run-records.ts';
 import { createAgentRuns, RunFailure, type RunExecutor, type RunFinisher } from './agent-runs.ts';
 import { buildChangeGraph } from './change-graph.ts';
 import type { PullRequest } from './github.ts';
+import { attachFlags, flagsMarkdown, type FlagInput } from './flags.ts';
 import { graphComment, graphImageKey, publicOrigin, validGraphImageKey } from './graph-comment.ts';
 import { IntakeError } from './intake.ts';
 import { runPiAgent } from './pi-agent.ts';
@@ -16,10 +17,12 @@ export const agentConfigured = () => Boolean(MODAL_API_URL && MODAL_PROXY_TOKEN)
 
 const clip = (value: string, limit: number) => value.length > limit ? `${value.slice(0, limit)}…` : value;
 
-export function pullRequestText(runId: string, instruction: string, summary: string, sha: string) {
+export function pullRequestText(runId: string, instruction: string, summary: string, sha: string, flags: FlagInput[] = []) {
   const title = clip(instruction.split('\n').find(line => line.trim())?.trim() ?? 'Agent change', 120);
+  const review = flagsMarkdown(flags);
   const body = [
-    instruction, '', '---', '', '**Agent summary**', '', clip(summary || 'The agent did not leave a summary.', 20_000), '', '---',
+    instruction, '', '---', '', '**Agent summary**', '', clip(summary || 'The agent did not leave a summary.', 20_000), '',
+    ...(review ? ['---', '', review, ''] : []), '---',
     `Opened by TripSit from agent run \`${runId}\` (pi with Gemma 4) on \`${sha.slice(0, 7)}\`. ` +
     'The change has not been reviewed yet: check its change graph and diff before merging.'
   ].join('\n');
@@ -47,6 +50,8 @@ const executeRun: RunExecutor = async ({ id, archive, instruction, signal, emit,
     emit('status', 'Building the change graph');
     const { changes, files, truncated } = await collectChanges(workspace, home, base);
     const graph = await buildChangeGraph({ files, changes, read: path => readWorkspaceText(workspace, path) });
+    const flags = attachFlags(outcome.flags, graph);
+    if (flags.length) emit('status', `The agent flagged ${flags.length} spot${flags.length === 1 ? '' : 's'} for review`);
 
     let pullRequest: PullRequest | null = null, publishNote: string | null = null;
     if (!changes.length) publishNote = 'No pull request: the agent did not change any files.';
@@ -55,7 +60,7 @@ const executeRun: RunExecutor = async ({ id, archive, instruction, signal, emit,
       stage('publishing');
       emit('status', 'Opening a pull request');
       try {
-        const text = pullRequestText(id, instruction, outcome.summary, archive.sha);
+        const text = pullRequestText(id, instruction, outcome.summary, archive.sha, flags);
         pullRequest = await archive.publish.create({ ...text, branch: `tripsit/${id.slice(0, 8)}`,
           files: await publishableFiles(workspace, home, changes) }, signal);
         emit('status', `Opened pull request #${pullRequest.number}: ${pullRequest.url}`);
@@ -64,7 +69,7 @@ const executeRun: RunExecutor = async ({ id, archive, instruction, signal, emit,
       }
     }
     if (publishNote) emit(changes.length && archive.publish.available ? 'error' : 'status', publishNote);
-    return { summary: outcome.summary, graph, truncated, pullRequest, publishNote,
+    return { summary: outcome.summary, graph, flags, truncated, pullRequest, publishNote,
       files: changes.map(({ path, change, binary, diff }) => ({ path, change, binary, diff })) };
   } finally {
     await rm(root, { recursive: true, force: true });

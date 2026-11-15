@@ -24,7 +24,7 @@ export function publicOrigin(value: string | undefined) {
 
 export function graphComment(origin: string, runId: string, key: string) {
   const id = encodeURIComponent(runId);
-  const runUrl = `${origin}/agent?run=${id}`;
+  const runUrl = `${origin}/?run=${id}`;
   const imageUrl = (theme: 'light' | 'dark') => `${origin}/api/agent-runs/${id}/graph.svg?key=${encodeURIComponent(key)}&amp;theme=${theme}`;
   // <picture> follows the reader's GitHub theme; the whole image links to the interactive graph.
   return [
