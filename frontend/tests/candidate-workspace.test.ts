@@ -120,3 +120,13 @@ test('empty selections and stop clear immediately without network or late state 
   assert.equal(workspace.state.policy, null);
   assert.deepEqual(workspace.state.files, []);
 });
+
+test('agent implementation starts without a human file selection and sends only the frozen item identity', async () => {
+ let body:unknown;let posts=0;
+ const workspace=createCandidateWorkspace({fetcher:async(url,init)=>{
+  if(init?.method==='POST'){posts++;body=JSON.parse(String(init.body));return response(candidate());}
+  return response(payload(String(url)));
+ }});
+ await workspace.select('owner',item,sha);await workspace.generate();
+ assert.deepEqual(body,{});assert.equal(posts,1);assert.equal(workspace.state.candidate?.id,other);assert.equal(workspace.state.generationError,'');
+});

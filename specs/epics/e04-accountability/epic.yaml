@@ -4,7 +4,7 @@ type: feat
 context: domain
 wsjf: 4.667
 total_bcps: 6
-status: todo
+status: in_progress
 stories:
 - id: e04s01
   title: Show revision-bound evidence and gaps

@@ -36,6 +36,37 @@ function fixture(overrides: Record<string, unknown> = {}) {
   return { calls, github: createGitHub({ appId: '9', privateKey, accountId: '42', userToken: 'user-token', fetcher }) };
 }
 
+test('review visibility is current, reauthorized, and fails closed on invalid metadata', async () => {
+  for (const visibility of [false, true]) {
+    const { github, calls } = fixture({ '/repos/team/repo': { ...repository, private: visibility } });
+    assert.equal(await github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), visibility);
+    assert(calls.some(call => call.path === '/user'));
+    assert(calls.some(call => call.path === '/repos/team/repo/installation'));
+  }
+  await assert.rejects(() => fixture({ '/repos/team/repo': { ...repository, private: null } }).github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), IntakeError);
+  await assert.rejects(() => fixture({ '/user': { id: 99 } }).github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), IntakeError);
+});
+
+test('publication issues a repository-scoped write token only for a linked user with push access', async () => {
+  for (const push of [true, false]) {
+    let minted = 0;
+    const fetcher: typeof fetch = async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/user') return Response.json({id:42});
+      if (path === '/repos/team/repo') return Response.json({...repository,permissions:{push}});
+      if (path === '/repos/team/repo/installation') return Response.json({id:7,app_id:9,suspended_at:null});
+      if (path === '/app/installations/7/access_tokens') {
+        minted++; assert.deepEqual(JSON.parse(String(init?.body)), {repository_ids:[5],permissions:{contents:'write',pull_requests:'write',issues:'read'}});
+        return Response.json({token:'installation-token'});
+      }
+      return new Response('',{status:404});
+    };
+    const github=createGitHub({appId:'9',privateKey,accountId:'42',userToken:'user-token',fetcher});
+    if (push) { const result=await github.publicationAccess('team/repo',5,signal()); assert.equal(result.repositoryId,5); assert.equal(minted,1); }
+    else { await assert.rejects(github.publicationAccess('team/repo',5,signal()),{status:403}); assert.equal(minted,0); }
+  }
+});
+
 test('files and context reauthorize public identity and read only exact frozen tree/blob identities', async () => {
   const { github, calls } = fixture();
   assert.deepEqual(await github.files(snapshot, signal()), [{ path: entry.path, blobSha: sha }]);
@@ -146,4 +177,19 @@ test('authorized private snapshots read only their frozen blobs using the same r
  assert.deepEqual(await github.context(privateSnapshot, [entry.path], signal()), [{ path: entry.path, originalBlob: sha, content: bytes.toString('utf8') }]);
  assert.equal(calls.filter(call => call.path === '/user').length, 2);
  assert(calls.filter(call => call.path.includes('/git/')).every(call => call.token === 'Bearer installation-token'));
+});
+
+test('staging reads a reauthorized base commit and requires its exact tree identity', async () => {
+  const commitPath = `/repos/team/repo/git/commits/${snapshot.baseSha}`;
+  const response = { sha: snapshot.baseSha, tree: { sha: tree.sha } };
+  const { github, calls } = fixture({ [commitPath]: response });
+  const result = await github.stagingTree(snapshot, signal());
+  assert.equal(result.baseSha, snapshot.baseSha); assert.equal(result.treeSha, tree.sha);
+  assert.deepEqual(result.entries.map(row => row.mode), ['040000', '100644']);
+  assert(calls.some(call => call.path === commitPath && call.token === 'Bearer installation-token'));
+  for (const altered of [{ ...response, sha: 'f'.repeat(40) }, { ...response, tree: { sha: 'f'.repeat(40) } }])
+    await assert.rejects(() => fixture({ [commitPath]: altered }).github.stagingTree(snapshot, signal()), IntakeError);
+  assert.equal((await fixture({ '/repos/team/repo': { ...repository, private: true }, [commitPath]: response }).github.stagingTree({ ...snapshot, private: true }, signal())).treeSha, tree.sha);
+  await assert.rejects(() => fixture({ '/user': { id: 99 }, '/repos/team/repo': { ...repository, private: true }, [commitPath]: response }).github.stagingTree({ ...snapshot, private: true }, signal()), IntakeError);
+  await assert.rejects(() => fixture({ '/repos/team/repo': { ...repository, id: 6, private: true }, [commitPath]: response }).github.stagingTree({ ...snapshot, private: true }, signal()), IntakeError);
 });

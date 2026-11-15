@@ -65,9 +65,9 @@ Preserve existing authenticated review route and review/tokens response and fall
 
 ## 15. Implementation steps
 
-1. Define regression fixtures and assert the happy path, edge cases and security denials below before implementation. → verify: `cd frontend && node --experimental-strip-types --test tests/e02s01.test.ts`
+1. Define regression fixtures and assert the happy path, edge cases and security denials below before implementation. → verify: `cd frontend && node --experimental-strip-types tests/impact.test.ts && node --experimental-strip-types tests/impact-extractor.test.ts && node --experimental-strip-types tests/assessment.test.ts`
 2. Implement file diff/import baseline and language-aware extraction only where validated; publish separate extraction, resolution and executable-check coverage for JS/TS, Python, C++, C# and Rust. Connect the owner UI/API path and fail-closed errors; retain revision provenance. Ref: ADR 0003. → verify: `cd frontend && node --experimental-strip-types --test tests/e02s01.test.ts`
-3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `(cd frontend && node --experimental-strip-types --test tests/e02s01.test.ts) && (cd frontend && npm run check && npm run build)`
+3. Integrate all affected contracts and run frontend diagnostics/build; include no new security findings in affected paths in focused assertions. Ref: ADRs 0001–0003. → verify: `cd frontend && node --experimental-strip-types tests/impact.test.ts && node --experimental-strip-types tests/impact-extractor.test.ts && node --experimental-strip-types tests/assessment.test.ts && npm run check && npm run build`
 4. Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and limitations; reject an empty evidence record. → verify: `test -s specs/verifications/e02s01.md`
 
 ## 16. Test fixtures

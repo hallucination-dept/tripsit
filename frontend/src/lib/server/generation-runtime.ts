@@ -8,14 +8,20 @@ import { createRecords } from './records.ts';
 import { createIntake } from './work-items.ts';
 import { whileActive } from './intake.ts';
 
-export async function candidateRuntime(headers: Headers, owner: string, signal: AbortSignal) {
+export async function candidateServices(headers: Headers, owner: string, signal: AbortSignal) {
   const store = createCandidateRecords(database);
   await whileActive(() => store.ready(), signal);
   const github = await githubRuntime(headers, owner, signal);
-  return createGeneration({
-    intake: createIntake({ store: createRecords(database), github }),
+  const intake = createIntake({ store: createRecords(database), github });
+  const generation = createGeneration({
+    intake,
     github,
     model: createModelGeneration({ url: MODAL_API_URL, token: MODAL_PROXY_TOKEN, model: MODEL_ID || 'google/gemma-4-31B-it' }),
     store
   });
+  return { generation, intake, github };
+}
+
+export async function candidateRuntime(headers: Headers, owner: string, signal: AbortSignal) {
+  return (await candidateServices(headers, owner, signal)).generation;
 }

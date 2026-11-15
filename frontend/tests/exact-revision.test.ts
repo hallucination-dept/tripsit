@@ -1,0 +1,25 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {createHash} from 'node:crypto';
+import {stageCandidate} from '../src/lib/server/candidate-staging.ts';
+import {createExactRevision} from '../src/lib/server/exact-revision.ts';
+const git = (type:string, bytes:Buffer) => createHash('sha1').update(`${type} ${bytes.length}\0`).update(bytes).digest('hex');
+test('complete staged tree overlays candidate, preserves unchanged modes and rejects changed stage', async () => {
+ const a=Buffer.from('old'), b=Buffer.from('other'), aSha=git('blob',a), bSha=git('blob',b);
+ const entries=[{path:'a',sha:aSha,mode:'100644'},{path:'b',sha:bSha,mode:'100755'}];
+ const root=git('tree',Buffer.concat(entries.map(e=>Buffer.concat([Buffer.from(`${e.mode} ${e.path}\0`),Buffer.from(e.sha,'hex')]))));
+ const base='a'.repeat(40), createdAt='2026-01-01T00:00:00.000Z', content=Buffer.from('new');
+ const candidate={baseSha:base,files:[{path:'a',content,originalBlob:aSha,blobSha:git('blob',content)}]} as any;
+ const stage=stageCandidate(base,root,entries,candidate,createdAt);
+ let row:any={commit_sha:stage.commitSha,tree_sha:stage.rootSha,objects:stage.objects};
+ const database={query:async()=>({rows:[structuredClone(row)]})};
+ const item:any={createdAt,snapshot:{baseSha:base}};
+ const github:any={stagingTree:async()=>({baseSha:base,treeSha:root,entries}),context:async (_:unknown, paths:string[])=>[{path:paths[0],originalBlob:bSha,content:'other'}]};
+ const exact=await createExactRevision(database,github,{get:async()=>item},{get:async()=>({candidate} as any)})('owner','item','candidate',new AbortController().signal);
+ assert.deepEqual(exact.files.map(f=>[f.path,f.content,f.mode]).sort(),[['a','new','100644'],['b','other','100755']]);
+ assert.equal(exact.revision.commitSha,stage.commitSha); await exact.recheck();
+ row={...row,commit_sha:'f'.repeat(40)}; await assert.rejects(exact.recheck());
+ row={commit_sha:stage.commitSha,tree_sha:stage.rootSha,objects:stage.objects};
+ github.stagingTree=async()=>({baseSha:base,treeSha:root,entries:[...entries,{path:'link',sha:aSha,mode:'120000'}]});
+ await assert.rejects(createExactRevision(database,github,{get:async()=>item},{get:async()=>({candidate} as any)})('owner','item','candidate',new AbortController().signal));
+});

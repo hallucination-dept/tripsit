@@ -181,15 +181,54 @@ The following verification tools keep those gaps explicit:
 Do not paste session cookies or credentials into reports or commit environment
 files. These tools do not enable private intake or authorize production changes.
 
-Public snapshot candidates can now be generated explicitly from selected files at
-the frozen revision. The workspace shows versioned baseline requirements, unresolved
-quality gaps and inert replacement previews. Candidate artifacts require migration
-`002_candidates.sql`, retain exact output/file bytes and raw token observations when
-available, and expire with their parent snapshot. The existing snapshot purge cascades
-their raw-data deletion. Candidate generation is limited to three requests per owner
-per 15 minutes and one active request per server process.
+## Agent-driven issue implementation
 
-Candidate code is not executed, committed or published by this increment. Exact
-output-to-code token mapping remains unavailable. Applying migration 002 to a
-configured production database requires explicit authorization; the runtime refuses
-generation before its storage tables exist.
+Select a GitHub issue and start **Implement issue**. Gemma discovers the frozen
+repository files, chooses source to read, requests additional context and generates
+an isolated candidate change. The UI does not ask the human to choose files or
+write replacements. Authorized public and private repositories use the same
+workflow. The existing Gemma proxy supplies inference; no new deployment is needed.
+
+A new candidate automatically receives an independent, separately prompted assessment
+when the reviewer is configured. The interactive impact graph shows changed code,
+validated JS/TS imports and lexical callers, exact source provenance and linked review
+findings. Requirements, proposed checks, disagreement, unavailable signals and actual
+execution evidence remain separate. A human participates for guidance, escalation and
+final decisions; the agent does the implementation and assessment work.
+
+Generation consumes the returned message text; provider probability/metadata fields
+do not determine whether a valid implementation is accepted. Exact token-to-content
+mapping remains unavailable and is reported as such. Reviewer probabilities are ignored.
+Model suggestions are not executed-check evidence or a merge decision.
+
+Candidate, review and execution records use the existing snapshot expiry/purge cascade.
+Migration `002_candidates.sql` is required for candidate storage; no new migration is
+needed for review history. Candidate generation currently allows one active request
+per owner/server process and three requests per fifteen minutes.
+
+Configure `REVIEWER_API_URL`, `REVIEWER_API_KEY` and `REVIEWER_MODEL`; the optional
+`REVIEWER_RETENTION_DISCLOSURE` is informational. Development currently uses the
+existing Gemma endpoint as the independently prompted reviewer until another compatible
+provider is supplied. Linked structured claims are retained; plain-text advice is
+shown with an explicit missing-linkage gap.
+
+From `frontend/`, verify the real configured proxy with a synthetic public fixture:
+
+```bash
+node --experimental-strip-types scripts/agent-probe.ts
+```
+
+The probe uses in-memory repository tools/storage and does not write GitHub or the
+configured database. It checks the agent's actual read/edit protocol and the fixture's
+static repair shape; it does not execute generated code or prove general correctness.
+
+With the local app running, test the graphical review presentation:
+
+```bash
+node --experimental-strip-types scripts/workspace-presentation.mjs
+```
+
+Those browser fixtures mock protected APIs. Real authenticated end-to-end acceptance,
+controlled verification, PR publication and revision-bound human decisions retain their
+own story criteria. Runner scaffolding is not deployed or required for the current
+implementation/review flow.
