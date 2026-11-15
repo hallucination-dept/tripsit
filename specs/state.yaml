@@ -624,3 +624,10 @@ actual_candidate_502:
   status: Investigating real frozen issue/source and actual Gemma call; synthetic probe success is insufficient for this failure.
   scope: Read-only authorized GitHub/DB diagnostics, memory-only candidate collection; fixed stage/category/count metadata, no source/credential output.
   verify: Native generation/model regressions, frontend check/build and real-item dry run before declaring fixed.
+
+incremental_release_plan:
+  private_snapshot: PR12 merged main f37faaf.
+  graph_slice: Publish completed bounded graph extraction/visualization and tests independently of the actual candidate502 fix; ready PR against main, no force push or automatic merge.
+  refresh_slice: Independent ready PR for polling state preservation and repository switching; isolated verification in progress.
+  workflow_slice: PR9 autonomous implementation + automatic graph-linked critique stays under verification until real-item502 is resolved. Actual synthetic Gemma agent and critic provider probes passed; browser4states and192 native tests passed.
+  constraints: Existing story acceptance is preserved; component/module completion is not full-story completion. No new service deployment or extra private admission prompt.
