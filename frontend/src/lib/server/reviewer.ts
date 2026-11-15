@@ -98,7 +98,7 @@ function reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher }: R
     const fixture = fetcher && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
     valid((endpoint.protocol === 'https:' || endpoint.protocol === 'http:' && fixture)
       && !endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash
-      && text(token, 8192) && text(model, 128) && (retentionDisclosure === undefined || text(retentionDisclosure, 2048)));
+      && text(token, 8192) && text(model, 128) && text(retentionDisclosure, 2048));
     endpoint.pathname = endpoint.pathname.replace(/\/$/u, '') + '/v1/chat/completions';
     return endpoint;
   } catch { return null; }
@@ -115,7 +115,7 @@ export function createReviewer(configuration: ReviewerConfiguration) {
     async review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> {
       if (input?.private !== false) return { status: 'unavailable', reason: 'Private-source review requires owner authorization and is unavailable.' };
       const endpoint = reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher });
-      if (!endpoint) return { status: 'unavailable', reason: 'Reviewer URL, key and model are required.' };
+      if (!endpoint) return { status: 'unavailable', reason: 'Reviewer URL, key, model and retention disclosure are required.' };
       let frozen: ReviewerInput;
       let body: string;
       try {
@@ -139,7 +139,7 @@ export function createReviewer(configuration: ReviewerConfiguration) {
           const content = choice.message.content as string;
           const proposed = proposals(content, frozen);
           return { status: 'completed', baseSha: frozen.baseSha, candidateDigest: frozen.candidateDigest,
-            model: model!, destination: endpoint.origin + endpoint.pathname, retentionDisclosure: retentionDisclosure ?? 'Provider retention not specified.',
+            model: model!, destination: endpoint.origin + endpoint.pathname, retentionDisclosure: retentionDisclosure!,
             promptDigest: digest(body), responseDigest: digest(content), ...proposed };
         }, active);
       } catch {

@@ -246,3 +246,13 @@ test('derived advice remains bounded while all validated linked records are reta
  assert.equal(result.status,'completed'); if(result.status !== 'completed')return;
  assert.equal(result.claims.length,32); assert(Buffer.byteLength(result.advice!)<=32768); assert.match(result.advice!,/linked findings/);
 });
+
+test('missing or blank retention disclosure never makes a reviewer ready or dispatches source', async () => {
+  let calls = 0;
+  for (const retentionDisclosure of [undefined, '', '   ', '\n\t']) {
+    const config = { ...configuration, retentionDisclosure, fetcher: async () => { calls++; return response(body()); } };
+    assert.equal(reviewerConfigured(config), false);
+    assert.equal((await createReviewer(config).review(input(), new AbortController().signal)).status, 'unavailable');
+  }
+  assert.equal(calls, 0);
+});

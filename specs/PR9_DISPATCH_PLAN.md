@@ -4,6 +4,7 @@ Prevent generation and verification from sending private repository source to ex
 
 - Guard both generation paths and every autonomous model turn using the existing GitHub visibility reauthorization. Verify: `cd frontend && node --experimental-strip-types --test tests/generation.test.ts`.
 - Guard verification before its runner request using the same visibility reauthorization. Verify: `cd frontend && node --experimental-strip-types --test tests/assessment.test.ts tests/verification.test.ts`.
+- Require nonempty configured reviewer retention disclosure before readiness or dispatch. Verify: `cd frontend && node --experimental-strip-types --test tests/reviewer.test.ts`.
 - Exercise visibility changes, denied and malformed authorization responses, and public success; run `cd frontend && npm run check && npm run build`.
 
 No source, credentials, or provider calls are used in tests. This guard does not add a private-source authorization workflow.
