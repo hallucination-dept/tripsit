@@ -617,3 +617,10 @@ evaluation_manifest_delivery:
   result: All sixteen Python experiment tests passed, including four manifest cases.
   limitations: No actual independently labeled corpus supplied; declaration does not certify label independence. No candidate execution or full e05s01 acceptance. No frontend changes.
   pr: https://github.com/hallucination-dept/tripsit/pull/10
+
+actual_candidate_502:
+  item: 27eba683-198a-43ed-b27a-087a40addf1c
+  plan: specs/bugs/BUG-agent-candidate-502.md
+  status: Investigating real frozen issue/source and actual Gemma call; synthetic probe success is insufficient for this failure.
+  scope: Read-only authorized GitHub/DB diagnostics, memory-only candidate collection; fixed stage/category/count metadata, no source/credential output.
+  verify: Native generation/model regressions, frontend check/build and real-item dry run before declaring fixed.
