@@ -33,7 +33,7 @@ function storedReview(value: unknown, selected: Selection, revision: ReviewIdent
     || !text(value.createdAt, 128) || !Number.isFinite(Date.parse(value.createdAt)) || !digest(value.digest) || !object(value.result)) return false;
   const result = value.result;
   if (result.status === 'unavailable') return text(result.reason, 512);
-  return result.status === 'completed' && result.baseSha === selected.baseSha && result.candidateDigest === selected.candidateDigest
+  return result.status === 'completed' && (result.advice === undefined || text(result.advice, 32768)) && result.baseSha === selected.baseSha && result.candidateDigest === selected.candidateDigest
     && ['model', 'destination', 'retentionDisclosure'].every(key => text(result[key], 2048)) && digest(result.promptDigest) && digest(result.responseDigest)
     && rows(result.claims, 32, claim => text(claim.id, 128) && text(claim.statement) && typeof claim.stance === 'string'
       && ['supports', 'contradicts', 'uncertain'].includes(claim.stance) && strings(claim.requirementIds, 128) && strings(claim.nodeIds)

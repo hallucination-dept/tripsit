@@ -181,74 +181,54 @@ The following verification tools keep those gaps explicit:
 Do not paste session cookies or credentials into reports or commit environment
 files. These tools do not enable private intake or authorize production changes.
 
-Public snapshot candidates can now be generated explicitly from selected files at
-the frozen revision. The workspace shows versioned baseline requirements, unresolved
-quality gaps and inert replacement previews. Candidate artifacts require migration
-`002_candidates.sql`, retain exact output/file bytes and raw token observations when
-available, and expire with their parent snapshot. The existing snapshot purge cascades
-their raw-data deletion. Candidate generation is limited to three requests per owner
-per 15 minutes and one active request per server process.
+## Agent-driven issue implementation
 
-Candidate generation itself does not execute, commit or publish code. Exact
-output-to-code token mapping remains unavailable. Applying migration 002 to a
-configured production database requires explicit authorization; the runtime refuses
-generation before its storage tables exist.
+Select a GitHub issue and start **Implement issue**. Gemma discovers the frozen
+repository files, chooses source to read, requests additional context and generates
+an isolated candidate change. The UI does not ask the human to choose files or
+write replacements. Authorized public and private repositories use the same
+workflow. The existing Gemma proxy supplies inference; no new deployment is needed.
 
-Candidate inspection shows bounded JavaScript/TypeScript static imports and validated
-lexical calls, exact source references, per-language coverage and a revision-bound
-review packet. Dynamic dispatch, unsupported languages and omitted source context
-remain explicit gaps; these relationships do not establish behavioral correctness.
+A new candidate automatically receives an independent, separately prompted assessment
+when the reviewer is configured. The interactive impact graph shows changed code,
+validated JS/TS imports and lexical callers, exact source provenance and linked review
+findings. Requirements, proposed checks, disagreement, unavailable signals and actual
+execution evidence remain separate. A human participates for guidance, escalation and
+final decisions; the agent does the implementation and assessment work.
 
-Independent review is manual and public-source only. Configure all four server-only
-values to enable it: `REVIEWER_API_URL` (base URL), `REVIEWER_API_KEY`, `REVIEWER_MODEL`
-and `REVIEWER_RETENTION_DISCLOSURE`. Missing or invalid configuration keeps review
-unavailable. Claims and suggested checks are model proposals, not trusted execution
-evidence. Up to eight review artifacts share their candidate snapshot's expiry and
-purge cascade; older policy identities are preserved as stale evidence. No new
-database migration is required for review history.
+Generation consumes the returned message text; provider probability/metadata fields
+do not determine whether a valid implementation is accepted. Exact token-to-content
+mapping remains unavailable and is reported as such. Reviewer probabilities are ignored.
+Model suggestions are not executed-check evidence or a merge decision.
 
-With the app running locally, reproduce synthetic presentation checks from `frontend/`:
+Candidate, review and execution records use the existing snapshot expiry/purge cascade.
+Migration `002_candidates.sql` is required for candidate storage; no new migration is
+needed for review history. Candidate generation currently allows one active request
+per owner/server process and three requests per fifteen minutes.
+
+Configure `REVIEWER_API_URL`, `REVIEWER_API_KEY` and `REVIEWER_MODEL`; the optional
+`REVIEWER_RETENTION_DISCLOSURE` is informational. Development currently uses the
+existing Gemma endpoint as the independently prompted reviewer until another compatible
+provider is supplied. Linked structured claims are retained; plain-text advice is
+shown with an explicit missing-linkage gap.
+
+From `frontend/`, verify the real configured proxy with a synthetic public fixture:
+
+```bash
+node --experimental-strip-types scripts/agent-probe.ts
+```
+
+The probe uses in-memory repository tools/storage and does not write GitHub or the
+configured database. It checks the agent's actual read/edit protocol and the fixture's
+static repair shape; it does not execute generated code or prove general correctness.
+
+With the local app running, test the graphical review presentation:
 
 ```bash
 node --experimental-strip-types scripts/workspace-presentation.mjs
 ```
 
-These checks mock all protected API data and cover desktop/mobile layouts, escaped
-model text, explicit review and the unavailable-provider state. They do not establish
-real authenticated UAT. Human decisions and PR publication remain separate stages.
-
-Controlled verification is implemented behind an explicit admission gate. It is
-unavailable until the separate `modal_runner.py` service is deployed and its actual
-nine-control isolation probe passes. Deployment creates infrastructure and requires
-explicit approval. There is no local execution fallback. The runner supports bounded
-Python, JavaScript and Node-supported TypeScript callable checks; unsupported imports
-or language constructs are inconclusive. Results establish only the exercised JSON
-input/output properties, never whole-program correctness.
-
-Set server-only `RUNNER_API_URL`, `RUNNER_API_KEY` and `TRUSTED_CHECKS_JSON`. The last
-value is a JSON array of exact repository/base-pinned manifests, for example:
-
-```json
-[{"repositoryId":123,"baseSha":"REPLACE_WITH_FROZEN_40_CHARACTER_SHA","checks":[{"id":"caller-regression","language":"python","path":"caller.py","export":"call","cases":[{"args":[2],"expected":4}],"requirementIds":["issue-intent"],"mandatory":true,"impact":"high","timeoutMs":1000}]}]
-```
-
-These definitions and expected values come from trusted server configuration, never
-model proposals or browser requests. Before source dispatch the app checks authenticated
-`GET /admission`. An authorized operator runs `POST /admission` with `{}` to execute
-the real isolation probes; admission expires after ten minutes and is bound to the
-runner code, configuration and immutable built image. Only public frozen source is
-admitted. Use the candidate's **Run trusted checks** button to run mandatory checks
-outside the optional budget and up to three optional checks. Recorded results include
-source/check/oracle/environment digests, stale-evidence handling, and an explicit
-last-dispatched plan distinct from the next suggested plan. Up to four execution
-histories share the candidate snapshot's expiry/purge cascade; no migration is needed.
-
-Verify the configured independent reviewer using a synthetic public fixture:
-
-```bash
-python3 specs/experiments/live_gates.py e02s02 --require-configured
-```
-
-This is a provider contract gate; it does not certify authenticated UAT or private
-admission. Reviewer token probabilities are ignored.
-
+Those browser fixtures mock protected APIs. Real authenticated end-to-end acceptance,
+controlled verification, PR publication and revision-bound human decisions retain their
+own story criteria. Runner scaffolding is not deployed or required for the current
+implementation/review flow.

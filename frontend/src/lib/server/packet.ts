@@ -153,6 +153,7 @@ export function buildPacket(authenticatedOwner: string, input: PacketInput) {
       return { id: claim.id, proposition: claim.proposition, verdict: claim.verdict, requirementIds: [...claim.requirementIds].sort(compare),
         nodeIds: [...nodeIds].sort(compare), counterexample: claim.counterexample ?? null };
     }).sort((a, b) => compare(a.id, b.id));
+    if (!claims.length) gap('review_claim_mapping_unavailable', value.id);
     reviewerClaims.push({ id: value.id, reviewer: value.reviewer, claims, claimedExecutions: [...value.claimedExecutions].sort(compare), artifactDigest: review.artifactDigest });
     if (value.claimedExecutions.length) gap('reviewer_execution_claim_unverified', value.id);
   }

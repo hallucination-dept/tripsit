@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ImpactGraph from '#lib/ImpactGraph.svelte';
   import { untrack } from 'svelte';
   import { createCandidateInspection } from '#lib/candidate-inspection.ts';
 
@@ -10,6 +11,7 @@
   const matches = $derived(Boolean(owner && itemId && candidateId && baseSha && candidateDigest) && inspection.owner === owner && inspection.itemId === itemId
     && inspection.candidateId === candidateId && inspection.baseSha === baseSha && inspection.candidateDigest === candidateDigest);
   const view = $derived(matches ? inspection.assessment : null);
+  const reviewAdvice = $derived(view?.reviews.flatMap(review => review.result.status === 'completed' && 'advice' in review.result && typeof review.result.advice === 'string' ? [{ id: review.id, text: review.result.advice }] : []) ?? []);
   const label = (value: unknown) => typeof value === 'string' ? value.replaceAll('_', ' ') : 'unavailable';
 
   $effect(() => {
@@ -17,14 +19,19 @@
     untrack(() => { void controller.select(selected.owner, selected.itemId, selected.candidateId, selected.baseSha, selected.candidateDigest); });
     return () => untrack(() => controller.stop());
   });
+  $effect(() => {
+    const shouldAssess = matches && view?.reviewerConfigured && view.reviews.length === 0
+      && !inspection.loading && !inspection.reviewing && !inspection.reviewError;
+    if (shouldAssess) untrack(() => { void controller.review(); });
+  });
 </script>
 
 <section class="inspection" aria-label="Candidate inspection">
   <header class="intro">
     <div><p class="eyebrow">Candidate inspection</p><h2>Impact, review &amp; evidence</h2></div>
-    <span class="tag">Human inspection required</span>
+    <span class="tag">Agent assessment</span>
   </header>
-  <p class="notice">Trusted checks run only in an admitted disposable environment. Model proposals, static analysis and passing checks do not establish overall correctness or authorize a merge.</p>
+  <p class="notice">The agent maps affected code and reviews the implementation. Findings and evidence gaps guide where your input is needed.</p>
   <p class="status" role="status" aria-live="polite">
     {#if !owner || !itemId || !candidateId || !baseSha || !candidateDigest}Select a candidate to inspect its frozen revision.
     {:else if !matches || inspection.loading}Loading candidate assessment…
@@ -39,6 +46,7 @@
       {#if view}<span class="count">{view.impact.impact.affected.length} affected nodes</span>{/if}
     </header>
     {#if view}
+      <ImpactGraph graph={view.impact.graph} affected={view.impact.impact.affected} claims={view.packet.reviewerClaims} advice={reviewAdvice} />
       <p class="muted">JavaScript and TypeScript static imports and validated lexical calls. Dynamic dispatch and unsupported languages remain explicit gaps.</p>
       {#if view.impact.coverage.languages}<details><summary>Language coverage</summary><ul class="items compact">{#each view.impact.coverage.languages as coverage}<li><strong>{coverage.language}</strong><p class="meta">Extraction: {coverage.extraction} · Resolution: {coverage.resolution} · Checks: {coverage.executableChecks}</p></li>{/each}</ul></details>{/if}
       <p class="meta">{view.impact.coverage.complete ? 'Supplied repository context loaded' : 'Partial repository context'} · TypeScript {view.impact.coverage.typescriptVersion} · execution not run</p>
@@ -77,11 +85,11 @@
 
   <section class="panel" aria-label="Independent review">
     <header class="panel-heading"><div><p class="eyebrow">02 · Independent review</p><h3>Claims &amp; counterexamples</h3></div>
-      <button type="button" onclick={() => void controller.review()} disabled={!view?.reviewerConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>
-        {matches && inspection.reviewing ? 'Reviewing…' : 'Request independent review'}
+      <button data-action="refresh-assessment" type="button" onclick={() => void controller.review()} disabled={!view?.reviewerConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>
+        {matches && inspection.reviewing ? 'Reviewing…' : 'Refresh AI assessment'}
       </button>
     </header>
-    <p class="muted">A review is requested only when you press the button. Claims and suggested checks are model proposals, not execution evidence.</p>
+    <p class="muted">The agent assesses each new implementation automatically. Review its findings, steer revisions and focus your inspection on unresolved or sensitive changes.</p>
     {#if view && !view.reviewerConfigured}<p class="empty">Independent reviewer unavailable. A provider and model must be configured on the server.</p>
     {:else if view}<p class="meta">Reviewer configured. A request sends this candidate’s context to the configured provider.</p>{/if}
     {#if matches && inspection.reviewError}<p class="error" role="alert">{inspection.reviewError}</p>{/if}
@@ -92,7 +100,7 @@
             <header class="row"><strong>Review · {new Date(review.createdAt).toLocaleString()}</strong><span class="tag">{review.result.status === 'completed' ? 'Model proposals' : 'Unavailable'}</span></header>
             {#if review.result.status === 'unavailable'}<p class="empty">{review.result.reason}</p>
             {:else}
-              <p class="meta">{review.result.model} · {review.result.destination}</p><p class="meta">Retention disclosure: {review.result.retentionDisclosure}</p>
+              <p class="meta">{review.result.model} · {review.result.destination}</p>{#if review.result.advice}<p class="review-advice preserve">{review.result.advice}</p>{/if}
               {#if review.result.claims.length}<ul class="items">
                 {#each review.result.claims as claim}<li>
                   <div class="row"><strong>{claim.id}</strong><span class="tag" class:contradicts={claim.stance === 'contradicts'}>{claim.stance}</span></div>
@@ -116,11 +124,11 @@
   </section>
 
   <section class="panel" aria-label="Review packet">
-    <header class="panel-heading"><div><p class="eyebrow">03 · Evidence packet</p><h3>Requirements &amp; remaining gaps</h3></div><button type="button" onclick={() => void controller.verify()} disabled={!view?.verificationConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>{matches && inspection.verifying ? 'Running checks…' : 'Run trusted checks'}</button></header>
+    <header class="panel-heading"><div><p class="eyebrow">03 · Evidence packet</p><h3>Requirements &amp; remaining gaps</h3></div>{#if view?.verificationConfigured}<button type="button" onclick={() => void controller.verify()} disabled={!view?.verificationConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>{matches && inspection.verifying ? 'Running checks…' : 'Run trusted checks'}</button>{/if}</header>
     {#if view}
       <p class="muted">{view.packet.impact.summary}</p>
       <p class="notice">{view.packet.tokenSignal.reason} · {view.packet.tokenSignal.observedTokens} observed tokens. Token observations are not correctness evidence.</p>
-      {#if !view.verificationConfigured}<p class="empty">Controlled verification requires an admitted runner and trusted checks pinned to this repository and base revision.</p>{/if}
+
       {#if view.packet.executions.length}<div class="executions"><h4>Recorded check executions</h4><ul class="items">{#each view.packet.executions as execution}<li><div class="row"><strong>{execution.checkId}</strong><span class="tag" class:contradicts={execution.result === 'failed'}>{label(execution.result)} · {label(execution.evidenceStatus)}</span></div><p class="meta">{label(execution.status)} · {execution.executedTests} exercised cases · exit {execution.exitCode ?? 'unavailable'}</p><details><summary>Requirement and source trace</summary><p class="meta">Execution: {execution.id}<br />Runner: {execution.runnerId}</p>{#each view.packet.checkDefinitions.filter(check => check.id === execution.checkId && ['definitionDigest', 'oracleDigest', 'environmentDigest', 'dependencyDigest'].every(key => check[key as keyof typeof check] === execution[key as keyof typeof execution])) as check}<p class="meta">Requirements: {check.requirementIds.join(', ')}<br />Nodes: {check.nodeIds.join(', ') || 'No resolved node'}</p>{#each view.impact.graph.nodes.filter(node => check.nodeIds.includes(node.id)) as node}<p class="meta">{node.source?.path} · {node.source?.revision} bytes {node.source?.start}–{node.source?.end}<br /><code>{node.source?.blobSha}</code></p>{/each}{/each}<p class="meta">Recorded check: {execution.definitionDigest}<br />Recorded oracle: {execution.oracleDigest}<br />Recorded environment: {execution.environmentDigest}<br />Recorded dependencies: {execution.dependencyDigest}</p></details></li>{/each}</ul></div>{/if}
       {#if view.dispatchPlan}<details><summary>Last dispatched plan</summary><p class="meta">Mandatory: {view.dispatchPlan.mandatory.map(check => check.id).join(', ') || 'None'}<br />Optional: {view.dispatchPlan.selected.map(check => check.id).join(', ') || 'None'}<br />Omitted: {view.dispatchPlan.omitted.map(check => check.id).join(', ') || 'None'}</p></details>{/if}
       {#if view.packet.evidenceReuse.length}<details><summary>Evidence reuse assessment</summary><ul class="items compact">{#each view.packet.evidenceReuse as reuse}<li><strong>{reuse.executionId} · {reuse.status}</strong><p>{reuse.reason}</p></li>{/each}</ul></details>{/if}
