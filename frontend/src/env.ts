@@ -1,4 +1,5 @@
 import { defineEnvVars } from '@sveltejs/kit/env';
+import { normalizePem } from './lib/server/pem.ts';
 
 export const variables = defineEnvVars({
 	// These values are injected by Aiven when the container starts, after the
@@ -24,6 +25,5 @@ export const variables = defineEnvVars({
 	GITHUB_APP_CLIENT_SECRET: { schema: (value) => value },
 	GITHUB_APP_ID: { schema: (value) => value },
 	GITHUB_APP_SLUG: { schema: (value) => value },
-	// Hosted env vars often hold the PEM on one line with literal "\n"; restore the line breaks OpenSSL needs.
-	GITHUB_APP_PRIVATE_KEY: { schema: (value) => value?.replace(/\\n/g, '\n') }
+	GITHUB_APP_PRIVATE_KEY: { schema: normalizePem }
 });
