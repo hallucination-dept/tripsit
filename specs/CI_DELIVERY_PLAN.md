@@ -10,8 +10,9 @@ Verification:
 - `cd frontend && npm run check && npm run build`
 - `cd frontend && node --experimental-strip-types --test $(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-db.test.ts' ! -name 'intake-retention.test.ts' | sort)`
 - `python3 -m unittest discover -s tests`
+- `python3 -m unittest discover -s specs/experiments/tests`
 - Validate workflow YAML and inspect `git diff --check`.
 
 Database tests require a disposable PostgreSQL instance; browser tests require
-Chrome. The separate live-gate tests need localhost sockets, which are denied
-in the current sandbox. Those checks remain outside this workflow's coverage.
+Chrome. Those checks remain outside this workflow's coverage. Admission-gate
+tests use local sockets and run on the GitHub runner.

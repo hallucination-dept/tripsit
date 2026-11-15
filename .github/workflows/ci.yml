@@ -30,3 +30,5 @@ jobs:
         run: node --experimental-strip-types --test $(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-db.test.ts' ! -name 'intake-retention.test.ts' | sort)
       - name: Run Python model tests
         run: python3 -m unittest discover -s tests
+      - name: Run admission-gate tests
+        run: python3 -m unittest discover -s specs/experiments/tests
