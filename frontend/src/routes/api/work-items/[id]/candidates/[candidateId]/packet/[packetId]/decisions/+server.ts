@@ -4,6 +4,9 @@ import { createGenerationLimit } from '#lib/server/generation-limit.ts';
 import { createHumanDecision } from '#lib/server/human-decision.ts';
 import { IntakeError, readJson } from '#lib/server/intake.ts';
 import { withIntake } from '#lib/server/intake-http.ts';
+import { TRUSTED_CHECKS_JSON } from '$app/env/private';
+import { verificationContext } from '#lib/server/assessment.ts';
+import { configuredChecks } from '#lib/server/verification.ts';
 
 const limit = createGenerationLimit();
 export async function POST({ request, locals, params }) {
@@ -14,7 +17,10 @@ export async function POST({ request, locals, params }) {
   const owner = locals.user!.id;
   return limit.run(owner, async () => {
    const runtime = await assessmentRuntime(request.headers, owner, signal);
-   return { decision: await createHumanDecision({ database, intake: runtime.intake }).record(owner, params.id, params.candidateId, params.packetId, body, signal) };
+   return { decision: await createHumanDecision({ database, intake: runtime.intake, acceptance: async (user, item, candidate, active) => {
+    const assessment = await runtime.service.load(user,item,candidate,active);
+    return { assessment, manifest: runtime.requiredManifest(assessment), checks: configuredChecks(TRUSTED_CHECKS_JSON, verificationContext(assessment)) };
+   } }).record(owner, params.id, params.candidateId, params.packetId, body, signal) };
   });
  }, 90_000);
 }

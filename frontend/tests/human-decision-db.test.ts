@@ -5,6 +5,7 @@ import { readFile } from 'node:fs/promises';
 import pg from 'pg';
 import { testDatabaseUrl } from '../src/lib/server/records.ts';
 import { createHumanDecision } from '../src/lib/server/human-decision.ts';
+import { verificationDigest } from '../src/lib/server/verification.ts';
 import { snapshotPolicy } from '../src/lib/server/snapshot-policy.ts';
 
 const itemId='11111111-1111-4111-8111-111111111111', candidateId='22222222-2222-4222-8222-222222222222', packetId='33333333-3333-4333-8333-333333333333';
@@ -22,7 +23,7 @@ test('decisions are owner scoped, idempotent, and reject a concurrent evidence a
  const pool=new pg.Pool({connectionString:testDatabaseUrl(process.env.TRIPSIT_TEST_DATABASE_URL),connectionTimeoutMillis:5000});
  const client=await pool.connect();
  try {
-  for(const migration of ['001_work_items.sql','002_candidates.sql','003_candidate_staging.sql','004_revision_packets.sql','005_human_decisions.sql']) await client.query(await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['001_work_items.sql','002_candidates.sql','003_candidate_staging.sql','004_revision_packets.sql','005_human_decisions.sql','007_owner_acceptance.sql']) await client.query(await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8'));
   await client.query('INSERT INTO tripsit_work_items VALUES ($1,$2,$3,$4,$5,$6)',[itemId,'owner','digest','intake',item.createdAt,item.expiresAt]);
   await client.query('INSERT INTO tripsit_snapshots VALUES ($1,$2)',[itemId,JSON.stringify(snapshot)]);
   await client.query('INSERT INTO tripsit_candidates VALUES ($1,$2,$3,$4,$5)',[candidateId,'owner',identity.candidateDigest,item.createdAt,item.expiresAt]);
@@ -45,5 +46,27 @@ test('decisions are owner scoped, idempotent, and reject a concurrent evidence a
   await client.query("UPDATE tripsit_candidate_payloads SET payload=jsonb_set(payload,'{reviews}','[{}]'::jsonb) WHERE candidate_id=$1",[candidateId]);
   resume(); await assert.rejects(pending,{status:409});
   assert.equal((await client.query('SELECT count(*)::int AS count FROM tripsit_human_decisions')).rows[0].count,1);
+  // Test a real acceptance insert and stale packet evidence against PostgreSQL.
+  const check={id:'required',language:'python' as const,path:'x.py',export:'run',cases:[{args:[],expected:1}],requirementIds:['R1'],nodeIds:['N1'],mandatory:true,impact:'high' as const,timeoutMs:1000};
+  const {cases,...withoutCases}=check; const {nodeIds:_nodes,...asserted}=check;
+  const manifest={status:'operator_asserted' as const,version:'v1',manifestDigest:'e'.repeat(64),repositoryId:1,baseSha:snapshot.baseSha,policyVersion:policy.policy.version,controls:[{id:'R1',applicability:'applicable' as const,reason:'Required.',checks:[{id:check.id,digest:verificationDigest(asserted)}]}]};
+  const commit={type:'commit',sha:row.commit_sha,content:'Y29tbWl0'};
+  const definition={id:check.id,definitionDigest:verificationDigest(withoutCases),oracleDigest:verificationDigest(cases),environmentDigest:'d'.repeat(64),dependencyDigest:'e'.repeat(64)};
+  const evidence={exactRevision:{commitSha:row.commit_sha,treeSha:'d'.repeat(40),commitObject:commit.content},expectedCases:{required:1},admission:{status:'passed',environmentDigest:definition.environmentDigest},checks:[definition],executions:[{...definition,checkId:check.id,collector:'trusted_runner',status:'completed',result:'passed',exitCode:0,executedTests:1}]};
+  const acceptance=async()=>({assessment:{identity,verifications:[{identity,result:evidence}]} as never,manifest,checks:[check]});
+  const acceptBody=JSON.stringify({identity,candidateCommit:row.commit_sha,acceptanceReady:false,requiredManifest:manifest});
+  await client.query('UPDATE tripsit_candidate_payloads SET payload=$2::jsonb WHERE candidate_id=$1',[candidateId,JSON.stringify(payload)]);
+  await client.query('UPDATE tripsit_candidate_stages SET objects=$2::jsonb WHERE candidate_id=$1',[candidateId,JSON.stringify([commit])]);
+  await client.query('UPDATE tripsit_revision_packets SET body=$2,packet_digest=$3 WHERE id=$1',[packetId,acceptBody,digest(acceptBody)]);
+  const accepted=await createHumanDecision({database:pool,intake,acceptance}).record('owner',itemId,candidateId,packetId,{...input,requestId:'66666666-6666-4666-8666-666666666666',decision:'accept',deepInspection:true},signal);
+  assert.equal(accepted.decision,'accept');
+  let resumeAccept!:()=>void, loadedAccept!:()=>void;
+  const pauseAccept=new Promise<void>(resolve=>resumeAccept=resolve), readyAccept=new Promise<void>(resolve=>loadedAccept=resolve);
+  const delayedAccept=createHumanDecision({intake,acceptance,database:{async query(sql:string,values?:unknown[]){const result=await pool.query(sql,values);if(sql.startsWith('SELECT')){loadedAccept();await pauseAccept;}return result;}}});
+  const pendingAccept=delayedAccept.record('owner',itemId,candidateId,packetId,{...input,requestId:'77777777-7777-4777-8777-777777777777',decision:'accept',deepInspection:true},signal);
+  await readyAccept; await client.query("UPDATE tripsit_candidate_payloads SET payload=jsonb_set(payload,'{reviews}','[{}]'::jsonb) WHERE candidate_id=$1",[candidateId]);
+  resumeAccept(); await assert.rejects(pendingAccept,{status:409});
+  assert.equal((await client.query("SELECT count(*)::int AS count FROM tripsit_human_decisions WHERE decision='accept'")).rows[0].count,1);
+
  } finally {client.release();await pool.end();}
 });
