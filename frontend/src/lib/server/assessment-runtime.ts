@@ -1,5 +1,6 @@
 import { REVIEWER_API_URL, REVIEWER_API_KEY, REVIEWER_MODEL, REVIEWER_RETENTION_DISCLOSURE, RUNNER_API_URL, RUNNER_API_KEY, TRUSTED_CHECKS_JSON } from '$app/env/private';
 import { database } from '#lib/auth.js';
+import { createExactRevision } from './exact-revision.ts';
 import { createVerification, verificationConfigured, mandatoryInventory } from './verification.ts';
 import { createVerificationRecords } from './verification-records.ts';
 import { verificationContext, type Assessment } from './assessment.ts';
@@ -14,5 +15,5 @@ export async function assessmentRuntime(headers: Headers, owner: string, signal:
   const reviewerConfigured = isReviewerConfigured(configuration);
   const reviewer = createReviewer(reviewerConfigured ? configuration : {});
   const verificationConfiguration = { url: RUNNER_API_URL, token: RUNNER_API_KEY, manifest: TRUSTED_CHECKS_JSON };
-  return { github: services.github, intake: services.intake, generation: services.generation, verificationAvailable: (assessment: Assessment) => verificationConfigured(verificationConfiguration, verificationContext(assessment)), mandatoryInventory: (assessment: Assessment) => mandatoryInventory(verificationConfiguration, verificationContext(assessment), assessment.policy.requirements), service: createAssessment({ ...services, reviews: createReviewRecords(database), reviewer, verification: createVerification(verificationConfiguration), verificationRecords: createVerificationRecords(database) }), reviewerConfigured };
+  return { github: services.github, intake: services.intake, generation: services.generation, verificationAvailable: (assessment: Assessment) => verificationConfigured(verificationConfiguration, verificationContext(assessment)), mandatoryInventory: (assessment: Assessment) => mandatoryInventory(verificationConfiguration, verificationContext(assessment), assessment.policy.requirements), service: createAssessment({ ...services, exactRevision: createExactRevision(database, services.github, services.intake, services.generation), reviews: createReviewRecords(database), reviewer, verification: createVerification(verificationConfiguration), verificationRecords: createVerificationRecords(database) }), reviewerConfigured };
 }

@@ -25,11 +25,22 @@ function references(value: unknown, maximum = 256): value is string[] {
   return Array.isArray(value) && value.length <= maximum && value.every(id => text(id)) && new Set(value).size === value.length;
 }
 function validateResult(result: VerificationEvidence) {
-  if (!object(result) || Object.keys(result).some(key => !['checks', 'executions', 'admission', 'dispatchPlan'].includes(key))
+  if (!object(result) || Object.keys(result).some(key => !['checks', 'executions', 'admission', 'dispatchPlan', 'exactRevision', 'expectedCases'].includes(key))
     || !Array.isArray(result.checks) || !result.checks.length || result.checks.length > 32
     || !Array.isArray(result.executions) || !result.executions.length || result.executions.length > 32
     || !object(result.admission) || result.admission.status !== 'passed'
     || !hash(result.admission.configurationDigest) || !hash(result.admission.codeDigest) || !hash(result.admission.environmentDigest)) throw invalid();
+  if ((result.exactRevision === undefined) !== (result.expectedCases === undefined)) throw invalid();
+  if (result.exactRevision !== undefined) {
+    const revision = result.exactRevision, cases = result.expectedCases;
+    if (!object(revision) || Object.keys(revision).sort().join(',') !== 'commitObject,commitSha,treeSha'
+      || !/^[a-f0-9]{40}$/.test(revision.commitSha) || !/^[a-f0-9]{40}$/.test(revision.treeSha)
+      || !text(revision.commitObject, 21848) || !object(cases)
+      || Object.keys(cases).length !== result.executions.length
+      || result.executions.some(execution => !Number.isSafeInteger(cases[execution.checkId]) || cases[execution.checkId] < 1
+        || cases[execution.checkId] > 16 || execution.executedTests > cases[execution.checkId]
+        || execution.result === 'passed' && execution.executedTests !== cases[execution.checkId])) throw invalid();
+  }
   const ids = new Set<string>();
   for (const check of result.checks) {
     if (!object(check) || !text(check.id) || ids.has(check.id) || typeof check.mandatory !== 'boolean'
@@ -81,10 +92,14 @@ export function createVerificationRecords(database: Database, clock = () => new 
           AND c.owner_id=$1 AND w.owner_id=$1 AND w.id=$2 AND c.id=$3
           AND c.expires_at>$6 AND w.expires_at>$6 AND c.expires_at=w.expires_at AND jsonb_typeof(s.payload->'private')='boolean'
           AND p.payload->>'baseSha'=$4 AND s.payload->>'baseSha'=$4 AND p.payload->>'outputDigest'=$5 AND c.output_digest=$5
+          AND ($8::jsonb IS NULL OR EXISTS (SELECT 1 FROM tripsit_candidate_stages t WHERE t.candidate_id=c.id AND t.owner_id=$1
+            AND t.expires_at=c.expires_at AND t.base_sha=$4 AND t.output_digest=$5
+            AND t.commit_sha=$8::jsonb->>'commitSha' AND t.tree_sha=$8::jsonb->>'treeSha'
+            AND t.objects @> jsonb_build_array(jsonb_build_object('type','commit','sha',$8::jsonb->>'commitSha','content',$8::jsonb->>'commitObject'))))
           AND jsonb_typeof(COALESCE(p.payload->'verifications','[]'::jsonb))='array'
           AND jsonb_array_length(COALESCE(p.payload->'verifications','[]'::jsonb))<4
           AND octet_length((${appended})::text)<=4194304 RETURNING c.id`,
-      [owner, frozenIdentity.itemId, frozenIdentity.candidateId, frozenIdentity.baseSha, frozenIdentity.candidateDigest, now, JSON.stringify(artifact)]);
+      [owner, frozenIdentity.itemId, frozenIdentity.candidateId, frozenIdentity.baseSha, frozenIdentity.candidateDigest, now, JSON.stringify(artifact), frozen.exactRevision ? JSON.stringify(frozen.exactRevision) : null]);
       if (!rows.rows.length) throw missing();
       return { id: artifact.id, identity: frozenIdentity, createdAt: artifact.createdAt, result: frozen, digest: artifact.digest };
     },
