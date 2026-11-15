@@ -53,3 +53,28 @@ A failing downstream check can increase investigation of neighboring graph paths
 - With equal optional-check budgets, report graph-only, uncertainty-only, and combined selection outcomes, including misses, cost, and false alarms.
 
 The evaluation budget and reproducible ordering rules must be fixed before held-out runs. Predictive correctness claims require independently labeled examples and calibration evidence beyond this pilot.
+
+## Prototype: per-node functional agreement (UQLM)
+
+Status: experiment only. Not wired into the app, the Modal service, or check prioritization.
+
+Selected-token probabilities under-report decisions the model already made in its reasoning or plan. Sample agreement judged by behavior is the best-supported code signal (Sharma & David 2025; Functional Entropy, EMNLP 2026). UQLM `CodeGenUQ` implements it per whole response, so the prototype localizes it per graph node:
+
+1. Generate one greedy candidate (temperature 0) and N samples (temperature 1) of the complete edited file through the existing Modal OpenAI-compatible endpoint.
+2. Split base, candidate and samples into nodes with Python `ast`: top-level functions, class methods, and one `<module>` node for remaining top-level statements. Normalize each node with `ast.unparse` so formatting and comments do not count as disagreement.
+3. A sample that leaves a node unchanged contributes the base version; a sample that removes it contributes an explicit removal marker.
+4. For each node the candidate changed, call `CodeGenUQ.score(..., scorers=["functional_equivalence_rate"])` with the candidate node as the response and the sample nodes as sampled responses. Gemma is the equivalence judge. AST-identical versions skip the judge.
+5. Report nodes the candidate left unchanged but some samples edited as possible missed edits, with the edit rate.
+
+Limits: Python only (UQLM's judge prompt supports Python, Java and SQL); each node is judged in isolation, so cross-function effects are ignored; the judge does not execute code; one hand-made fixture demonstrates behavior and does not validate predictive value.
+
+Verification: `python3 -m unittest discover -s specs/experiments/tests -p 'test_node_uncertainty.py'` (offline, fake judge) and `uv run --python 3.12 --with uqlm --with langchain-openai python specs/experiments/node_uncertainty.py specs/experiments/fixtures/node_uncertainty --env-file frontend/.env` (live Modal endpoint; `fixtures/node_uncertainty_vague` is the second fixture).
+
+### Results (2026-11-15, uqlm 0.6.8, gemma-4-31B-it, 1 greedy + 5 samples at temperature 1)
+
+- Offline tests: 11 passed. Live pipeline ran end to end in about 2 minutes per fixture.
+- `node_uncertainty`: all six replies were byte-identical; every one of 219 candidate tokens had raw probability ≥ 0.991. All edited nodes scored 1.00 agreement and nothing was flagged. The model resolved "members for a year" as `membership_days(...) >= 365` with no variation, although calendar years and leap days make it a reviewer decision.
+- `node_uncertainty_vague`: five of six versions were identical; one sample also caught `TypeError`. Gemma judged it equivalent, as UQLM's default judge prompt counts minor edge-case differences as equivalent. "Handled gracefully" became a silent quantity of 0 in every version, which is a judgment call a reviewer may reject, and it was not flagged.
+- The endpoint does sample: three direct requests at temperature 1.0 returned three different sentences, so identical edits reflect a near-deterministic model on these tasks, not a configuration fault.
+
+Conclusion: on small, plausible edits, sample agreement and selected-token probability both report confidence for confidently made assumptions. They cannot cover the "assumption or judgment call" category; that needs explicit assumption flags or a ticket-versus-edit review pass. Sample agreement remains a candidate signal for larger or genuinely underdetermined edits, and its judge prompt would need to treat edge-case differences as disagreement for review use.
