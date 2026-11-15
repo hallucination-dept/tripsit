@@ -1,11 +1,12 @@
 <script lang="ts">
   import { projectImpactGraph, mentionsNode } from '#lib/impact-graph.ts';
   import type { ImpactGraph as Graph, ImpactNode } from '#lib/server/impact.ts';
-  import type { PacketReview } from '#lib/server/packet.ts';
+  type GraphReview = { id: string; claims: Array<{ id: string; nodeIds?: string[]; proposition: string;
+    verdict: 'supports' | 'contradicts' | 'uncertain'; counterexample?: string | null }> };
 
   let { graph, affected = [], claims = [], advice = [] }: {
     graph: Graph; affected?: Array<{ node: ImpactNode; distance: number }>;
-    claims?: PacketReview[]; advice?: Array<{ id: string; text: string }>;
+    claims?: GraphReview[]; advice?: Array<{ id: string; text: string }>;
   } = $props();
   const componentId = $props.id();
   const marker = `${componentId}-arrow`;
