@@ -1,11 +1,11 @@
 e01s05: todo
-e01s01: blocked
+e01s01: in_progress
 e01s02: in_progress
 e01s04: in_progress
 e02s01: in_progress
 e02s02: in_progress
 e03s01: in_progress
-e03s02: todo
+e03s02: in_progress
 e04s01: in_progress
 e04s02: todo
 e01s03: todo
@@ -13,10 +13,10 @@ e05s01: todo
 e05s02: todo
 stories:
   e01s01:
-    status: blocked
+    status: in_progress
     started_at: '2026-11-14T19:06:28.448672+00:00'
-    implementation: Public intake and automatic discovery implemented; UI and cleanup merged through
-      PR 4.
+    implementation: Private/public authorized snapshots and nonblocking discovery implemented; PR12 and PR13
+      merged main2710785.
     passing_tasks:
     - 1
     - 2
@@ -28,85 +28,104 @@ stories:
     - 7
     - 8
     blockers:
-    - Private admission and recurring retention controls remain unverified; private snapshots disabled.
-    - Live gate aggregation incomplete; real two-owner authenticated browser UAT outstanding.
+    - Real two-owner authenticated UAT and deployed recurring retention remain unverified; private storage
+      follows explicit user authorization.
     latest_verification:
       source: cbb83d9 (cleanup code; merged main f2ed60a)
       frontend_preflight: passed; Svelte 0 errors/0 warnings
       focused_tests: 34
       scope: Local regressions and synthetic browser fixtures; not full live acceptance.
+    checkpoint: 6188de8
+    branch: feat/impact-review-workflow
+    worktree: /tmp/tripsit-e01s01
   e01s02:
     status: in_progress
     worktree: /tmp/tripsit-e01s01
-    branch: feat/candidate-and-policy-workflow
-    checkpoint: 74e4573
-    verification: Native focused tests and frontend check/build pass; synthetic presentation only,
-      full live UAT incomplete.
-    remaining: Isolated Git commit staging, exact byte-span mapping and full real authenticated live
-      acceptance; migration002 is applied and storage ready.
-    implementation: Public frozen-file candidate generation, expiring byte-exact storage, owner-scoped
-      APIs and manual preview UI implemented.
-    configured_database: Migration002 authorized and applied transactionally; tables/cascade/runtime
-      readiness verified; auth tables unchanged.
+    branch: feat/impact-review-workflow
+    checkpoint: 6188de8
+    verification: Native focused tests and frontend check/build pass; synthetic presentation only, full live
+      UAT incomplete.
+    remaining: Actual issue generation still fails current8192-token context after larger source reads; larger
+      context is planned soon. Pi integration, isolated Git staging, exact token mapping and full live acceptance
+      remain incomplete.
+    implementation: Autonomous frozen repository read/edit loop, hash-free model context, server-bound blobs
+      and text-only inference implemented.
+    configured_database: Migration002 authorized and applied transactionally; tables/cascade/runtime readiness
+      verified; auth tables unchanged.
     delivery: Merged in PR6; full story acceptance remains incomplete.
   e01s04:
     status: in_progress
     worktree: /tmp/tripsit-e01s01
     branch: feat/candidate-and-policy-workflow
     checkpoint: 74e4573
-    verification: Native focused tests and frontend check/build pass; synthetic presentation only,
-      full live UAT incomplete.
+    verification: Native focused tests and frontend check/build pass; synthetic presentation only, full live
+      UAT incomplete.
     remaining: Real authenticated owner-flow UAT; no compliance claims or owner-confirmation records.
-    implementation: Versioned trusted controls, provenance, applicability/gaps, authorized snapshot
-      policy endpoint and UI implemented.
+    implementation: Versioned trusted controls, provenance, applicability/gaps, authorized snapshot policy
+      endpoint and UI implemented.
     delivery: Merged in PR6; full story acceptance remains incomplete.
   e02s01:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 6a21f65
+    checkpoint: 6188de8
     pr: https://github.com/hallucination-dept/tripsit/pull/9
-    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
-      checks and four synthetic Chrome states passed; full live acceptance not claimed.
-    remaining: Other-language/symbol/semantic extraction, full live UAT and acceptance remain incomplete.
-    implementation: Real bounded JS/TS static-import impact and authorized assessment API/UI integrated
-      in feature PR9.
-    main_delivery: Not merged; ready for human review in PR9.
+    verification: Final200 native cases, frontend check/build and synthetic graphical/refresh browser checks
+      passed. Actual candidate dry run remains blocked; no full-story acceptance claim.
+    remaining: Full live graph-to-execution acceptance and unsupported-language/semantic coverage remain explicit
+      gaps.
+    implementation: Bounded JS/TS import/lexical-call graph, exact provenance and interactive graph with linked
+      findings implemented; standalone PR7 ready, workflow in draft PR9.
+    main_delivery: Graph slice PR7 ready; integrated workflow PR9 remains draft due real candidate context
+      failure.
   e03s01:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 6a21f65
+    checkpoint: 6188de8
     pr: https://github.com/hallucination-dept/tripsit/pull/9
-    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
-      checks and four synthetic Chrome states passed; full live acceptance not claimed.
-    remaining: Trusted executable check definitions, verified runner and full owner-flow acceptance.
-    implementation: Deterministic priority core integrated in revision-bound packet; unknown/missing
-      signals remain gaps.
-    main_delivery: Not merged; ready for human review in PR9.
+    verification: Final200 native cases, frontend check/build and synthetic graphical/refresh browser checks
+      passed. Actual candidate dry run remains blocked; no full-story acceptance claim.
+    remaining: Trusted live execution selection/collection and full end-to-end acceptance; pure priority planner
+      is tested, not a claim of executed checks.
+    implementation: Deterministic priority core integrated in revision-bound packet; unknown/missing signals
+      remain gaps.
+    main_delivery: Graph slice PR7 ready; integrated workflow PR9 remains draft due real candidate context
+      failure.
   e02s02:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 6a21f65
-    implementation: Server-only independent reviewer client, manual protected endpoint/UI and expiring
-      scoped review history implemented in feature PR9.
-    remaining: Provider/model/retention configuration and live reviewer gate, private consent/admission
-      and real owner UAT.
-    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
-      checks and four synthetic Chrome states passed; full live acceptance not claimed.
-    main_delivery: Not merged; ready for human review in PR9.
+    checkpoint: 6188de8
+    implementation: Automatic independently prompted linked critique and readable advice implemented; temporary
+      Gemma reviewer configured and real synthetic provider probe passed; probabilities ignored.
+    remaining: Full authenticated owner UAT and actual issue candidate end-to-end acceptance; separate reviewer
+      API is expected later.
+    verification: Final200 native cases, frontend check/build and synthetic graphical/refresh browser checks
+      passed. Actual candidate dry run remains blocked; no full-story acceptance claim.
+    main_delivery: Graph slice PR7 ready; integrated workflow PR9 remains draft due real candidate context
+      failure.
     pr: https://github.com/hallucination-dept/tripsit/pull/9
   e04s01:
     status: in_progress
     branch: feat/impact-review-workflow
     worktree: /tmp/tripsit-e01s01
-    checkpoint: 6a21f65
-    implementation: Revision-bound packet, static impact provenance, review conflicts/history and
-      missing-evidence UI implemented in feature PR9.
-    remaining: Actual trusted execution evidence/within-PR reuse workflow and full real authenticated
-      UAT.
-    verification: Assembled frontend check/build, focused native tests, disposable DB ownership/expiry
-      checks and four synthetic Chrome states passed; full live acceptance not claimed.
-    main_delivery: Not merged; ready for human review in PR9.
+    checkpoint: 6188de8
+    implementation: Revision-bound packet, static impact provenance, review conflicts/history and missing-evidence
+      UI implemented in feature PR9.
+    remaining: Actual trusted executions, real authenticated UAT and newly planned packet deep links/navigation/GitHub
+      interaction tasks remain incomplete.
+    verification: Final200 native cases, frontend check/build and synthetic graphical/refresh browser checks
+      passed. Actual candidate dry run remains blocked; no full-story acceptance claim.
+    main_delivery: Graph slice PR7 ready; integrated workflow PR9 remains draft due real candidate context
+      failure.
     pr: https://github.com/hallucination-dept/tripsit/pull/9
+  e03s02:
+    status: in_progress
+    checkpoint: 6188de8
+    branch: feat/impact-review-workflow
+    worktree: /tmp/tripsit-e01s01
+    implementation: Optional runner/collector scaffold and offline boundary tests implemented; no new service
+      was deployed and it is not required by current issue/review flow.
+    remaining: Actual configured environment execution and admission remain unverified; user instructed no
+      new deployment during this session.

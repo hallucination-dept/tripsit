@@ -13,8 +13,8 @@ project_cycle:
     status: authorized
 handoff:
   next_skill: develop-tdd
-  last_step_completed: Private snapshot/source access fix verified; agentic issue loop and graphical assessment implementation dispatched in isolated worktrees.
-  summary: Follow product/VISION_LATEST.yaml and existing story acceptance. Agent drives issue implementation, impact analysis, assessments and evidence; human participates for guidance/escalation/final decisions. Current work removes manual file selection, adds visual graph and keeps requirement/node-linked assessments. Existing Gemma proxy is used without new deployment. Snapshot fix is being released as a small ready PR independently; broader PR9 remains work in progress. Never mark full stories done from unit or presentation checks alone.
+  last_step_completed: All current code committed; 200 native tests, frontend check/build, graph browser fixtures and refresh regression passed. Real candidate generation remains blocked by current model context.
+  summary: VISION remains supreme. Agent-driven issue implementation, automatic graph-linked critique, graphical source inspection and polling preservation are implemented. Private snapshot and refresh fixes merged in PR12/PR13; standalone graph PR7 ready. PR9 remains draft because real issue27eba683-198a-43ed-b27a-087a40addf1c still overflows the current8192-token context after reading18992bytes. User says context will be larger soon; re-run candidate-dry-run.ts against that same item after the increase. Pi SDK compatibility inspected but no app integration completed. Do not mark full stories or this bug done. Preserve normal auth/repository checks; no extra private admission/consent gate and no new service deployment.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -67,7 +67,7 @@ vcs:
   branch: feat/impact-review-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: 736778b
+  checkpoint: 6188de8
 verification:
   tooling_review:
     round: 2
@@ -640,3 +640,25 @@ implementation_harness_plan:
   system_prompt: Agent owns investigation, edits and self-check/refinement. It reads source before editing, uses tool feedback to recover, and hands the resulting revision/graph to independent assessment. Human input steers/escalates/decides.
   integration: Keep generation coordinator/persistence/review graph contracts; replace low-level hand-written tool loop with tested harness if compatible. Do not discard working revision binding or linked assessments.
   verification: Prompt-boundary regressions, tool/history/refinement fixture, configured real issue dry run, harness provider compatibility probe and frontend preflight.
+
+session_closeout:
+  source_checkpoint: 6188de8
+  verified:
+    native: 32 files,200 tests,0 failures in the final contiguous run.
+    frontend: npm run check and npm run build exited0; Svelte0errors/0warnings.
+    python: 19 experiment tests and9 offline runner tests passed; no actual runner deployment/admission claim.
+    database: 4 candidate/review/verification cases passed on disposable local PostgreSQL, including private storage, owner separation, caps, expiry and purge; container removed.
+    browser: Graph desktop/mobile/signin/unavailable-provider fixtures and refresh preservation/switching regression passed with mocked protected APIs. No real authenticated UAT claim.
+    model: Real Gemma synthetic autonomous repair passed; real independent linked critic probe passed. Actual target issue still fails on larger file context.
+  critical_remaining:
+  - BUG-agent-candidate-502 remains open; final actual-item dry run read18992bytes, then30536-byte prompt returnedprovider400 under8192-token model context.
+  - User says context window will be larger soon; future size/deployment not yet verified. Re-run the same read-only diagnostic before marking generation fixed.
+  - Pi integration is not implemented; SDK1.5.2 is installed only in /tmp/tripsit-pi-prototype; branchfeat/pi-implementation-harness in /tmp/tripsit-pi-harness has no source changes. Implement buffered Gemma provider adapter and frozen tools, then prove fixture before wiring.
+  - Full controlled execution, exact token mapping/staging, authenticated UAT, immutable packet links, publication and human decision workflows retain their original pending story criteria.
+  delivery:
+    merged: PR12 private snapshots; PR13 polling preservation/repository switching.
+    ready: PR7 standalone graph analyzer and visual component; do not merge without human approval.
+    draft: PR9 integrated workflow; keep draft until actual candidate context failure is resolved.
+  local_app: http://localhost:5173; active source /tmp/tripsit-e01s01; server exec93651. Environment stays in primary frontend/.env, never committed.
+  next_command: node --env-file=/home/u786288/projects/ohjunction/tripsit/frontend/.env --experimental-strip-types frontend/scripts/candidate-dry-run.ts 27eba683-198a-43ed-b27a-087a40addf1c
+  context_window_update: User explicitly confirms larger context is coming soon; record as planned, not already active.
