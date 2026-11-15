@@ -1,8 +1,25 @@
 import { IntakeError, readJson, whileActive } from './intake.ts';
+import { generationObservations } from './generation.ts';
 import type { GenerationPrompt, ModelGeneration } from './generation.ts';
 
 export type ModelGenerationConfiguration = { url?: string; token?: string; model?: string; fetcher?: typeof fetch };
 const settings = { temperature: 0, max_tokens: 2048 };
+
+function observations(value: unknown, rawOutput: Uint8Array) {
+  const unavailable = { status: 'unavailable' as const, tokens: [] };
+  try {
+    if (!value || typeof value !== 'object' || !('content' in value) || !Array.isArray(value.content)
+      || value.content.length === 0 || value.content.length > 8192) return unavailable;
+    const tokens = value.content.map(row => ({ token: row?.token, bytes: row?.bytes, logprob: row?.logprob }));
+    const result = generationObservations({ status: 'observed', tokens });
+    let offset = 0;
+    for (const token of result.tokens) {
+      if (!token.bytes) return unavailable;
+      for (const byte of token.bytes) if (offset >= rawOutput.length || rawOutput[offset++] !== byte) return unavailable;
+    }
+    return offset === rawOutput.length ? result : unavailable;
+  } catch { return unavailable; }
+}
 
 export function createModelGeneration(configuration: ModelGenerationConfiguration) {
   return {
@@ -33,11 +50,12 @@ export function createModelGeneration(configuration: ModelGenerationConfiguratio
           if (!Array.isArray(body.choices)) throw new Error();
           const choice = body.choices[0];
           if (!choice || typeof choice !== 'object' || Array.isArray(choice)) throw new Error();
+          if (choice.finish_reason !== 'stop') throw new Error();
           const content: unknown = choice.message?.content;
           if (typeof content !== 'string') throw new Error();
           const rawOutput = new TextEncoder().encode(content);
           if (rawOutput.byteLength > 1_048_576 || new TextDecoder('utf-8', { ignoreBOM: true }).decode(rawOutput) !== content) throw new Error();
-          return { rawOutput, model: model!, settings: { ...settings } };
+          return { rawOutput, model: model!, settings: { ...settings }, finishReason: 'stop', observations: observations(choice.logprobs, rawOutput) };
         }, active);
       } catch {
         if (active.aborted && active.reason?.name === 'TimeoutError') throw new IntakeError(504, 'Candidate model exceeded its response deadline.');

@@ -23,6 +23,17 @@ test('decodes exact replacement bytes and explicit additions without inventing m
   assert.deepEqual(result.rawOutput, original);
 });
 
+test('autonomous decoding preserves original framed bytes while binding server-owned blob identity', () => {
+  const raw = new TextEncoder().encode('  ```json\r\n{"files":[{"content":"\\u00e9\\r\\n","path":"src/main.ts","originalBlob":"forged"}]}\r\n```  ');
+  const result = decodeCandidateOutput(raw, expected, 'agent');
+  assert.deepEqual(result.rawOutput, raw);
+  assert.deepEqual(result.files, [{ path: 'src/main.ts', originalBlob: blob, content: new TextEncoder().encode('é\r\n') }]);
+  assert.equal(result.mapping.status, 'unavailable');
+  for (const text of ['prefix\n```json\n{"files":[]}\n```', '```json\n{"files":[]}\n```\n```', '{"files":[{"path":"unknown.txt","content":"x"}]}']) {
+    assert.throws(() => decodeCandidateOutput(new TextEncoder().encode(text), expected, 'agent'), /Invalid candidate output/);
+  }
+});
+
 test('rejects unsafe paths, duplicates and untrusted or stale originals', () => {
   for (const path of ['', '/etc/passwd', '../main.ts', 'a/../b', './a', 'a//b', 'a/', 'C:/file', 'a\\b', '.git/config', 'a/.GIT/config', 'a\u0000b', 'a\nb', 'a./b', 'a /b', 'a/'.repeat(513)]) {
     assert.throws(() => decode([file({ path })]), /Invalid candidate output/);

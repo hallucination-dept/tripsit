@@ -53,22 +53,37 @@ test('bounds cancellation even when fetch ignores signal', async () => {
   await assert.rejects(() => adapter.generate(prompt, controller.signal), { status: 502 });
 });
 
-test('uses only first choice text and ignores every probability or model metadata field', async () => {
-  const content = 'é😀\r\n{"files":[';
-  const metadata = [
-    {},
-    { model: 'different-upstream-alias', finish_reason: 'length', logprobs: { content: [{ bytes: [256], logprob: 9 }] } },
-    { model: null, finish_reason: { unexpected: true }, logprobs: 'malformed', token_probabilities: false },
-    { model: { unknown: true }, logprobs: { content: Array.from({ length: 8193 }, () => ({ token: 'x', logprob: null })) } }
+test('preserves exact provider token bytes and logprobs without deriving bytes from token text', async () => {
+  const content = 'é😀\r\n';
+  const tokens = [
+    { token: 'é', bytes: [195, 169], logprob: -0.1 },
+    { token: 'display differs', bytes: [240, 159, 152, 128], logprob: -1 },
+    { token: '\r\n', bytes: [13, 10], logprob: 0 }
   ];
-  for (const fields of metadata) {
-    const body = { ...fields, choices: [{ ...fields, message: { content } }, { message: { content: 'ignored second choice' } }] };
-    const adapter = createModelGeneration({ url: 'https://model.example', token: 'fixture', model: 'configured-gemma', fetcher: async () => response(body) });
+  const adapter = createModelGeneration({ url: 'https://model.example', token: 'fixture', model: 'gemma',
+    fetcher: async () => response(payload({ choices: [{ finish_reason: 'stop', message: { content }, logprobs: { content: tokens } }] })) });
+  const result = await adapter.generate(prompt, signal());
+  assert.deepEqual(result.observations, { status: 'observed', tokens });
+  assert.equal(result.finishReason, 'stop');
+});
+
+test('missing, malformed, oversized or mismatched token observations remain unavailable', async () => {
+  const valid = { token: 'x', bytes: [120], logprob: -1 };
+  for (const logprobs of [undefined, {}, { content: [] }, { content: [{ ...valid, bytes: null }] },
+    { content: [{ ...valid, bytes: [256] }] }, { content: [{ ...valid, bytes: [121] }] },
+    { content: [{ ...valid, logprob: 1 }] }, { content: Array.from({ length: 8193 }, () => valid) }]) {
+    const adapter = createModelGeneration({ url: 'https://model.example', token: 'fixture', model: 'gemma',
+      fetcher: async () => response(payload({ choices: [{ finish_reason: 'stop', message: { content: 'x' }, logprobs }] })) });
     const result = await adapter.generate(prompt, signal());
-    assert.deepEqual(result.rawOutput, new TextEncoder().encode(content));
-    assert.equal(result.model, 'configured-gemma');
-    assert.deepEqual(result.settings, { temperature: 0, max_tokens: 2048 });
-    assert.equal(result.observations, undefined);
+    assert.deepEqual(result.observations, { status: 'unavailable', tokens: [] });
+  }
+});
+
+test('truncated or unknown completion never produces a candidate', async () => {
+  for (const finish_reason of ['length', 'content_filter', null, undefined, { stop: true }]) {
+    const adapter = createModelGeneration({ url: 'https://model.example', token: 'fixture', model: 'gemma',
+      fetcher: async () => response(payload({ choices: [{ finish_reason, message: { content: '{"files":[]}' } }] })) });
+    await assert.rejects(() => adapter.generate(prompt, signal()), { status: 502 });
   }
 });
 
