@@ -29,6 +29,16 @@ const assessment = (reviews: unknown[] = []) => ({ identity: identity(), reviewe
     executions: [], evidenceReuse: [], humanInspection: { required: true, reasons: ['Inspect gaps.'] }, gaps: [] } });
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 
+test('retains mandatory inventory and rejects malformed inventory data', async () => {
+  const inventory = { configurationStatus:'available', runnerAvailable:false, checks:[{id:'auth-check',requirementIds:['R1']}], missingRequirements:['R2'], unresolvedRequirements:['R1'] };
+  const inspection = createCandidateInspection({ fetcher: async () => response({ ...assessment(), mandatoryInventory:inventory }) });
+  await inspection.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.deepEqual(inspection.state.assessment?.mandatoryInventory, inventory);
+  const invalid = createCandidateInspection({ fetcher: async () => response({ ...assessment(), mandatoryInventory:{...inventory,runnerAvailable:'yes'} }) });
+  await invalid.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.equal(invalid.state.assessment, null);
+});
+
 test('retains recorded priority reasons and rejects invalid score data', async () => {
   const plan = { mandatory: [{ id:'required', reasons:['trusted_mandatory_outside_optional_budget'], meanNegativeLogprob:null }],
     selected: [{ id:'chosen', reasons:['impact_unknown','signal_comparable'], meanNegativeLogprob:1.5 }],

@@ -2,13 +2,14 @@ import { createHash } from 'node:crypto';
 import type { Assessment } from './assessment.ts';
 import { IntakeError } from './intake.ts';
 import { buildPacket, type BoundArtifact, type PacketIdentity, type PacketReview } from './packet.ts';
+import type { mandatoryInventory } from './verification.ts';
 
 const compare = (left: string, right: string) => left < right ? -1 : left > right ? 1 : 0;
 const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
   ? Object.fromEntries(Object.keys(entry).sort(compare).map(key => [key, entry[key]])) : entry);
 const digest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 
-export function assessmentView(owner: string, assessment: Assessment, reviewerConfigured: boolean, verificationConfigured = false) {
+export function assessmentView(owner: string, assessment: Assessment, reviewerConfigured: boolean, verificationConfigured = false, inventory?: ReturnType<typeof mandatoryInventory>) {
   if (!owner || assessment.identity.ownerId !== owner || assessment.reviews.some(review => review.identity.ownerId !== owner)) {
     throw new IntakeError(404, 'Assessment is unavailable.');
   }
@@ -50,5 +51,5 @@ export function assessmentView(owner: string, assessment: Assessment, reviewerCo
     reviews: proposals, checks: definitions, executions, reuse: [], pr: { id: null, isNew: true }
   });
   const currentReviews = reviews.filter(review => Object.entries(identity).every(([key, value]) => review.identity[key as keyof PacketIdentity] === value));
-  return { identity, impact, packet, reviews: currentReviews, reviewerConfigured, verificationConfigured, dispatchPlan: latest?.result.dispatchPlan ?? null };
+  return { identity, impact, packet, reviews: currentReviews, reviewerConfigured, verificationConfigured, dispatchPlan: latest?.result.dispatchPlan ?? null, ...(inventory ? { mandatoryInventory: inventory } : {}) };
 }
