@@ -6,6 +6,7 @@
   let inspection = $state(''), uncheckedScope = $state(''), residualRisk = $state('');
   let decision = $state<'revise' | 'escalate'>('revise');
   let error = $state(''), success = $state(''), busy = $state(false);
+  let publicationUrl = $state('');
   let requestId = $state(crypto.randomUUID());
   const controller = new AbortController();
   onDestroy(() => controller.abort());
@@ -48,6 +49,16 @@
     } catch (cause) { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'The decision is unavailable.'; }
     finally { busy = false; }
   }
+  async function publish() {
+    if (!packet) return;
+    busy = true; error = ''; publicationUrl = '';
+    try {
+      const result = await post(`${path}/packet/${encodeURIComponent(packet.id)}/publish`, {});
+      if (result?.publication?.commit !== packet.packet.candidateCommit || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*$/.test(result?.publication?.url)) throw new Error('Publication did not match the frozen revision.');
+      publicationUrl = result.publication.url;
+    } catch (cause) { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'Publication is unavailable.'; }
+    finally { busy = false; }
+  }
 </script>
 
 <section class="human-decision" aria-label="Record human decision">
@@ -67,6 +78,8 @@
     {#if history.length}<details><summary>Recorded decisions ({history.length})</summary><ul>{#each history as entry}
       <li><strong>{entry.decision}</strong> — {entry.createdAt}<p>Inspection: {entry.inspection}</p><p>Unchecked: {entry.uncheckedScope}</p><p>Residual risk: {entry.residualRisk}</p></li>
     {/each}</ul></details>{/if}
+    <button type="button" onclick={publish} disabled={busy || !history.some(entry => entry.decision === 'accept')}>Publish implementation PR</button>
+    {#if publicationUrl}<p>Pull request: <a href={publicationUrl} target="_blank" rel="noreferrer">Open on GitHub</a>. Merge protection remains unverified.</p>{/if}
     <form onsubmit={submit}>
       <label>Decision <select bind:value={decision}><option value="revise">Request revision</option><option value="escalate">Escalate</option></select></label>
       <label>Completed inspection <textarea bind:value={inspection} required maxlength="4096"></textarea></label>

@@ -1,0 +1,122 @@
+import { createHash } from 'node:crypto';
+import { IntakeError, whileActive } from './intake.ts';
+import { stageCandidate } from './candidate-staging.ts';
+import { snapshotPolicy } from './snapshot-policy.ts';
+import { publicationRemote, writeStagedGitObjects } from './publication-git.ts';
+import type { WorkItem } from './records.ts';
+import type { StoredCandidate } from './generation.ts';
+import type { IssueSnapshot } from './intake.ts';
+import type { TreeEntry } from './candidate-staging.ts';
+
+type Database = { query(sql: string, values?: unknown[]): Promise<{rows: Record<string,unknown>[]}> };
+type Access = { repository: string; repositoryId: number; branch: string; token: string };
+type Dependencies = { database: Database; intake: {get(owner:string,id:string,signal:AbortSignal):Promise<WorkItem>};
+  generation: {get(owner:string,item:string,id:string,signal:AbortSignal):Promise<StoredCandidate>};
+  github: { publicationAccess(repository:string,id:number,signal:AbortSignal):Promise<Access>;
+    stagingTree(snapshot:IssueSnapshot,signal:AbortSignal):Promise<{baseSha:string;treeSha:string;entries:TreeEntry[]}> };
+  fetcher?: typeof fetch; policy?: typeof snapshotPolicy };
+const stale = () => new IntakeError(409,'Publication requires a current accepted decision and matching staged revision.');
+const canonical = (value:unknown) => JSON.stringify(value,(_key,entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
+  ? Object.fromEntries(Object.keys(entry).sort().map(key => [key,entry[key]])) : entry);
+const digest = (value:string) => createHash('sha256').update(value).digest('hex');
+const uuid = (value:string) => /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
+
+/** Trusted publication path; never merges, approves, or force-updates a ref. */
+export function createPublication({database,intake,generation,github,fetcher,policy: selectPolicy = snapshotPolicy}:Dependencies) {
+ async function query(sql:string,values:unknown[]) { try {return await database.query(sql,values);} catch {throw new IntakeError(503,'Publication storage is unavailable.');} }
+ return { async publish(owner:string,itemId:string,candidateId:string,packetId:string,signal:AbortSignal) {
+  if (!owner) throw new IntakeError(401,'Sign in before publishing.');
+  if (![itemId,candidateId,packetId].every(uuid)) throw stale();
+  const item = await whileActive(() => intake.get(owner,itemId,signal),signal);
+  if (!Number.isSafeInteger(item.snapshot.issueNumber) || item.snapshot.issueNumber < 1) throw stale();
+  async function admitted() {
+   const result = await query(`SELECT r.body,r.packet_digest,r.source_digest,r.snapshot_digest,r.commit_sha,p.payload,s.payload AS snapshot,
+     t.tree_sha,t.objects,t.base_sha,t.output_digest,d.id AS decision_id,d.inspection,d.unchecked_scope,d.residual_risk
+     FROM tripsit_revision_packets r JOIN tripsit_candidate_payloads p ON p.candidate_id=r.candidate_id
+     JOIN tripsit_candidates c ON c.id=p.candidate_id JOIN tripsit_work_items w ON w.id=p.work_item_id
+     JOIN tripsit_snapshots s ON s.work_item_id=w.id JOIN tripsit_candidate_stages t ON t.candidate_id=c.id
+     JOIN LATERAL (SELECT * FROM tripsit_human_decisions WHERE packet_id=r.id AND owner_id=$1 AND expires_at>now() ORDER BY created_at DESC,id DESC LIMIT 1) d ON d.decision='accept'
+     WHERE r.id=$4 AND c.id=$3 AND w.id=$2 AND r.owner_id=$1 AND c.owner_id=$1 AND w.owner_id=$1 AND t.owner_id=$1
+       AND r.expires_at>now() AND c.expires_at>now() AND w.expires_at>now() AND t.expires_at>now()
+       AND r.commit_sha=t.commit_sha AND t.base_sha=s.payload->>'baseSha' AND t.output_digest=c.output_digest`,[owner,itemId,candidateId,packetId]);
+   const row=result.rows[0];
+   if (!row || typeof row.body !== 'string' || Buffer.byteLength(row.body)>2097152 || typeof row.packet_digest !== 'string'
+     || digest(row.body)!==row.packet_digest || digest(canonical(row.payload))!==row.source_digest || digest(canonical(row.snapshot))!==row.snapshot_digest
+     || canonical(item.snapshot)!==canonical(row.snapshot) || ![row.inspection,row.unchecked_scope,row.residual_risk].every(value => typeof value==='string' && value.trim())) throw stale();
+   let packet; try { packet=JSON.parse(row.body); } catch { throw stale(); }
+   const policy=selectPolicy(item);
+   if (packet?.acceptanceReady!==true || packet.candidateCommit!==row.commit_sha || packet.identity?.ownerId!==owner
+     || packet.identity?.itemId!==itemId || packet.identity?.candidateId!==candidateId || packet.identity?.baseSha!==item.snapshot.baseSha
+     || packet.identity?.candidateDigest!==row.output_digest || packet.identity?.snapshotDigest!==policy.snapshotDigest || packet.identity?.policyVersion!==policy.policy.version
+     || !Array.isArray(packet.requirementCoverage) || !policy.policy.requirements.filter(r => r.mandatory).length
+     || policy.policy.requirements.filter(r => r.mandatory).some(requirement => {
+       const matching = packet.requirementCoverage.filter((row: any) => row?.id === requirement.id);
+       return matching.length !== 1 || matching[0].mandatory !== true || matching[0].applicability !== requirement.applicability
+         || (requirement.applicability === 'applicable' ? matching[0].status !== 'passed_exercised_checks'
+           : requirement.applicability === 'not_applicable' ? matching[0].status !== 'not_applicable' : true);
+     })) throw stale();
+   return row;
+  }
+  const initial=await admitted();
+  const stored=await whileActive(()=>generation.get(owner,itemId,candidateId,signal),signal);
+  const tree=await whileActive(()=>github.stagingTree(item.snapshot,signal),signal);
+  const stage=stageCandidate(tree.baseSha,tree.treeSha,tree.entries,stored.candidate,item.createdAt);
+  if (stage.commitSha!==initial.commit_sha || stage.rootSha!==initial.tree_sha || canonical(stage.objects)!==canonical(initial.objects)) throw stale();
+  const branch=`tripsit/${candidateId}`;
+  const access=await whileActive(()=>github.publicationAccess(item.snapshot.repository,item.snapshot.repositoryId,signal),signal);
+  if (access.repositoryId!==item.snapshot.repositoryId || access.repository.toLowerCase()!==item.snapshot.repository.toLowerCase()) throw stale();
+  const remote=publicationRemote(access.repository,access.token,fetcher);
+  const guard=async()=>{ const current=await admitted(); if (current.decision_id!==initial.decision_id || current.packet_digest!==initial.packet_digest || current.commit_sha!==initial.commit_sha) throw stale();
+    const currentAccess=await whileActive(()=>github.publicationAccess(item.snapshot.repository,item.snapshot.repositoryId,signal),signal);
+    if (currentAccess.repositoryId!==item.snapshot.repositoryId || currentAccess.repository.toLowerCase()!==access.repository.toLowerCase() || currentAccess.branch!==access.branch) throw stale();
+    if (await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale(); };
+  if (await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
+  const issue=await remote.issue(item.snapshot.issueNumber,signal);
+  if (!issue || Array.isArray(issue) || issue.id!==item.snapshot.issueId || Object.hasOwn(issue,'pull_request')) throw stale();
+  await guard();
+  const reserved=await query(`INSERT INTO tripsit_publication_operations(candidate_id,packet_id,owner_id,commit_sha,branch,status,expires_at)
+    VALUES($1,$2,$3,$4,$5,'pending',$6) ON CONFLICT(candidate_id) DO NOTHING RETURNING status`,[candidateId,packetId,owner,stage.commitSha,branch,item.expiresAt]);
+  const existing=reserved.rows.length ? {status:'pending'} : (await query('SELECT * FROM tripsit_publication_operations WHERE candidate_id=$1 AND owner_id=$2 AND packet_id=$3 AND commit_sha=$4 AND branch=$5 AND expires_at>now()',[candidateId,owner,packetId,stage.commitSha,branch])).rows[0];
+  if (!existing) throw stale();
+  const marker=`<!-- tripsit-candidate:${candidateId} packet:${initial.packet_digest} -->`;
+  async function findPull() {
+    const pulls=await remote.pullRequests(branch,access.branch,signal);
+    const matches=pulls.filter((value:any)=>value && value.state==='open' && value.base?.ref===access.branch && value.base?.repo?.id===item.snapshot.repositoryId
+      && value.head?.ref===branch && value.head?.sha===stage.commitSha && value.head?.repo?.id===item.snapshot.repositoryId
+      && typeof value.body==='string' && value.body.includes(marker) && Number.isSafeInteger(value.number) && value.number>0);
+    if (matches.length>1 || pulls.length!==matches.length) throw stale();
+    return matches[0] as {number:number}|undefined;
+  }
+  async function finish(pull:{number:number}) {
+    const url=`https://github.com/${access.repository}/pull/${pull.number}`;
+    await guard();
+    const result=await query(`UPDATE tripsit_publication_operations SET status='completed',pr_number=$6,pr_url=$7
+      WHERE candidate_id=$1 AND owner_id=$2 AND packet_id=$3 AND commit_sha=$4 AND branch=$5 AND expires_at>now() RETURNING status`,[candidateId,owner,packetId,stage.commitSha,branch,pull.number,url]);
+    if (!result.rows.length) throw stale();
+    return {number:pull.number,url,branch,commit:stage.commitSha,protection:'unverified' as const};
+  }
+  if (existing.status==='completed' || existing.status==='creating') {
+    const found=await findPull(); if (!found) throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.');
+    return finish(found);
+  }
+  if (existing.status!=='pending') throw stale();
+  await writeStagedGitObjects(stage.objects,remote.object,guard,signal);
+  const currentRef=await remote.ref(branch,signal);
+  if (currentRef===null) {
+    await guard();
+    if (await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
+    try { await remote.createRef(branch,stage.commitSha,signal); } catch { /* Reconcile a possibly completed ref creation. */ }
+  }
+  if (await remote.ref(branch,signal)!==stage.commitSha || await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
+  const already=await findPull(); if (already) return finish(already);
+  await guard();
+  const claim=await query(`UPDATE tripsit_publication_operations SET status='creating' WHERE candidate_id=$1 AND owner_id=$2 AND packet_id=$3 AND commit_sha=$4 AND branch=$5 AND status='pending' AND expires_at>now() RETURNING status`,[candidateId,owner,packetId,stage.commitSha,branch]);
+  if (!claim.rows.length) { const found=await findPull(); if (found) return finish(found); throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.'); }
+  await guard();
+  if (await remote.ref(branch,signal)!==stage.commitSha || await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
+  const required = selectPolicy(item).policy.requirements.filter(row=>row.mandatory).map(row=>`${row.id}: ${row.applicability === 'not_applicable' ? 'not applicable' : 'passed exercised checks'}`).join('\n');
+  try { await remote.createPull(branch,access.branch,`TripSit: issue #${item.snapshot.issueNumber}`,`${marker}\n\nCloses #${item.snapshot.issueNumber}\n\nRevision: ${stage.commitSha}\nPacket: ${initial.packet_digest}\n\nMandatory policy evidence:\n${required}\n\nEvidence and merge protection remain subject to human review.`,signal); } catch { /* A lost response is reconciled by reading GitHub. */ }
+  const found=await findPull(); if (!found) throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.');
+  return finish(found);
+ } };
+}

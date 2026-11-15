@@ -47,6 +47,26 @@ test('review visibility is current, reauthorized, and fails closed on invalid me
   await assert.rejects(() => fixture({ '/user': { id: 99 } }).github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), IntakeError);
 });
 
+test('publication issues a repository-scoped write token only for a linked user with push access', async () => {
+  for (const push of [true, false]) {
+    let minted = 0;
+    const fetcher: typeof fetch = async (input, init) => {
+      const path = new URL(String(input)).pathname;
+      if (path === '/user') return Response.json({id:42});
+      if (path === '/repos/team/repo') return Response.json({...repository,permissions:{push}});
+      if (path === '/repos/team/repo/installation') return Response.json({id:7,app_id:9,suspended_at:null});
+      if (path === '/app/installations/7/access_tokens') {
+        minted++; assert.deepEqual(JSON.parse(String(init?.body)), {repository_ids:[5],permissions:{contents:'write',pull_requests:'write',issues:'read'}});
+        return Response.json({token:'installation-token'});
+      }
+      return new Response('',{status:404});
+    };
+    const github=createGitHub({appId:'9',privateKey,accountId:'42',userToken:'user-token',fetcher});
+    if (push) { const result=await github.publicationAccess('team/repo',5,signal()); assert.equal(result.repositoryId,5); assert.equal(minted,1); }
+    else { await assert.rejects(github.publicationAccess('team/repo',5,signal()),{status:403}); assert.equal(minted,0); }
+  }
+});
+
 test('files and context reauthorize public identity and read only exact frozen tree/blob identities', async () => {
   const { github, calls } = fixture();
   assert.deepEqual(await github.files(snapshot, signal()), [{ path: entry.path, blobSha: sha }]);
