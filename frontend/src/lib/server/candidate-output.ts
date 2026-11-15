@@ -29,13 +29,16 @@ function validText(value: unknown): value is string {
 /** Offline validation only: callers must separately admit access, staging and execution. */
 export function decodeCandidateOutput(
   raw: Uint8Array,
-  expectedBlobs: ReadonlyMap<string, string | null>
+  expectedBlobs: ReadonlyMap<string, string | null>,
+  mode: 'direct' | 'agent' = 'direct'
 ): CandidateOutput {
   if (raw.byteLength === 0 || raw.byteLength > 1_048_576) invalid();
   const rawOutput = Uint8Array.from(raw);
   let parsed: unknown;
   try {
-    parsed = JSON.parse(utf8.decode(rawOutput));
+    const text = utf8.decode(rawOutput);
+    const frame = mode === 'agent' ? /^```(?:json)?[ \t]*\r?\n([\s\S]*?)\r?\n```$/u.exec(text.trim()) : null;
+    parsed = JSON.parse(frame ? frame[1] : mode === 'agent' ? text.trim() : text);
   } catch {
     invalid();
   }
@@ -44,8 +47,10 @@ export function decodeCandidateOutput(
   const paths: string[] = [];
   const files: CandidateFile[] = [];
   for (const replacement of parsed.files) {
-    if (!record(replacement, ['path', 'originalBlob', 'content'])) invalid();
-    const { path, originalBlob, content } = replacement;
+    if (mode === 'direct' ? !record(replacement, ['path', 'originalBlob', 'content'])
+      : !replacement || typeof replacement !== 'object' || Array.isArray(replacement)
+        || Object.keys(replacement).some(key => !['path', 'content', 'originalBlob'].includes(key))) invalid();
+    const { path, content } = replacement as Record<string, unknown>;
     if (!validText(path) || encoder.encode(path).byteLength > 1024
       || /[\\:*?"<>|\u0000-\u001f\u007f]/u.test(path)
       || path.split('/').some((part) => !part || part === '.' || part === '..'
@@ -55,6 +60,7 @@ export function decodeCandidateOutput(
     if (paths.some((existing) => existing === portablePath
       || existing.startsWith(portablePath + '/') || portablePath.startsWith(existing + '/'))) invalid();
     paths.push(portablePath);
+    const originalBlob = mode === 'agent' ? expectedBlobs.get(path) : (replacement as Record<string, unknown>).originalBlob;
     if (!expectedBlobs.has(path) || expectedBlobs.get(path) !== originalBlob
       || (originalBlob !== null && (typeof originalBlob !== 'string'
         || !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(originalBlob)))) invalid();
