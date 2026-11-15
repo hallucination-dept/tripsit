@@ -29,6 +29,19 @@ const assessment = (reviews: unknown[] = []) => ({ identity: identity(), reviewe
     executions: [], evidenceReuse: [], humanInspection: { required: true, reasons: ['Inspect gaps.'] }, gaps: [] } });
 const response = (value: unknown, status = 200) => new Response(JSON.stringify(value), { status });
 
+test('retains recorded priority reasons and rejects invalid score data', async () => {
+  const plan = { mandatory: [{ id:'required', reasons:['trusted_mandatory_outside_optional_budget'], meanNegativeLogprob:null }],
+    selected: [{ id:'chosen', reasons:['impact_unknown','signal_comparable'], meanNegativeLogprob:1.5 }],
+    omitted: [{ id:'later', reasons:['optional_check_limit'], meanNegativeLogprob:null }] };
+  const inspection = createCandidateInspection({ fetcher: async () => response({ ...assessment(), dispatchPlan:plan }) });
+  await inspection.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.deepEqual(inspection.state.assessment?.dispatchPlan?.selected[0].reasons, ['impact_unknown','signal_comparable']);
+  assert.equal(inspection.state.assessment?.dispatchPlan?.selected[0].meanNegativeLogprob, 1.5);
+  const invalid = createCandidateInspection({ fetcher: async () => response({ ...assessment(), dispatchPlan:{...plan,selected:[{...plan.selected[0],meanNegativeLogprob:-1}]} }) });
+  await invalid.select('owner', item, candidate, baseSha, candidateDigest);
+  assert.equal(invalid.state.assessment, null);
+});
+
 test('loads assessment without auto-review; explicit review refreshes stored conflicting claims', async () => {
   const methods: string[] = [];
   let reviews: unknown[] = [];
