@@ -15,7 +15,7 @@ export async function POST({ request, locals, params }) {
     const owner = locals.user!.id;
     return limit.run(owner, async () => {
       const runtime = await assessmentRuntime(request.headers, owner, signal);
-      return createRevisionPacket({ database, assessment: runtime.service, github: runtime.github, intake: runtime.intake, generation: runtime.generation }).freeze(owner, params.id, params.candidateId, signal);
+      return createRevisionPacket({ database, assessment: runtime.service, github: runtime.github, intake: runtime.intake, generation: runtime.generation, requiredManifest: runtime.requiredManifest }).freeze(owner, params.id, params.candidateId, signal);
     });
   }, 90_000);
 }

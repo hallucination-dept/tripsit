@@ -31,6 +31,7 @@ function fixture() {
 test('freezes an owner packet against the exact reconstructed commit without granting acceptance', async () => {
  const f = fixture(), value = await f.service.freeze('owner', itemId, candidateId, new AbortController().signal);
  assert.equal(value.packet.candidateCommit, staged.commitSha); assert.equal(value.packet.acceptanceReady, false);
+ assert.deepEqual(value.packet.requiredManifest, {status:'unavailable'});
  assert.equal(value.packetDigest, createHash('sha256').update(JSON.stringify(value.packet)).digest('hex'));
  assert.equal(f.inserts(), 1);
 });
@@ -49,4 +50,12 @@ test('freezes a private repository packet after authorization', async () => {
  f.deps.github.reviewerVisibility = async () => true;
  const value = await f.service.freeze('owner', itemId, candidateId, new AbortController().signal);
  assert.equal(value.packet.candidateCommit, staged.commitSha); assert.equal(f.inserts(), 1);
+});
+
+test('freezes the operator assertion in packet digest without enabling acceptance', async () => {
+ const f=fixture();
+ const requiredManifest=()=>({status:'operator_asserted' as const,version:'v1',manifestDigest:'e'.repeat(64),repositoryId:1,baseSha:base,policyVersion:policy.version,controls:[]});
+ const result=await createRevisionPacket({...f.deps,requiredManifest}).freeze('owner',itemId,candidateId,new AbortController().signal);
+ assert.deepEqual(result.packet.requiredManifest,requiredManifest()); assert.equal(result.packet.acceptanceReady,false);
+ assert.equal(result.packetDigest,createHash('sha256').update(JSON.stringify(result.packet)).digest('hex'));
 });
