@@ -498,7 +498,7 @@ evaluation_manifest_final_checkpoint:
 
 github_review_contract_workstream:
   owner: parallel-continuation-root
-  status: started
+  status: historical; excluded from current approved release scope
   authorization: User explicitly requested adding GitHub evidence summaries, interactive dashboard links, comment response/revision and review-decision synchronization to contract and implementation plan.
   files: [specs/epics/e04-accountability/github-review-interaction.md, specs/epics/e04-accountability/e04s01-review-packet.md, specs/epics/e04-accountability/e04s02-human-decision.md, specs/epics/e04-accountability/e04s01-tasks.yaml, specs/epics/e04-accountability/e04s02-tasks.yaml, specs/epics/e01-ticket-to-pr/e01s03-publish-pr.md, specs/epics/e01-ticket-to-pr/e01s03-tasks.yaml]
   scope: Documentation and planned failing tasks only; no code, active execution integration, deployment, GitHub messaging or acceptance changes.
@@ -515,7 +515,7 @@ issue_discovery_bug:
 
 github_review_contract_handoff:
   owner: parallel-continuation-root
-  status: planned_and_reviewed_pr_open
+  status: historical; excluded from current approved release scope
   pr: https://github.com/hallucination-dept/tripsit/pull/11
   branch: docs/github-review-contract
   checkpoint: 7081fbf
