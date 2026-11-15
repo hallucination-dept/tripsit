@@ -242,3 +242,43 @@ test('autonomous generation rechecks access and the frozen revision around each 
     assert.equal(f.calls.model, stage === 'listing' ? 0 : 1);
   }
 });
+
+test('autonomous generation validates listing and source budgets before further model cost', async () => {
+  for (const mode of ['unconfigured', 'invalid-listing', 'duplicate-listing', 'oversized-listing', 'wrong-blob', 'oversized-batch', 'source-total', 'file-total']) {
+    const f = agentFixture();
+    if (mode === 'unconfigured') delete (f.dependencies.github as { files?: unknown }).files;
+    if (mode === 'invalid-listing') f.dependencies.github.files = async () => [{ path: '../secret', blobSha: blob('source') }];
+    if (mode === 'duplicate-listing') f.dependencies.github.files = async () => [{ path: 'a.ts', blobSha: blob('source') }, { path: 'a.ts', blobSha: blob('source') }];
+    if (mode === 'oversized-listing') f.dependencies.github.files = async () => Array.from({ length: 4097 }, (_, index) => ({ path: `f${index}.ts`, blobSha: blob('source') }));
+    if (mode === 'wrong-blob') f.dependencies.github.context = async (_snapshot, paths) => paths.map(path => ({ path, originalBlob: blob('incorrect'), content: 'incorrect' }));
+    if (mode === 'oversized-batch') {
+      const content = 'x'.repeat(131073);
+      f.dependencies.github.files = async () => [{ path: 'a.ts', blobSha: blob(content) }];
+      f.dependencies.github.context = async () => [{ path: 'a.ts', originalBlob: blob(content), content }];
+    }
+    if (mode === 'source-total' || mode === 'file-total') {
+      const content = mode === 'source-total' ? 'x'.repeat(100000) : 'source';
+      const count = mode === 'source-total' ? 3 : 25;
+      const files = Array.from({ length: count }, (_, index) => ({ path: `f${index}.ts`, blobSha: blob(content) }));
+      f.dependencies.github.files = async () => files;
+      f.dependencies.github.context = async (_snapshot, paths) => paths.map(path => ({ path, originalBlob: blob(content), content }));
+      let turn = 0;
+      f.dependencies.model.generate = async () => { f.calls.model++; return { rawOutput: bytes(JSON.stringify({ read: mode === 'source-total' ? [files[turn++].path] : files.slice(turn * 8, ++turn * 8).map(file => file.path) })), model: 'gemma', settings: {} }; };
+    }
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+    if (['unconfigured', 'invalid-listing', 'duplicate-listing', 'oversized-listing'].includes(mode)) assert.equal(f.calls.model, 0);
+    if (mode === 'wrong-blob' || mode === 'oversized-batch') assert.equal(f.calls.model, 1);
+    if (mode === 'source-total') assert.equal(f.calls.model, 3);
+    if (mode === 'file-total') assert.equal(f.calls.model, 4);
+  }
+});
+
+test('autonomous final edits reject stale original identities and portable collisions with untouched files', async () => {
+  for (const file of [{ path: 'a.ts', originalBlob: 'c'.repeat(40), content: 'bad' }, { path: 'A.ts', originalBlob: null, content: 'collision' }, { path: 'caller.ts/child.ts', originalBlob: null, content: 'file-directory collision' }]) {
+    const f = agentFixture(); let turn = 0;
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify(turn++ === 0 ? { read: ['a.ts'] } : { files: [file] })), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+  }
+});
