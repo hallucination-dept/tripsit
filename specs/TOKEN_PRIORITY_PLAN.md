@@ -20,3 +20,12 @@ coverage is inferred from this association.
 
 This does not imply token probabilities prove correctness, symbol-level check
 coverage, runner admission, configured endpoint evidence or live acceptance.
+
+## User-visible explanation
+
+Expose an exact mapping status only for a persisted artifact whose response,
+model, settings and observations match the current assessment identity. Show
+the actual last-dispatched mandatory, selected and omitted checks with their
+recorded reasons. Explain that file mapping does not guarantee a comparable
+signal for each check, and that the packet summary is not a new dispatch plan.
+Verify: `cd frontend && node --experimental-strip-types tests/assessment-view.test.ts && node --experimental-strip-types tests/candidate-inspection.test.ts && node --experimental-strip-types tests/packet.test.ts && npm run check && npm run build`; `git diff --check`.
