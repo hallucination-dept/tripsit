@@ -52,3 +52,14 @@ test('advice highlights require an explicit known path or node identifier with t
   for (const advice of ['Inspect src/a.tsx instead.', 'Inspect other/src/a.ts.', 'candidate:abcdef0', '𐐀src/a.ts', 'src/a.ts𐐀', 'General suggestion, no source reference.']) assert(!mentionsNode(advice, input));
   assert(!mentionsNode('anything', { ...input, id: '', source: undefined }));
 });
+
+test('selecting an already visible node preserves node order and coordinates for keyboard focus', () => {
+  const input = graph();
+  const affected = [{ node: input.nodes[0], distance: 0 }, { node: input.nodes[1], distance: 1 }];
+  const options = { revision: 'candidate' as const, affectedOnly: false };
+  const initial = projectImpactGraph(input, affected, options);
+  const positions = (result: typeof initial) => result.nodes.map(point => ({ id: point.node.id, x: point.x, y: point.y }));
+  for (const point of initial.nodes) {
+    assert.deepEqual(positions(projectImpactGraph(input, affected, { ...options, selectedId: point.node.id })), positions(initial));
+  }
+});
