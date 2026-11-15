@@ -41,6 +41,8 @@ function contextPath(value: unknown): string {
 export type PullRequestFile = { path: string; mode: '100644' | '100755'; content: Buffer | null };
 export type PullRequestChange = { branch: string; title: string; body: string; message: string; files: PullRequestFile[] };
 export type PullRequest = { number: number; url: string; branch: string };
+// The outcome of approving or rejecting a TripSit pull request; `already` when it was decided on GitHub before.
+export type PullRequestDecision = { action: 'merged' | 'closed'; commit: string | null; already: boolean };
 export type Publisher =
   | { available: true; create: (change: PullRequestChange, signal: AbortSignal) => Promise<PullRequest>;
       comment: (pullRequest: number, body: string, signal: AbortSignal) => Promise<void> }
@@ -103,6 +105,25 @@ export function createGitHub(options: Options) {
 
   async function request(path: string, token: string, signal: AbortSignal, body?: unknown): Promise<ObjectValue> {
     return object((await requestJson(path, token, signal, body)).value);
+  }
+
+  // For pull request decisions: any method, and refusals come back with their status and message so the reviewer
+  // can see why GitHub did not merge (conflicts, required checks or reviews).
+  async function send(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, token: string, signal: AbortSignal, body?: unknown) {
+    signal.throwIfAborted();
+    const deadline = AbortSignal.any([signal, AbortSignal.timeout(15_000)]);
+    let response: Response;
+    try {
+      response = await (options.fetcher ?? fetch)(`https://api.github.com${path}`, {
+        method, redirect: 'error', signal: deadline,
+        headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2026-03-10', 'Content-Type': 'application/json' },
+        ...(body === undefined ? {} : { body: JSON.stringify(body) })
+      });
+    } catch {
+      throw new IntakeError(502, 'GitHub did not answer the pull request request.');
+    }
+    const data = response.status === 204 ? (await response.body?.cancel(), null) : await readJson(response, 1024 * 1024, deadline).catch(() => null);
+    return { status: response.status, data: data && typeof data === 'object' && !Array.isArray(data) ? data as ObjectValue : {} as ObjectValue };
   }
 
   async function verifyUser(signal: AbortSignal) {
@@ -350,6 +371,49 @@ export function createGitHub(options: Options) {
       return { repository: repo.repository, branch: repo.branch, sha,
         download: (downloadSignal: AbortSignal) => downloadTarball(options.fetcher ?? fetch, repo.repository, sha, repo.token, downloadSignal),
         publish: await publisher(repo, sha, signal) };
+    },
+    // Approve and merge, or close, a TripSit pull request as the signed-in user, who must be able to push. The
+    // approval and the merge are pinned to the head commit the reviewer saw, so a branch that moved is never merged
+    // unseen. The tripsit/ branch is deleted afterwards. See specs/PR_DECISION_PLAN.md.
+    decidePullRequest: async (repository: string, pullRequest: PullRequest, action: 'merge' | 'close', signal: AbortSignal): Promise<PullRequestDecision> => {
+      githubRepository(repository);
+      if (!Number.isSafeInteger(pullRequest.number) || pullRequest.number < 1 || !/^tripsit\/[a-z0-9-]{4,64}$/.test(pullRequest.branch)) {
+        throw new IntakeError(400, 'The pull request is invalid.');
+      }
+      const repo = await authorize(repository, signal);
+      if (!repo.userCanPush) throw new IntakeError(403, 'You need write access to this repository to merge or close its pull request.');
+      const token = options.userToken, base = `/repos/${repo.repository}`, number = pullRequest.number;
+      const pull = await send('GET', `${base}/pulls/${number}`, token, signal);
+      if (pull.status !== 200) throw new IntakeError(pull.status === 404 ? 404 : 502, 'GitHub could not find the pull request.');
+      const head = pull.data.head && typeof pull.data.head === 'object' ? pull.data.head as ObjectValue : {};
+      if (head.ref !== pullRequest.branch) throw new IntakeError(409, 'The pull request no longer comes from its TripSit branch.');
+      if (pull.data.merged === true) return { action: 'merged', commit: typeof pull.data.merge_commit_sha === 'string' ? pull.data.merge_commit_sha : null, already: true };
+      if (pull.data.state === 'closed') return { action: 'closed', commit: null, already: true };
+      const removeBranch = () => send('DELETE', `${base}/git/refs/heads/${pullRequest.branch}`, token, signal).catch(() => null);
+      if (action === 'close') {
+        const closed = await send('PATCH', `${base}/pulls/${number}`, token, signal, { state: 'closed' });
+        if (closed.status !== 200) throw new IntakeError([403, 404].includes(closed.status) ? 403 : 502, 'GitHub did not close the pull request.');
+        await removeBranch();
+        return { action: 'closed', commit: null, already: false };
+      }
+      const headSha = text(head.sha, 64);
+      // GitHub refuses approving your own pull request; the merge does not depend on the review.
+      await send('POST', `${base}/pulls/${number}/reviews`, token, signal,
+        { event: 'APPROVE', commit_id: headSha, body: 'Approved in TripSit after reviewing the change graph.' }).catch(() => null);
+      let refusal = '';
+      for (const method of ['squash', 'merge', 'rebase']) {
+        const merged = await send('PUT', `${base}/pulls/${number}/merge`, token, signal, { merge_method: method, sha: headSha });
+        if (merged.status === 200 && merged.data.merged === true) {
+          await removeBranch();
+          return { action: 'merged', commit: typeof merged.data.sha === 'string' ? merged.data.sha : null, already: false };
+        }
+        const message = typeof merged.data.message === 'string' ? merged.data.message.replace(/\s+/g, ' ').trim().slice(0, 300) : '';
+        // Only a merge method the repository disallows is worth another try; conflicts, checks and reviews are final.
+        if (merged.status === 405 && /not allowed on this repository/i.test(message)) { refusal = message; continue; }
+        if (merged.status === 409) throw new IntakeError(409, 'The pull request changed after you reviewed it. Reload the run before merging.');
+        throw new IntakeError([403, 404].includes(merged.status) ? 403 : 409, message ? `GitHub refused the merge: ${message}` : 'GitHub did not merge the pull request.');
+      }
+      throw new IntakeError(409, `GitHub refused the merge: ${refusal || 'no merge method is allowed on this repository.'}`);
     },
     reviewerVisibility: async (repository: string, repositoryId: number, signal: AbortSignal) =>
       (await authorize(repository, signal, repositoryId)).private,

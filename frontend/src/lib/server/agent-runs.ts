@@ -3,7 +3,7 @@ import { IntakeError } from './intake.ts';
 import type { ChangeGraph } from './change-graph.ts';
 import type { AgentFlag } from './flags.ts';
 import type { RunConfidence } from '../edit-confidence.ts';
-import type { PullRequest, RepositoryArchive } from './github.ts';
+import type { PullRequest, PullRequestDecision, RepositoryArchive } from './github.ts';
 
 export type RunStatus = 'preparing' | 'running' | 'analyzing' | 'publishing' | 'done' | 'failed' | 'cancelled';
 export type RunEvent = { at: string; kind: 'status' | 'assistant' | 'tool' | 'error'; text: string };
@@ -15,7 +15,18 @@ export type RunResult = {
   flags?: AgentFlag[];
   // Token confidence per changed node; runs saved before it existed have none.
   confidence?: RunConfidence;
+  // The owner's merge or rejection of the pull request, once made (see specs/PR_DECISION_PLAN.md).
+  decision?: RunDecision;
 };
+export type RunDecision = { action: 'merged' | 'closed'; at: string; commit: string | null };
+// Merges or closes a run's pull request on GitHub; created per request with the owner's GitHub access.
+export type DecisionPerformer = (run: { repository: string; pullRequest: PullRequest }) => Promise<PullRequestDecision>;
+
+export function parseDecisionInput(value: unknown): 'merge' | 'close' {
+  const action = value && typeof value === 'object' && !Array.isArray(value) && Object.keys(value).length === 1 ? (value as Record<string, unknown>).action : null;
+  if (action !== 'merge' && action !== 'close') throw new IntakeError(400, 'Choose to merge or close the pull request.');
+  return action;
+}
 export type RunPicture = { graph: ChangeGraph; flags: AgentFlag[] };
 export type RunSummary = {
   id: string; repository: string; branch: string; sha: string; instruction: string; status: RunStatus;
@@ -82,6 +93,7 @@ export function createAgentRuns(options: Options) {
   const retentionMs = options.retentionMs ?? 7 * 24 * 3_600_000, saveDelayMs = options.saveDelayMs ?? 1500;
   const active = new Map<string, Run>();
   const starts = new Map<string, number[]>();
+  const deciding = new Set<string>();
   const iso = (time: number) => new Date(time).toISOString();
 
   function summary(run: Run): RunSummary {
@@ -191,6 +203,38 @@ export function createAgentRuns(options: Options) {
       const live = new Map([...active.values()].filter(run => run.owner === owner).map(run => [run.id, summary(run)]));
       const stored = await options.store.list(owner);
       return stored.map(row => live.get(row.id) ?? (terminal(row.status) ? row : { ...row, status: 'failed' as const, error: interrupted }));
+    },
+    // The owner's approve-and-merge or reject-and-close of a finished run's pull request. A run decides once; the
+    // decision and a log line are saved with the run.
+    async decide(owner: string, id: string, perform: DecisionPerformer): Promise<RunDetail> {
+      const live = active.get(id);
+      if (live) {
+        if (live.owner !== owner) throw notFound();
+        throw new IntakeError(409, 'Wait for the run to finish before merging or closing its pull request.');
+      }
+      // Claimed before any await, so a second click cannot read the run before the first one saves its decision.
+      if (deciding.has(id)) throw new IntakeError(409, 'The pull request is already being merged or closed.');
+      deciding.add(id);
+      try {
+        const stored = await options.store.get(owner, id);
+        if (!stored) throw notFound();
+        const run = settle(stored);
+        if (run.status !== 'done' || !run.result?.pullRequest) throw new IntakeError(409, 'This run has no pull request to merge or close.');
+        if (run.result.decision) throw new IntakeError(409, `The pull request was already ${run.result.decision.action}.`);
+        const pullRequest = run.result.pullRequest;
+        const outcome = await perform({ repository: run.repository, pullRequest });
+        const at = iso(clock());
+        const done = outcome.action === 'merged'
+          ? `Merged pull request #${pullRequest.number}${outcome.commit ? ` as ${outcome.commit.slice(0, 7)}` : ''}`
+          : `Closed pull request #${pullRequest.number} without merging`;
+        const decided: RunDetail = { ...run,
+          result: { ...run.result, decision: { action: outcome.action, at, commit: outcome.commit } },
+          events: [...run.events, { at, kind: 'status', text: outcome.already ? `${done} (it was already ${outcome.action} on GitHub)` : done }] };
+        await options.store.save(owner, decided);
+        return decided;
+      } finally {
+        deciding.delete(id);
+      }
     },
     async cancel(owner: string, id: string): Promise<RunDetail> {
       const run = active.get(id);

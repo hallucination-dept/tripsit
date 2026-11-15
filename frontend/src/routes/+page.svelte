@@ -134,7 +134,7 @@
 	}
 
 	async function openRun(id: string) {
-		error = ''; opening = id;
+		error = ''; opening = id; confirming = null; decisionError = '';
 		try {
 			run = (await api(`/api/agent-runs/${id}`)).run;
 			replaceState(`?run=${encodeURIComponent(id)}`, {});
@@ -154,6 +154,28 @@
 			void loadRuns();
 		} catch (cause) { error = message(cause); }
 		finally { starting = false; }
+	}
+
+	// Approving merges the pull request as the signed-in user; rejecting closes it. Both are confirmed first.
+	let confirming = $state<'merge' | 'close' | null>(null);
+	let deciding = $state<'merge' | 'close' | null>(null);
+	let decisionError = $state('');
+	async function decide(action: 'merge' | 'close') {
+		if (!run || deciding) return;
+		const id = run.id;
+		deciding = action; decisionError = '';
+		try {
+			const response = await fetch(`/api/agent-runs/${id}/decision`, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ action }), signal: AbortSignal.timeout(90_000) });
+			const data = await response.json().catch(() => ({}));
+			if (!response.ok) throw new Error(typeof data?.message === 'string' ? data.message : 'GitHub did not complete the request.');
+			if (run?.id === id) { run = data.run; confirming = null; }
+			void loadRuns();
+		} catch (cause) {
+			if (run?.id === id) decisionError = message(cause);
+		} finally {
+			deciding = null;
+		}
 	}
 
 	async function cancelRun() {
@@ -336,12 +358,37 @@
 					</div>
 					<div class="run-actions">
 						{#if run.pullRequest}<a class="pull-request" href={run.pullRequest.url} target="_blank" rel="noopener noreferrer">Pull request #{run.pullRequest.number} ↗</a>{/if}
+						{#if run.result?.decision}<span class="decided decided-{run.result.decision.action}">{run.result.decision.action}</span>{/if}
 						<span class="status status-{run.status}">{#if !finished(run.status)}<Spinner size={12} /> {/if}{statusLabel[run.status]}</span>
 						{#if !finished(run.status)}<button class="button-quiet" onclick={cancelRun}>Cancel</button>{/if}
 					</div>
 				</div>
 				{#if run.error}<p class="error">{run.error}</p>{/if}
 				{#if run.result?.publishNote}<p class="note">{run.result.publishNote}</p>{/if}
+				{#if run.status === 'done' && run.pullRequest}
+					{@const decision = run.result?.decision}
+					{@const number = run.pullRequest.number}
+					<div class="panel decision" class:merged={decision?.action === 'merged'} class:closed={decision?.action === 'closed'} aria-live="polite">
+						{#if decision}
+							<p>{decision.action === 'merged' ? `Merged pull request #${number} into ${run.branch}${decision.commit ? ` as ${decision.commit.slice(0, 7)}` : ''}` : `Closed pull request #${number} without merging`} · {time(decision.at)}</p>
+						{:else if confirming}
+							<p>{confirming === 'merge' ? `Merge pull request #${number} into ${run.branch}? GitHub records your approval and the merge as you.` : `Close pull request #${number} without merging? Its branch is deleted.`}</p>
+							<div class="decision-buttons">
+								<button class={confirming === 'merge' ? 'button-primary' : 'reject'} disabled={deciding !== null} onclick={() => decide(confirming!)}>
+									{#if deciding}<Spinner /> {deciding === 'merge' ? 'Merging…' : 'Closing…'}{:else}{confirming === 'merge' ? 'Merge now' : 'Close it'}{/if}
+								</button>
+								<button class="button-quiet" disabled={deciding !== null} onclick={() => { confirming = null; decisionError = ''; }}>Back</button>
+							</div>
+						{:else}
+							<p>Review the change graph, the flags and the confidence below, then decide on pull request #{number}.</p>
+							<div class="decision-buttons">
+								<button class="button-primary" onclick={() => { confirming = 'merge'; decisionError = ''; }}>Approve &amp; merge</button>
+								<button class="reject" onclick={() => { confirming = 'close'; decisionError = ''; }}>Reject &amp; close</button>
+							</div>
+						{/if}
+						{#if decisionError}<p class="error" role="alert">{decisionError}</p>{/if}
+					</div>
+				{/if}
 
 				<details class="panel events" open={!finished(run.status)}>
 					<summary>Agent log ({run.events.length})</summary>
@@ -432,6 +479,18 @@
 	.run-section { margin-top: 30px; display: grid; gap: 14px; }
 	.run-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; }
 	.run-actions { display: flex; align-items: center; gap: 14px; white-space: nowrap; }
+	/* The pull request decision: approve and merge, or reject and close, each confirmed first. */
+	.decision { display: flex; align-items: center; justify-content: space-between; gap: 12px 20px; flex-wrap: wrap; padding: 12px 16px; }
+	.decision p { margin: 0; color: var(--text-muted); font: 400 12px/1.6 var(--font-mono); }
+	.decision-buttons { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+	.reject { border-color: var(--border-strong); color: var(--text); }
+	.reject:hover:not(:disabled) { border-color: var(--deleted); color: var(--deleted); }
+	.decision.merged { border-color: rgba(74, 222, 128, .45); }
+	.decision.merged p { color: var(--added); }
+	.decision .error { flex-basis: 100%; margin: 0; }
+	.decided { padding: 2px 6px; border: 1px solid currentColor; font: 600 10px/1.4 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+	.decided-merged { color: var(--added); background: var(--added-bg); }
+	.decided-closed { color: var(--text-subtle); }
 	.events { padding: 12px 16px; }
 	.events summary { cursor: pointer; color: var(--text-muted); font: 500 11px/1.5 var(--font-mono); }
 	.events summary:hover { color: var(--text); }

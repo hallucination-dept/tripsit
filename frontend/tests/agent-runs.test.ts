@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createAgentRuns, parseRunInput, RunFailure, type RunContext, type RunDetail, type RunExecutor, type RunResult, type RunStore } from '../src/lib/server/agent-runs.ts';
+import { createAgentRuns, parseDecisionInput, parseRunInput, RunFailure, type DecisionPerformer, type RunContext, type RunDetail, type RunExecutor, type RunResult, type RunStore } from '../src/lib/server/agent-runs.ts';
+import { IntakeError } from '../src/lib/server/intake.ts';
 import type { RepositoryArchive } from '../src/lib/server/github.ts';
 
 const archive: RepositoryArchive = { repository: 'team/app', branch: 'main', sha: 'a'.repeat(40), download: async () => new ReadableStream(),
@@ -168,4 +169,51 @@ test('after a successful run is saved, the finisher runs and its note joins the 
   fake.pending[1].reject(new Error('boom'));
   await settle();
   assert.equal(seen.length, 1, 'failed runs are not finished');
+});
+
+test('the owner merges or closes a finished run\'s pull request once, and parallel clicks are refused', async () => {
+  const fake = controllable(), memory = memoryStore();
+  const runs = createAgentRuns({ execute: fake.execute, store: memory.store, id: () => 'run-1', saveDelayMs: 1, clock: () => Date.parse('2026-11-15T10:00:00Z') });
+  await runs.start('owner', archive, 'Rename the helper');
+  const performed: string[] = [];
+  let release = () => {};
+  const merge: DecisionPerformer = async ({ repository, pullRequest }) => {
+    performed.push(`${repository}#${pullRequest.number}`);
+    await new Promise<void>(resolve => { release = resolve; });
+    return { action: 'merged', commit: 'f'.repeat(40), already: false };
+  };
+  await assert.rejects(runs.decide('owner', 'run-1', merge), /Wait for the run to finish/);
+  fake.pending[0].resolve(result);
+  await settle();
+  await assert.rejects(runs.decide('stranger', 'run-1', merge), /not found/);
+  const first = runs.decide('owner', 'run-1', merge);
+  await assert.rejects(runs.decide('owner', 'run-1', merge), /already being merged or closed/);
+  await settle(5);
+  release();
+  const decided = await first;
+  assert.deepEqual(performed, ['team/app#12'], 'GitHub is asked once');
+  assert.deepEqual(decided.result!.decision, { action: 'merged', at: '2026-11-15T10:00:00.000Z', commit: 'f'.repeat(40) });
+  assert.equal(decided.events.at(-1)!.text, 'Merged pull request #12 as fffffff');
+  const stored = (await runs.get('owner', 'run-1')).result!;
+  assert.equal(stored.decision!.action, 'merged', 'the decision is saved with the run');
+  await assert.rejects(runs.decide('owner', 'run-1', merge), /already merged/);
+});
+
+test('a refused decision leaves the run undecided, and runs without a pull request cannot be decided', async () => {
+  const fake = controllable(), memory = memoryStore();
+  let next = 0;
+  const runs = createAgentRuns({ execute: fake.execute, store: memory.store, id: () => `run-${++next}`, saveDelayMs: 1, perHour: 10 });
+  await runs.start('owner', archive, 'First');
+  fake.pending[0].resolve(result);
+  await settle();
+  await assert.rejects(runs.decide('owner', 'run-1', async () => { throw new IntakeError(409, 'GitHub refused the merge: checks are failing.'); }), /checks are failing/);
+  assert.equal((await runs.get('owner', 'run-1')).result!.decision, undefined);
+  const closed = await runs.decide('owner', 'run-1', async () => ({ action: 'closed', commit: null, already: true }));
+  assert.equal(closed.events.at(-1)!.text, 'Closed pull request #12 without merging (it was already closed on GitHub)');
+  await runs.start('owner', archive, 'Second');
+  fake.pending[1].resolve({ ...result, pullRequest: null });
+  await settle();
+  await assert.rejects(runs.decide('owner', 'run-2', async () => ({ action: 'merged', commit: null, already: false })), /no pull request/);
+  assert.deepEqual([parseDecisionInput({ action: 'merge' }), parseDecisionInput({ action: 'close' })], ['merge', 'close']);
+  for (const bad of [null, {}, { action: 'approve' }, { action: 'merge', extra: 1 }]) assert.throws(() => parseDecisionInput(bad), /merge or close/);
 });

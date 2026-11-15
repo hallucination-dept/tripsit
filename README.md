@@ -254,6 +254,11 @@ dependency graph of the change, and a pull request link. Before using it:
    `BETTER_AUTH_URL`; runs on a local server skip it. GitHub loads the picture without signing in,
    so its URL carries a key signed with `BETTER_AUTH_SECRET`: anyone with that link can see the
    file and symbol names in the graph, but no source code.
+   Once the run has finished, its owner can **Approve & merge** or **Reject & close** the pull
+   request from the run view. Both act as the signed-in user, who needs write access: approving
+   submits an approving review and merges exactly the reviewed head commit (squash, else merge
+   commit, else rebase, as the repository allows); rejecting closes it. The `tripsit/…` branch is
+   deleted afterwards. See `specs/PR_DECISION_PLAN.md`.
 3. The Modal app must run `modal_gemma.py` from this repository (tool calling, streaming,
    65,536-token context). A deploy from an older `main` reverts those settings.
 4. Edit confidence needs the Modal routes under `/runs/{run_id}` (deployed with `modal_gemma.py`,
