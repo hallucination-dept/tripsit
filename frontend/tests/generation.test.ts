@@ -308,3 +308,17 @@ test('agent read tools return cached and not-found feedback so the model can rec
   assert.equal(stored.candidate.files.length, 2);
   assert.equal(f.calls.store, 1);
 });
+
+test('autonomous listing sends paths without unused hash metadata while trusted reads keep original blobs', async () => {
+  const f = agentFixture();
+  const generate = f.dependencies.model.generate;
+  f.dependencies.model.generate = async prompt => {
+    const data = JSON.parse(prompt.data);
+    assert(data.repositoryFiles.length > 0);
+    for (const file of data.repositoryFiles) assert.deepEqual(Object.keys(file), ['path']);
+    for (const file of data.files) assert.equal(file.originalBlob, blob(f.originals.get(file.path)!));
+    return generate(prompt);
+  };
+  const stored = await f.service.create('owner', 'item', undefined, f.signal);
+  assert.equal(stored.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+});
