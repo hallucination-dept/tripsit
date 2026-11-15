@@ -193,3 +193,26 @@ Candidate code is not executed, committed or published by this increment. Exact
 output-to-code token mapping remains unavailable. Applying migration 002 to a
 configured production database requires explicit authorization; the runtime refuses
 generation before its storage tables exist.
+
+## Agent runs
+
+The **Agent runs** page (`/agent`) lets the pi coding agent, running Gemma 4 on Modal,
+change a repository that the GitHub App can reach. The page shows the agent log, a
+dependency graph of the change, and a pull request link. Before using it:
+
+1. Apply `frontend/migrations/003_agent_runs.sql` to the database. Runs are stored in
+   `tripsit_agent_runs` (metadata) and `tripsit_agent_run_payloads` (repository content).
+   Payloads expire after seven days; `node --experimental-strip-types scripts/work-items.ts purge`
+   removes expired payloads for the local test database.
+2. To let runs open pull requests, give the GitHub App **Contents: Read and write** and
+   **Pull requests: Read and write**, then accept the new permissions on each installation.
+   Without them, or when the signed-in user cannot push to the repository, runs still work
+   and say why no pull request was opened. Pull requests are opened from a `tripsit/…`
+   branch on top of the analyzed commit and are never merged automatically.
+3. The Modal app must run `modal_gemma.py` from this repository (tool calling, streaming,
+   65,536-token context). A deploy from an older `main` reverts those settings.
+
+The agent gets a shell in a temporary copy of the repository. Its environment carries no
+server secrets, but it can run repository code with the server's network and file access,
+so only run it on repositories you trust. The production image adds `git`, `bash` and
+`ripgrep` for this.

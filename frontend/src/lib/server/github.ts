@@ -38,6 +38,35 @@ function contextPath(value: unknown): string {
   return value;
 }
 
+export type PullRequestFile = { path: string; mode: '100644' | '100755'; content: Buffer | null };
+export type PullRequestChange = { branch: string; title: string; body: string; message: string; files: PullRequestFile[] };
+export type PullRequest = { number: number; url: string; branch: string };
+export type Publisher =
+  | { available: true; create: (change: PullRequestChange, signal: AbortSignal) => Promise<PullRequest> }
+  | { available: false; reason: string };
+export type RepositoryArchive = {
+  repository: string; branch: string; sha: string;
+  download: (signal: AbortSignal) => Promise<ReadableStream<Uint8Array>>;
+  publish: Publisher;
+};
+
+// GitHub answers the tarball request with a short-lived redirect to codeload; follow only that host.
+async function downloadTarball(fetcher: typeof fetch, repository: string, sha: string, token: string, signal: AbortSignal) {
+  const unavailable = () => new IntakeError(502, 'GitHub did not provide the repository archive.');
+  const redirect = await fetcher(`https://api.github.com/repos/${repository}/tarball/${sha}`, {
+    redirect: 'manual', signal,
+    headers: { Accept: 'application/vnd.github+json', Authorization: `Bearer ${token}`, 'X-GitHub-Api-Version': '2026-03-10' }
+  });
+  await redirect.body?.cancel();
+  let target: URL;
+  try { target = new URL(redirect.status === 302 ? redirect.headers.get('location') ?? '' : ''); }
+  catch { throw unavailable(); }
+  if (target.protocol !== 'https:' || target.hostname !== 'codeload.github.com') throw unavailable();
+  const archive = await fetcher(target, { redirect: 'error', signal });
+  if (!archive.ok || !archive.body) { await archive.body?.cancel(); throw unavailable(); }
+  return archive.body;
+}
+
 type TreeEntry = { path: string; sha: string; mode: string; size?: number };
 const regular = (entry: TreeEntry) => entry.mode === '100644' || entry.mode === '100755';
 
@@ -97,6 +126,7 @@ export function createGitHub(options: Options) {
     await verifyUser(signal);
     const repo = await request(`/repos/${repository}`, options.userToken, signal);
     const repositoryId = id(repo.id);
+    const permissions = repo.permissions && typeof repo.permissions === 'object' ? repo.permissions as ObjectValue : {};
     if (expectedId !== undefined && repositoryId !== expectedId) throw new IntakeError(403, 'Repository identity has changed.');
     const appJwt = jwt(options.appId, options.privateKey);
     const installation = await request(`/repos/${repository}/installation`, appJwt, signal);
@@ -108,7 +138,54 @@ export function createGitHub(options: Options) {
     if (id(installedRepo.id) !== repositoryId) throw new IntakeError(403, 'Repository authorization does not match.');
     const canonical = text(installedRepo.full_name, 201);
     if (canonical.toLowerCase() !== repository.toLowerCase() || typeof installedRepo.private !== 'boolean') throw new IntakeError(502, 'GitHub returned invalid repository metadata.');
-    return { repositoryId, repository: canonical, private: installedRepo.private, branch: text(installedRepo.default_branch, 255), token };
+    return { repositoryId, repository: canonical, private: installedRepo.private, branch: text(installedRepo.default_branch, 255), token,
+      installationId: id(installation.id), userCanPush: permissions.push === true };
+  }
+
+  type Authorized = Awaited<ReturnType<typeof authorize>>;
+
+  // Opening pull requests needs a separate write token. Installations without write access, or users who cannot
+  // push to the repository, still get agent runs; they just do not get a pull request.
+  async function publisher(repo: Authorized, sha: string, signal: AbortSignal): Promise<Publisher> {
+    if (!repo.userCanPush) return { available: false, reason: 'you do not have write access to this repository' };
+    let token: string;
+    try {
+      const access = await request(`/app/installations/${repo.installationId}/access_tokens`, jwt(options.appId, options.privateKey), signal,
+        { repository_ids: [repo.repositoryId], permissions: { contents: 'write', pull_requests: 'write' } });
+      token = text(access.token, 4096);
+    } catch {
+      return { available: false, reason: 'the TripSit GitHub App needs read and write access to Contents and Pull requests' };
+    }
+    return { available: true, create: (change, publishSignal) => openPullRequest(repo, sha, token, change, publishSignal) };
+  }
+
+  // Builds the commit on top of the real base commit with the Git Data API, then opens the pull request.
+  async function openPullRequest(repo: Authorized, sha: string, token: string, change: PullRequestChange, signal: AbortSignal): Promise<PullRequest> {
+    if (!/^tripsit\/[a-z0-9-]{4,64}$/.test(change.branch) || !change.files.length || change.files.length > 400 ||
+        !text(change.title, 256) || !text(change.message, 64 * 1024) || typeof change.body !== 'string' || change.body.length > 60_000) {
+      throw new IntakeError(400, 'The pull request input is invalid.');
+    }
+    const objectSha = (value: unknown) => {
+      const result = text(value, 64);
+      if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(result)) throw new IntakeError(502, 'GitHub returned an invalid object identity.');
+      return result;
+    };
+    const base = await request(`/repos/${repo.repository}/git/commits/${sha}`, token, signal);
+    const tree: { path: string; mode: string; type: 'blob'; sha: string | null }[] = [];
+    for (const file of change.files) {
+      contextPath(file.path);
+      if (file.mode !== '100644' && file.mode !== '100755') throw new IntakeError(400, 'Only regular files can be published.');
+      if (file.content === null) { tree.push({ path: file.path, mode: file.mode, type: 'blob', sha: null }); continue; }
+      const blob = await request(`/repos/${repo.repository}/git/blobs`, token, signal, { content: file.content.toString('base64'), encoding: 'base64' });
+      tree.push({ path: file.path, mode: file.mode, type: 'blob', sha: objectSha(blob.sha) });
+    }
+    const nextTree = await request(`/repos/${repo.repository}/git/trees`, token, signal, { base_tree: objectSha(object(base.tree).sha), tree });
+    const commit = await request(`/repos/${repo.repository}/git/commits`, token, signal, { message: change.message, tree: objectSha(nextTree.sha), parents: [sha] });
+    await request(`/repos/${repo.repository}/git/refs`, token, signal, { ref: `refs/heads/${change.branch}`, sha: objectSha(commit.sha) });
+    const pull = await request(`/repos/${repo.repository}/pulls`, token, signal, { title: change.title, head: change.branch, base: repo.branch, body: change.body });
+    const url = text(pull.html_url, 2048);
+    if (!url.startsWith('https://github.com/')) throw new IntakeError(502, 'GitHub returned an invalid pull request.');
+    return { number: id(pull.number), url, branch: change.branch };
   }
 
   async function frozenTree(snapshot: IssueSnapshot, signal: AbortSignal) {
@@ -236,6 +313,25 @@ export function createGitHub(options: Options) {
     },
     authorize: async (repository: string, repositoryId: number, signal: AbortSignal) => {
       await authorize(repository, signal, repositoryId);
+    },
+    issue: async (repository: string, number: number, signal: AbortSignal) => {
+      githubRepository(repository);
+      if (!Number.isSafeInteger(number) || number < 1) throw new IntakeError(400, 'Select a positive issue number.');
+      const repo = await authorize(repository, signal);
+      const issue = await request(`/repos/${repo.repository}/issues/${number}`, repo.token, signal);
+      if ('pull_request' in issue || id(issue.number) !== number) throw new IntakeError(400, 'Select a GitHub issue rather than a pull request.');
+      return { number, title: text(issue.title, 4096), body: issue.body === null ? '' : text(issue.body, 128 * 1024) };
+    },
+    // Pins the default branch's current commit; the installation token stays inside `download`.
+    archive: async (repository: string, signal: AbortSignal): Promise<RepositoryArchive> => {
+      githubRepository(repository);
+      const repo = await authorize(repository, signal);
+      const commit = await request(`/repos/${repo.repository}/commits/${encodeURIComponent(repo.branch)}`, repo.token, signal);
+      const sha = text(commit.sha, 64);
+      if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(sha)) throw new IntakeError(502, 'GitHub did not return a commit identity.');
+      return { repository: repo.repository, branch: repo.branch, sha,
+        download: (downloadSignal: AbortSignal) => downloadTarball(options.fetcher ?? fetch, repo.repository, sha, repo.token, downloadSignal),
+        publish: await publisher(repo, sha, signal) };
     },
     snapshot: async (repository: string, number: number, signal: AbortSignal): Promise<IssueSnapshot> => {
       const repo = await authorize(repository, signal);

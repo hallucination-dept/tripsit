@@ -16,6 +16,9 @@ ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=8080
 
+# Agent runs track changes with git and give the pi agent a bash shell.
+RUN apk add --no-cache git bash ripgrep
+
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force
 
