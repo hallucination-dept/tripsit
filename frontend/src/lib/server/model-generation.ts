@@ -16,7 +16,7 @@ export function createModelGeneration(configuration: ModelGenerationConfiguratio
           || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || !token || !model?.trim()) throw new Error();
         endpoint.pathname = endpoint.pathname.replace(/\/$/u, '') + '/v1/chat/completions';
       } catch { throw new IntakeError(503, 'Candidate model is not configured.'); }
-      const active = AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
+      const active = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
       try {
         return await whileActive(async () => {
           const response = await whileActive(() => (configuration.fetcher ?? fetch)(endpoint, {
@@ -39,7 +39,10 @@ export function createModelGeneration(configuration: ModelGenerationConfiguratio
           if (rawOutput.byteLength > 1_048_576 || new TextDecoder('utf-8', { ignoreBOM: true }).decode(rawOutput) !== content) throw new Error();
           return { rawOutput, model: model!, settings: { ...settings } };
         }, active);
-      } catch { throw new IntakeError(502, 'Candidate model is unavailable or returned invalid output.'); }
+      } catch {
+        if (active.aborted && active.reason?.name === 'TimeoutError') throw new IntakeError(504, 'Candidate model exceeded its response deadline.');
+        throw new IntakeError(502, 'Candidate model is unavailable or returned invalid output.');
+      }
     }
   };
 }
