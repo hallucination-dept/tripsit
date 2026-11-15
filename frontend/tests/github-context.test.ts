@@ -158,3 +158,16 @@ test('authorized private snapshots read only their frozen blobs using the same r
  assert.equal(calls.filter(call => call.path === '/user').length, 2);
  assert(calls.filter(call => call.path.includes('/git/')).every(call => call.token === 'Bearer installation-token'));
 });
+
+test('staging reads a reauthorized base commit and requires its exact tree identity', async () => {
+  const commitPath = `/repos/team/repo/git/commits/${snapshot.baseSha}`;
+  const response = { sha: snapshot.baseSha, tree: { sha: tree.sha } };
+  const { github, calls } = fixture({ [commitPath]: response });
+  const result = await github.stagingTree(snapshot, signal());
+  assert.equal(result.baseSha, snapshot.baseSha); assert.equal(result.treeSha, tree.sha);
+  assert.deepEqual(result.entries.map(row => row.mode), ['040000', '100644']);
+  assert(calls.some(call => call.path === commitPath && call.token === 'Bearer installation-token'));
+  for (const altered of [{ ...response, sha: 'f'.repeat(40) }, { ...response, tree: { sha: 'f'.repeat(40) } }])
+    await assert.rejects(() => fixture({ [commitPath]: altered }).github.stagingTree(snapshot, signal()), IntakeError);
+  await assert.rejects(() => fixture({ '/repos/team/repo': { ...repository, private: true }, [commitPath]: response }).github.stagingTree(snapshot, signal()), IntakeError);
+});

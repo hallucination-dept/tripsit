@@ -147,10 +147,19 @@ export function createGitHub(options: Options) {
         if (!parent || parent.mode !== '040000') throw new IntakeError(502, 'GitHub returned conflicting tree paths.');
       }
     }
-    return { repo, entries };
+    return { repo, entries, treeSha: result.sha };
   }
 
   return {
+    stagingTree: async (snapshot: IssueSnapshot, signal: AbortSignal) => {
+      const { repo, entries, treeSha } = await frozenTree(snapshot, signal);
+      if (snapshot.private !== false || repo.private !== false) throw new IntakeError(403, 'Private candidate staging is unavailable.');
+      const commit = await request(`/repos/${repo.repository}/git/commits/${snapshot.baseSha}`, repo.token, signal);
+      const tree = object(commit.tree);
+      if (commit.sha !== snapshot.baseSha || typeof treeSha !== 'string' || !/^[a-f0-9]{40}$/.test(treeSha) || tree.sha !== treeSha)
+        throw new IntakeError(502, 'GitHub returned an inconsistent base commit tree.');
+      return { baseSha: snapshot.baseSha, treeSha, entries: [...entries.values()] };
+    },
     files: async (snapshot: IssueSnapshot, signal: AbortSignal): Promise<{ path: string; blobSha: string }[]> => {
       const { entries } = await frozenTree(snapshot, signal);
       return [...entries.values()].filter(regular).map(entry => ({ path: entry.path, blobSha: entry.sha }));
