@@ -1,9 +1,10 @@
 import type { ReviewIdentity, StoredReview } from './server/review-records.ts';
 import type { buildImpact } from './server/impact-extractor.ts';
 import type { buildPacket } from './server/packet.ts';
+import type { mandatoryInventory } from './server/verification.ts';
 
 export type AssessmentView = { identity: ReviewIdentity; impact: ReturnType<typeof buildImpact>;
-  packet: ReturnType<typeof buildPacket>; reviews: StoredReview[]; reviewerConfigured: boolean; verificationConfigured?: boolean; dispatchPlan?: ReturnType<typeof buildPacket>['checkPlan'] | null };
+  packet: ReturnType<typeof buildPacket>; reviews: StoredReview[]; reviewerConfigured: boolean; verificationConfigured?: boolean; dispatchPlan?: ReturnType<typeof buildPacket>['checkPlan'] | null; mandatoryInventory?: ReturnType<typeof mandatoryInventory> };
 export type CandidateInspectionState = {
   owner: string; itemId: string; candidateId: string; baseSha: string; candidateDigest: string;
   loading: boolean; reviewing: boolean; verifying: boolean; assessment: AssessmentView | null; error: string; reviewError: string;
@@ -56,7 +57,13 @@ function assessment(value: unknown, selected: Selection): value is AssessmentVie
     || !rows(extracted.impact.affected, 2000, row => object(row.node) && text(row.node.id, 128))
     || !rows(extracted.impact.edges, 8000) || !rows(extracted.impact.gaps, 8192, gap => text(gap.kind, 128) && text(gap.reference))) return false;
   if (value.verificationConfigured !== undefined && typeof value.verificationConfigured !== 'boolean') return false;
-  if (value.dispatchPlan !== undefined && value.dispatchPlan !== null && (!object(value.dispatchPlan) || !['mandatory', 'selected', 'omitted'].every(key => rows((value.dispatchPlan as Record<string, unknown>)[key], 256, row => text(row.id, 128) && strings(row.reasons))))) return false;
+  if (value.mandatoryInventory !== undefined && (!object(value.mandatoryInventory)
+    || !['available', 'unavailable'].includes(String(value.mandatoryInventory.configurationStatus))
+    || typeof value.mandatoryInventory.runnerAvailable !== 'boolean'
+    || !rows(value.mandatoryInventory.checks, 16, row => text(row.id, 128) && strings(row.requirementIds, 100))
+    || !strings(value.mandatoryInventory.missingRequirements, 128) || !strings(value.mandatoryInventory.unresolvedRequirements, 128))) return false;
+  if (value.dispatchPlan !== undefined && value.dispatchPlan !== null && (!object(value.dispatchPlan) || !['mandatory', 'selected', 'omitted'].every(key => rows((value.dispatchPlan as Record<string, unknown>)[key], 256, row => text(row.id, 128) && strings(row.reasons)
+    && (row.meanNegativeLogprob === undefined || row.meanNegativeLogprob === null || typeof row.meanNegativeLogprob === 'number' && Number.isFinite(row.meanNegativeLogprob) && row.meanNegativeLogprob >= 0))))) return false;
   return packet.acceptanceReady === false && packet.candidateCommit === null && digest(packet.packetDigest)
     && rows(packet.requirementCoverage, 128, row => text(row.id, 128) && text(row.criterion) && text(row.status, 128) && strings(row.checkIds, 256) && strings(row.executionIds, 1024)
       && object(row.source) && ['name', 'version', 'url'].every(key => text((row.source as Record<string, unknown>)[key])))

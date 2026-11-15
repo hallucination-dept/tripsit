@@ -36,6 +36,34 @@ test('view binds actual policy/model/token identity and omits raw files with hon
   assert(!Object.hasOwn(result, 'files'));
 });
 
+test('configured mandatory inventory never fabricates executions or requirement success', () => {
+  const input = fixture();
+  const id = input.policy.requirements.find(row => row.mandatory)!.id;
+  const inventory = {configurationStatus:'available' as const,runnerAvailable:false,checks:[{id:'auth-check',requirementIds:[id]}],missingRequirements:[],unresolvedRequirements:[id]};
+  const view = assessmentView('owner',input,false,false,inventory);
+  assert.deepEqual(view.mandatoryInventory,inventory);
+  assert.equal(view.packet.executions.length,0);
+  assert.equal(view.packet.verification.status,'unavailable');
+  assert.equal(view.packet.requirementCoverage.find(row => row.id === id)?.status,'unavailable');
+  assert(view.packet.gaps.some(gap => gap.kind === 'missing_check' && gap.reference === id));
+});
+
+test('exact token mapping is reported only for matching current model, settings, revision and observations', () => {
+  const input = fixture();
+  const observations = {status:'observed' as const,tokens:[{token:'private fixture text',bytes:[65],logprob:-1}]};
+  input.generation.observedTokens = 1;
+  input.generation.tokenSignal = { observations, mapping:{status:'exact',outputDigest:input.identity.candidateDigest,model:input.generation.model,
+    settingsDigest:input.generation.settingsDigest,files:[],mode:'direct',observationsDigest:createHash('sha256').update(JSON.stringify(observations)).digest('hex')} };
+  const view = assessmentView('owner',input,false);
+  assert.equal(view.packet.tokenSignal.mapping,'exact');
+  assert.match(view.packet.tokenSignal.reason,/Individual checks may still lack comparable coverage/);
+  assert(!JSON.stringify(view).includes('private fixture text'));
+  for(const key of ['outputDigest','model','settingsDigest','observationsDigest'] as const) {
+    const changed = structuredClone(input); changed.generation.tokenSignal!.mapping[key] = 'invalid';
+    assert.equal(assessmentView('owner',changed,false).packet.tokenSignal.mapping,'unavailable');
+  }
+});
+
 test('completed review claims retain original identity/digest, counterexamples and conflicts without invented executions', () => {
   const input = fixture();
   input.reviews = ['supports', 'contradicts'].map((stance, index) => ({ id: `${index + 3}3333333-3333-4333-8333-333333333333`, identity: { ...input.identity }, createdAt: '2026-01-01T00:00:00Z', digest: digest(String(index)), result: {
