@@ -27,8 +27,6 @@ export function assertAcceptanceEvidence(packet: any, row: Record<string, unknow
     const controls = manifest.controls.filter(control => control.applicability === 'applicable');
     const required = new Set(controls.flatMap(control => control.checks.map(check => check.id)));
     if (!controls.length || !required.size) throw stale();
-    if (current.assessment.verifications?.some(record => canonical(record.identity) === canonical(packet.identity)
-      && record.result.executions.some(execution => required.has(execution.checkId) && execution.result === 'failed'))) throw stale();
     const latest = current.assessment.verifications?.at(-1);
     const result = latest?.result as unknown as { exactRevision?: {commitSha?:string;treeSha?:string;commitObject?:string}; expectedCases?: Record<string,number>; checks?: Array<Record<string,unknown>>; executions?: Array<Record<string,unknown>>; admission?: {status?:string;environmentDigest?:string} } | undefined;
     const objects = Array.isArray(row.objects) ? row.objects : [];
@@ -51,6 +49,13 @@ export function assertAcceptanceEvidence(packet: any, row: Record<string, unknow
         || definition.definitionDigest !== verificationDigest(withoutCases) || definition.oracleDigest !== verificationDigest(cases)
         || definition.environmentDigest !== result.admission.environmentDigest
         || ['definitionDigest','oracleDigest','environmentDigest','dependencyDigest'].some(key => execution[key] !== definition[key])) throw stale();
+      for (const prior of current.assessment.verifications ?? []) {
+        const previous = prior.result as unknown as { exactRevision?: unknown; executions: Array<Record<string,unknown>> };
+        for (const failure of previous.executions.filter(entry => entry.checkId === id && entry.result === 'failed')) {
+          if (canonical(prior.identity) !== canonical(packet.identity) || canonical(previous.exactRevision) !== canonical(result.exactRevision)
+            || ['definitionDigest','oracleDigest','environmentDigest','dependencyDigest'].some(key => failure[key] !== definition[key])) throw stale();
+        }
+      }
     }
 }
 

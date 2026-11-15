@@ -38,7 +38,7 @@ test('acceptance requires the current operator manifest and exact passing staged
  const commit={type:'commit',sha:row.commit_sha,content:'Y29tbWl0'};
  const definition={id:check.id,definitionDigest:verificationDigest(withoutCases),oracleDigest:verificationDigest(cases),environmentDigest:'d'.repeat(64),dependencyDigest:'e'.repeat(64)};
  const evidence={exactRevision:{commitSha:row.commit_sha,treeSha:'f'.repeat(40),commitObject:commit.content},expectedCases:{required:1},admission:{status:'passed',environmentDigest:definition.environmentDigest},checks:[definition],executions:[{...definition,checkId:check.id,collector:'trusted_runner',status:'completed',result:'passed',exitCode:0,executedTests:1}]};
- for(const mode of ['valid','legacy','wrong_commit','partial','failed','changed_manifest','wrong_owner','no_inspection']) {
+ for(const mode of ['valid','failure_resolved','failure_unresolved','legacy','wrong_commit','partial','failed','changed_manifest','wrong_owner','no_inspection']) {
   const packet={identity,candidateCommit:row.commit_sha,acceptanceReady:false,requiredManifest:manifest}; const packetBody=JSON.stringify(packet);
   const selected={...row,body:packetBody,packet_digest:digest(packetBody),tree_sha:'f'.repeat(40),objects:[commit]};
   const altered=structuredClone(evidence);
@@ -49,9 +49,12 @@ test('acceptance requires the current operator manifest and exact passing staged
   const currentManifest=mode==='changed_manifest'?{...manifest,manifestDigest:'f'.repeat(64)}:manifest;
   const database={async query(sql:string,values?:unknown[]){return sql.startsWith('SELECT')?{rows:[selected]}:{rows:[{id:values![9],created_at:values![10]}]};}};
   const intake={async get(owner:string){if(owner!=='owner') throw Error('denied'); return item;}};
-  const acceptance=async()=>({assessment:{identity,verifications:[{identity,result:altered}]} as never,manifest:currentManifest,checks:[check]});
+  const previous=structuredClone(evidence); previous.executions[0].result='failed'; previous.executions[0].exitCode=1;
+  if(mode==='failure_unresolved') previous.executions[0].oracleDigest='0'.repeat(64);
+  const verifications=mode.startsWith('failure_')?[{identity,result:previous},{identity,result:altered}]:[{identity,result:altered}];
+  const acceptance=async()=>({assessment:{identity,verifications} as never,manifest:currentManifest,checks:[check]});
   const service=createHumanDecision({database,intake,acceptance});
   const action=()=>service.record(mode==='wrong_owner'?'other':'owner',itemId,candidateId,packetId,{...input,decision:'accept',deepInspection:mode!=='no_inspection'},new AbortController().signal);
-  if(mode==='valid') assert.equal((await action()).decision,'accept'); else await assert.rejects(action);
+  if(mode==='valid' || mode==='failure_resolved') assert.equal((await action()).decision,'accept'); else await assert.rejects(action);
  }
 });
