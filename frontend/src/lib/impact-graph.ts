@@ -6,16 +6,17 @@ const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 export function projectImpactGraph(graph: ImpactGraph, affected: Array<{ node: ImpactNode; distance: number }>, filter: GraphFilter = {}) {
   const distances = new Map(affected.map(row => [row.node.id, row.distance]));
   for (const id of graph.changed) distances.set(id, 0);
-  const neighbors = new Set(graph.edges.filter(edge => edge.from === filter.selectedId || edge.to === filter.selectedId).flatMap(edge => [edge.from, edge.to]));
-  const priority = (id: string) => id === filter.selectedId ? 0 : neighbors.has(id) ? 1 : 2;
   const lane = (id: string) => distances.get(id) === 0 ? 0 : distances.get(id) === 1 ? 1 : distances.has(id) ? 2 : 3;
   const query = (filter.query ?? '').trim().toLowerCase();
   const matching = graph.nodes.filter(node => (!filter.revision || filter.revision === 'all' || node.source?.revision === filter.revision)
     && (!filter.affectedOnly || distances.has(node.id))
     && (!query || `${node.source?.path ?? ''} ${node.kind} ${node.source?.start ?? ''} ${node.id}`.toLowerCase().includes(query)))
-    .sort((a, b) => priority(a.id) - priority(b.id) || lane(a.id) - lane(b.id) || (distances.get(a.id) ?? Infinity) - (distances.get(b.id) ?? Infinity)
+    .sort((a, b) => lane(a.id) - lane(b.id) || (distances.get(a.id) ?? Infinity) - (distances.get(b.id) ?? Infinity)
       || compare(a.source?.path ?? a.id, b.source?.path ?? b.id) || (a.source?.start ?? 0) - (b.source?.start ?? 0) || compare(a.id, b.id));
   const visible = matching.slice(0, 60);
+  const selectedIndex = matching.findIndex(node => node.id === filter.selectedId);
+  // Keep native buttons in place on selection; only replace the last slot when revealing an omitted node.
+  if (selectedIndex >= 60) visible[59] = matching[selectedIndex];
   const occupied = [...new Set(visible.map(node => lane(node.id)))].sort((a, b) => a - b);
   const rows = new Map<number, number>();
   const nodes = visible.map(node => {
