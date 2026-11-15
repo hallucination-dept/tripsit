@@ -40,7 +40,7 @@ def evaluate(manifest, export, split='held-out'):
     need(isinstance(export, dict) and export.get('schemaVersion') == 1 and export.get('manifestDigest') == manifest['manifestDigest']
          and export.get('splitDigest') == manifest['splitDigests'][split] and name(export.get('trustedExporter')) and isinstance(export.get('records'), list)
          and len(export['records']) <= len(selected) * len(METHODS))
-    fixture_by_id = {f['id']: f for f in selected}; records = {}; execution_ids = set(); revisions = {}
+    fixture_by_id = {f['id']: f for f in selected}; records = {}; execution_ids = set(); revisions = {}; check_bindings = {}
     for record in export['records']:
         need(isinstance(record, dict)); fid, method = record.get('fixtureId'), record.get('method')
         need(fid in fixture_by_id and method in METHODS and (fid, method) not in records)
@@ -68,6 +68,10 @@ def evaluate(manifest, export, split='held-out'):
             need(execution['status'] == 'completed' or execution['result'] == 'inconclusive')
             need(execution['executedTests'] <= case_counts[execution['checkId']])
             need(execution['result'] != 'passed' or execution['status'] == 'completed' and execution['executedTests'] == case_counts[execution['checkId']] and execution['exitCode'] == 0)
+            binding_key = (fid, execution['checkId'])
+            binding = tuple(execution[key] for key in ('definitionDigest','oracleDigest','environmentDigest','dependencyDigest')) + (case_counts[execution['checkId']],)
+            need(binding_key not in check_bindings or check_bindings[binding_key] == binding)
+            check_bindings[binding_key] = binding
             if execution['checkId'] in optional:
                 need(execution['durationMs'] <= BUDGET['perCheckMs']); optional_time += execution['durationMs']
             actual.append(execution['checkId']); execution_ids.add(execution['id'])

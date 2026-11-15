@@ -46,7 +46,7 @@ class EvaluationTest(unittest.TestCase):
         self.assertFalse(evaluate(self.manifest, unavailable)['complete'])
 
     def test_bad_bindings_duplicate_ids_and_budget_are_rejected(self):
-        for change in ('manifest','source','revision','duplicate','budget','order','collector'):
+        for change in ('manifest','source','revision','duplicate','budget','order','collector','mandatory_definition','mandatory_oracle','mandatory_environment','mandatory_dependencies','mandatory_count','optional_definition'):
             manifest, export = copy.deepcopy(self.manifest), copy.deepcopy(self.export)
             if change == 'manifest': manifest['fixtures'][0]['label'] = 'defective'
             if change == 'source': export['records'][0]['sourceDigest'] = 'f'*64
@@ -54,6 +54,13 @@ class EvaluationTest(unittest.TestCase):
             if change == 'duplicate': export['records'][1]['executions'][0]['id'] = export['records'][0]['executions'][0]['id']
             if change == 'budget': export['records'][0]['executions'][1]['durationMs'] = 60001
             if change == 'order': export['records'][0]['executions'].reverse()
+            if change.startswith('mandatory_') and change != 'mandatory_count':
+                field = {'mandatory_definition':'definitionDigest','mandatory_oracle':'oracleDigest','mandatory_environment':'environmentDigest','mandatory_dependencies':'dependencyDigest'}[change]
+                export['records'][1]['executions'][0][field] = 'f'*64
+            if change == 'mandatory_count':
+                export['records'][1]['expectedCases']['required'] = 2
+                export['records'][1]['executions'][0]['executedTests'] = 2
+            if change == 'optional_definition': export['records'][1]['executions'][1]['definitionDigest'] = 'f'*64
             if change == 'collector': export['records'][0]['executions'][0]['collector'] = 'model'
             with self.subTest(change=change), self.assertRaises(ValueError): evaluate(manifest,export)
 
