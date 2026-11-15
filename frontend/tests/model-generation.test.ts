@@ -71,3 +71,12 @@ test('uses only first choice text and ignores every probability or model metadat
     assert.equal(result.observations, undefined);
   }
 });
+
+test('reports inference deadline expiry as a sanitized timeout instead of invalid output', async () => {
+  const controller = new AbortController();
+  const adapter = createModelGeneration({ url: 'https://model.example', token: 'fixture', model: 'gemma', fetcher: async () => {
+    controller.abort(new DOMException('private upstream timeout detail', 'TimeoutError'));
+    return new Promise(() => {});
+  } });
+  await assert.rejects(() => adapter.generate(prompt, controller.signal), (error: { status: number; message: string }) => error.status === 504 && !error.message.includes('private'));
+});
