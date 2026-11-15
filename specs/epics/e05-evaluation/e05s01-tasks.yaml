@@ -65,14 +65,3 @@ tasks:
     categories:
     - Security Review
     - e05s01
-
-manifest_preparation:
-  owner: parallel-continuation-root
-  status: passing
-  type: feat
-  context: domain
-  scope: Offline fixture manifest freezer; validate declared independent labels, clean/defective splits, bounded source digests and fixed equal-method budgets before any outcomes. Independence declaration is recorded, not independently verified by software.
-  files: [specs/experiments/freeze_evaluation.py, specs/experiments/tests/test_evaluation_manifest.py]
-  verify: python3 -m unittest discover -s specs/experiments/tests -p test_evaluation_manifest.py
-  exclusions: No candidate execution, source disclosure, invented labels, provider dispatch or full evaluation acceptance; ADR0003 live gates remain enforced.
-  verification: Four manifest tests and all sixteen Python experiment regressions passed. No candidate executed or evaluation result claimed.

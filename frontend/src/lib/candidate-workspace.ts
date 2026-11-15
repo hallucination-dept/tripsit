@@ -97,22 +97,22 @@ export function createCandidateWorkspace(options: Options = {}) {
       }));
       if (valid()) publish({ loading: false });
     },
-    async generate(paths?: string[]): Promise<void> {
+    async generate(paths: string[]): Promise<void> {
       if (state.generating) return;
-      if (!state.owner || !state.itemId || paths !== undefined && (!Array.isArray(paths) || paths.length < 1 || paths.length > 8
-        || new Set(paths).size !== paths.length || paths.some(path => !state.files.some(file => file.path === path)))) {
+      if (!state.owner || !state.itemId || !Array.isArray(paths) || paths.length < 1 || paths.length > 8
+        || new Set(paths).size !== paths.length || paths.some(path => !state.files.some(file => file.path === path))) {
         publish({ generationError: 'Select one to eight available files.' }); return;
       }
       const current = version;
       const { owner, itemId, baseSha } = state;
       generation = new AbortController();
       const active = generation;
-      const signal = AbortSignal.any([active.signal, AbortSignal.timeout(320_000)]);
+      const signal = AbortSignal.any([active.signal, AbortSignal.timeout(90_000)]);
       const valid = () => current === version && !active.signal.aborted && state.owner === owner && state.itemId === itemId && state.baseSha === baseSha;
       publish({ generating: true, generationError: '', candidate: null });
       try {
         const data = await request(`/api/work-items/${encodeURIComponent(itemId)}/candidates`, signal,
-          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(paths === undefined ? {} : { paths: [...paths] }) });
+          { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ paths: [...paths] }) });
         if (!valid()) return;
         if (!validCandidate(data, baseSha)) throw new WorkspaceError('Candidate response does not match the selection.');
         publish({ candidate: data });

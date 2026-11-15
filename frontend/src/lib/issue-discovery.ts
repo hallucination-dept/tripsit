@@ -28,28 +28,16 @@ export function createIssueDiscovery(options: Options = {}) {
   const publish = (update: Partial<DiscoveryState>) => { state = { ...state, ...update }; options.onChange?.(state); };
   function invalidate() { generation++; active?.abort(); cancelTimer?.(); cancelTimer = undefined; busy = false; }
   async function request(path: string, signal: AbortSignal) {
-    const active = AbortSignal.any([signal, AbortSignal.timeout(path === '/api/github/repositories' ? 70_000 : 110_000)]);
-    return new Promise<{ repositories?: unknown; issues?: unknown; complete: boolean }>((resolve, reject) => {
-      const abort = () => reject(new Error('GitHub discovery was cancelled or timed out.'));
-      if (active.aborted) { abort(); return; }
-      active.addEventListener('abort', abort, { once: true });
-      const work = async () => {
-        const response = await (options.fetcher ?? fetch)(path, { signal: active, cache: 'no-store' });
-        active.throwIfAborted();
-        let data;
-        try { data = await response.json(); }
-        catch {
-          active.throwIfAborted();
-          if (!response.ok) throw new DiscoveryError('GitHub discovery is unavailable.', response.status);
-          throw new Error('GitHub discovery returned an invalid response.');
-        }
-        active.throwIfAborted();
-        if (!response.ok) throw new DiscoveryError(typeof data?.message === 'string' ? data.message : 'GitHub discovery is unavailable.', response.status);
-        if (!data || typeof data !== 'object' || typeof data.complete !== 'boolean') throw new Error('GitHub discovery returned an invalid response.');
-        return data;
-      };
-      void work().then(resolve, reject).finally(() => active.removeEventListener('abort', abort));
-    });
+    const response = await (options.fetcher ?? fetch)(path, { signal, cache: 'no-store' });
+    let data;
+    try { data = await response.json(); }
+    catch {
+      if (!response.ok) throw new DiscoveryError('GitHub discovery is unavailable.', response.status);
+      throw new Error('GitHub discovery returned an invalid response.');
+    }
+    if (!response.ok) throw new DiscoveryError(typeof data?.message === 'string' ? data.message : 'GitHub discovery is unavailable.', response.status);
+    if (!data || typeof data !== 'object' || typeof data.complete !== 'boolean') throw new Error('GitHub discovery returned an invalid response.');
+    return data;
   }
   async function load(refreshRepositories: boolean) {
     if (!state.owner || busy) return;
@@ -57,7 +45,7 @@ export function createIssueDiscovery(options: Options = {}) {
     cancelTimer?.(); cancelTimer = undefined;
     const current = generation;
     active = new AbortController();
-    const signal = active.signal;
+    const signal = AbortSignal.any([active.signal, AbortSignal.timeout(30_000)]);
     const valid = () => current === generation && !signal.aborted;
     publish({ loading: true, error: '' });
     let stage: 'repositories' | 'issues' = refreshRepositories ? 'repositories' : 'issues';

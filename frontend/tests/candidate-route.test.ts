@@ -13,7 +13,7 @@ test('candidate routes keep auth/CSRF/body bounds, owner scope and no-store boun
   const bridge = globalThis as typeof globalThis & { candidateTestRuntime?: (...args: unknown[]) => unknown; candidateTestIntake?: (...args: unknown[]) => unknown; candidateTestGithub?: (...args: unknown[]) => unknown };
   const check = (owner: string) => { if (denied || owner !== 'owner') throw new IntakeError(404, 'Unavailable.'); };
   bridge.candidateTestRuntime = async () => { calls++; return {
-    async create(owner: string, selected: string, paths: string[] | undefined, signal: AbortSignal) { check(owner); assert.equal(selected, itemId); if (paths !== undefined) assert.deepEqual(paths, ['a.ts']); if (aborted) return new Promise(() => {}); assert(!signal.aborted); return candidate; },
+    async create(owner: string, selected: string, paths: string[], signal: AbortSignal) { check(owner); assert.equal(selected, itemId); assert.deepEqual(paths, ['a.ts']); if (aborted) return new Promise(() => {}); assert(!signal.aborted); return candidate; },
     async get(owner: string, selected: string, id: string) { check(owner); assert.equal(selected, itemId); assert.equal(id, candidateId); return candidate; }
   }; };
   bridge.candidateTestIntake = async () => { calls++; return { async get(owner: string, selected: string) { check(owner); assert.equal(selected, itemId); return item; } }; };
@@ -37,11 +37,10 @@ test('candidate routes keep auth/CSRF/body bounds, owner scope and no-store boun
     assert.equal((await POST(event(request('{}', '')))).status, 403);
     assert.equal((await POST(event(request('{')))).status, 400);
     assert.equal((await POST(event(request(' '.repeat(4097))))).status, 413);
-    for (const body of [ '{"paths":[]}', '{"paths":[1]}', '{"paths":["a.ts"],"policy":"none"}']) assert.equal((await POST(event(request(body)))).status, 400);
+    for (const body of ['{}', '{"paths":[]}', '{"paths":[1]}', '{"paths":["a.ts"],"policy":"none"}']) assert.equal((await POST(event(request(body)))).status, 400);
     assert.equal(calls, 0);
     assert.equal((await POST(event(request(), 'owner', 'bad'))).status, 404);
     assert.equal((await POST(event(request(), 'other'))).status, 404);
-    const autonomous = await POST(event(request('{}'))); assert.equal(autonomous.status, 200);
     const created = await POST(event(request()));
     assert.equal(created.status, 200); assert.equal(created.headers.get('cache-control'), 'no-store');
     assert.equal((await created.json()).candidate.files[0].content, 'é\r\n');

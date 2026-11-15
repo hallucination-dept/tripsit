@@ -1,8 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { isDeepStrictEqual } from 'node:util';
 import { IntakeError } from './intake.ts';
 import { generationObservations } from './generation.ts';
-import { generationSettingsDigest, mapCandidateTokenBytes } from './candidate-output.ts';
 import type { GeneratedCandidate, StoredCandidate } from './generation.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> };
@@ -35,21 +33,9 @@ function serialize(candidate: GeneratedCandidate): string {
     }
     return { path: file.path, originalBlob: file.originalBlob, blobSha: file.blobSha, content: Buffer.from(file.content).toString('base64') };
   });
-  if (candidate.tokenByteMapping !== undefined) {
-    const stored = candidate.tokenByteMapping;
-    if (!stored || Buffer.byteLength(JSON.stringify(stored)) > 262_500 || !['direct', 'agent'].includes(stored.mode) || observations?.status !== 'observed')
-      throw new IntakeError(400, 'Candidate token mapping is invalid.');
-    const mapped = mapCandidateTokenBytes(candidate.rawOutput, new Map(candidate.files.map(file => [file.path, file.originalBlob])),
-      observations.tokens, candidate.model, generationSettingsDigest(candidate.settings), stored.mode);
-    if (mapped.status !== 'exact' || !isDeepStrictEqual(stored, { ...mapped, mode: stored.mode,
-      observationsDigest: sha(new TextEncoder().encode(JSON.stringify(observations))) })
-      || mapped.files.some((file, index) => file.path !== files[index]?.path || file.blobSha !== files[index]?.blobSha))
-      throw new IntakeError(400, 'Candidate token mapping is invalid.');
-  }
   const payload = JSON.stringify({ baseSha: candidate.baseSha, expiresAt: candidate.expiresAt,
     outputDigest: candidate.outputDigest, model: candidate.model, settings: candidate.settings,
     ...(observations === undefined ? {} : { observations }),
-    ...(candidate.tokenByteMapping === undefined ? {} : { tokenByteMapping: candidate.tokenByteMapping }),
     mapping: { status: candidate.mapping.status, reason: candidate.mapping.reason },
     rawOutput: Buffer.from(candidate.rawOutput).toString('base64'), files });
   if (Buffer.byteLength(payload) > 4_194_304) throw new IntakeError(400, 'Candidate storage input exceeds the limit.');
@@ -97,7 +83,7 @@ export function createCandidateRecords(database: Database, clock = () => new Dat
       const result = await query(`WITH authorized AS (
         SELECT w.id FROM tripsit_work_items w JOIN tripsit_snapshots s ON s.work_item_id=w.id
         WHERE w.owner_id=$1 AND w.id=$2 AND w.expires_at=$5::timestamptz AND w.expires_at>$6
-          AND s.payload->>'baseSha'=$4 AND jsonb_typeof(s.payload->'private')='boolean'
+          AND s.payload->>'baseSha'=$4 AND s.payload->'private'='false'::jsonb
         FOR SHARE OF w,s
       ), inserted AS (
         INSERT INTO tripsit_candidates(id,owner_id,output_digest,created_at,expires_at)
@@ -116,7 +102,7 @@ export function createCandidateRecords(database: Database, clock = () => new Dat
         JOIN tripsit_snapshots s ON s.work_item_id=w.id
         WHERE c.owner_id=$1 AND w.owner_id=$1 AND w.id=$2 AND c.id=$3
           AND c.expires_at>$4 AND w.expires_at>$4 AND c.expires_at=w.expires_at
-          AND jsonb_typeof(s.payload->'private')='boolean' AND s.payload->>'baseSha'=p.payload->>'baseSha'`,
+          AND s.payload->'private'='false'::jsonb AND s.payload->>'baseSha'=p.payload->>'baseSha'`,
       [owner, itemId, id, clock()]);
       if (!result.rows[0]) return null;
       const candidate = deserialize(result.rows[0].payload);

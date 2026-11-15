@@ -4,7 +4,7 @@ type: feat
 context: domain
 wsjf: 2.636
 total_bcps: 11
-status: in_progress
+status: todo
 stories:
 - id: e03s01
   title: Explain joint impact and uncertainty priorities

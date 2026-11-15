@@ -4,7 +4,7 @@ type: feat
 context: domain
 wsjf: 2.0
 total_bcps: 13
-status: in_progress
+status: todo
 stories:
 - id: e02s01
   title: Inspect supported downstream change impact

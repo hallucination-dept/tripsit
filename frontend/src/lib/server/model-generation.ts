@@ -1,25 +1,8 @@
 import { IntakeError, readJson, whileActive } from './intake.ts';
-import { generationObservations } from './generation.ts';
-import type { GenerationPrompt, ModelGeneration } from './generation.ts';
+import { generationObservations, type GenerationPrompt, type ModelGeneration } from './generation.ts';
 
 export type ModelGenerationConfiguration = { url?: string; token?: string; model?: string; fetcher?: typeof fetch };
-const settings = { temperature: 0, max_tokens: 2048 };
-
-function observations(value: unknown, rawOutput: Uint8Array) {
-  const unavailable = { status: 'unavailable' as const, tokens: [] };
-  try {
-    if (!value || typeof value !== 'object' || !('content' in value) || !Array.isArray(value.content)
-      || value.content.length === 0 || value.content.length > 8192) return unavailable;
-    const tokens = value.content.map(row => ({ token: row?.token, bytes: row?.bytes, logprob: row?.logprob }));
-    const result = generationObservations({ status: 'observed', tokens });
-    let offset = 0;
-    for (const token of result.tokens) {
-      if (!token.bytes) return unavailable;
-      for (const byte of token.bytes) if (offset >= rawOutput.length || rawOutput[offset++] !== byte) return unavailable;
-    }
-    return offset === rawOutput.length ? result : unavailable;
-  } catch { return unavailable; }
-}
+const settings = { temperature: 0, max_tokens: 2048, logprobs: true, top_logprobs: 0 };
 
 export function createModelGeneration(configuration: ModelGenerationConfiguration) {
   return {
@@ -33,7 +16,7 @@ export function createModelGeneration(configuration: ModelGenerationConfiguratio
           || endpoint.username || endpoint.password || endpoint.search || endpoint.hash || !token || !model?.trim()) throw new Error();
         endpoint.pathname = endpoint.pathname.replace(/\/$/u, '') + '/v1/chat/completions';
       } catch { throw new IntakeError(503, 'Candidate model is not configured.'); }
-      const active = AbortSignal.any([signal, AbortSignal.timeout(180_000)]);
+      const active = AbortSignal.any([signal, AbortSignal.timeout(60_000)]);
       try {
         return await whileActive(async () => {
           const response = await whileActive(() => (configuration.fetcher ?? fetch)(endpoint, {
@@ -47,20 +30,17 @@ export function createModelGeneration(configuration: ModelGenerationConfiguratio
           const value = await readJson(response, 2_097_152, active);
           if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error();
           const body = value as Record<string, unknown>;
-          if (!Array.isArray(body.choices)) throw new Error();
+          if (body.model !== model || !Array.isArray(body.choices) || body.choices.length !== 1) throw new Error();
           const choice = body.choices[0];
-          if (!choice || typeof choice !== 'object' || Array.isArray(choice)) throw new Error();
-          if (choice.finish_reason !== 'stop') throw new Error();
+          if (!choice || typeof choice !== 'object' || choice.finish_reason !== 'stop') throw new Error();
           const content: unknown = choice.message?.content;
           if (typeof content !== 'string') throw new Error();
           const rawOutput = new TextEncoder().encode(content);
           if (rawOutput.byteLength > 1_048_576 || new TextDecoder('utf-8', { ignoreBOM: true }).decode(rawOutput) !== content) throw new Error();
-          return { rawOutput, model: model!, settings: { ...settings }, finishReason: 'stop', observations: observations(choice.logprobs, rawOutput) };
+          const observations = generationObservations(choice.logprobs == null ? undefined : { status: 'observed', tokens: choice.logprobs.content });
+          return { rawOutput, model: model!, settings: { ...settings }, observations };
         }, active);
-      } catch {
-        if (active.aborted && active.reason?.name === 'TimeoutError') throw new IntakeError(504, 'Candidate model exceeded its response deadline.');
-        throw new IntakeError(502, 'Candidate model is unavailable or returned invalid output.');
-      }
+      } catch { throw new IntakeError(502, 'Candidate model is unavailable or returned invalid output.'); }
     }
   };
 }
