@@ -22,6 +22,7 @@ Frontend commands run from `frontend/`.
 | Preflight | `npm run check && npm run build` |
 | Auth configuration check | `npm run auth:check` (requires configured services) |
 | Auth migration | `npm run auth:migrate` (changes the configured database) |
+| App migration | `npm run projects:migrate` (changes the configured database) |
 | PR checks | `gh pr checks` (when a PR exists) |
 
 ## Architecture

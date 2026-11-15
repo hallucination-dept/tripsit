@@ -200,7 +200,9 @@ The **Agent runs** page (`/agent`) lets the pi coding agent, running Gemma 4 on 
 change a repository that the GitHub App can reach. The page shows the agent log, a
 dependency graph of the change, and a pull request link. Before using it:
 
-1. Apply `frontend/migrations/003_agent_runs.sql` to the database. Runs are stored in
+1. Apply the migrations: from `frontend/`, `npm run projects:migrate` applies every file in
+   `frontend/migrations/` to `DATABASE_URL` (read from `frontend/.env`) in one transaction. Each file
+   only adds missing tables and indexes, so re-running it is safe. Runs are stored in
    `tripsit_agent_runs` (metadata) and `tripsit_agent_run_payloads` (repository content).
    Payloads expire after seven days; `node --experimental-strip-types scripts/work-items.ts purge`
    removes expired payloads for the local test database.

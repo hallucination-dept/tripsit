@@ -10,6 +10,7 @@ Better Auth, and GitHub OAuth values, then run:
 
 ```sh
 npm run auth:migrate
+npm run projects:migrate
 npm run dev
 ```
 
@@ -23,7 +24,7 @@ environment-variable list, production callback URL, and Aiven deployment steps.
 npm run check        # Svelte and TypeScript diagnostics
 npm run build        # production build
 npm run auth:check   # validate Better Auth setup after credentials are set
-npm run projects:migrate # create the connected-GitHub-project table
+npm run projects:migrate # apply migrations/*.sql to DATABASE_URL (safe to re-run)
 ```
 
 The production image uses `@sveltejs/adapter-node` and starts with
