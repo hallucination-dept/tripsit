@@ -56,7 +56,7 @@ environment:
   local_app:
     url: http://localhost:5173
     worktree: /tmp/tripsit-e01s01
-    exec_session: 14500
+    exec_session: 93651
     checks: GET /200, GET /api/auth/get-session200, anonymous GET /api/work-items401
     env_source: user-provided primary frontend/.env; values not printed/copied
     oauth_client_id: Iv23liAX4hdiKcwxPade
@@ -67,7 +67,7 @@ vcs:
   branch: feat/impact-review-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: eb90f4f
+  checkpoint: 736778b
 verification:
   tooling_review:
     round: 2
@@ -476,6 +476,34 @@ completion_wave:
     trust: Browser sends only empty JSON; model proposals never become oracle definitions; actual runner admission must pass before source dispatch. Public frozen source only. No arbitrary host execution.
     verification: Native adapter/records/route/controller regressions, disposable PostgreSQL ownership/purge test, frontend check/build and synthetic Chrome failure trace; real authenticated UAT remains separately required.
 
+evaluation_manifest_handoff:
+  owner: parallel-continuation-root
+  status: complete_preparatory_subtask
+  pr: https://github.com/hallucination-dept/tripsit/pull/10
+  branch: feat/evaluation-manifest
+  checkpoint: 8d00de8
+  verification: All sixteen Python experiment tests passed; no frontend modifications or candidate execution.
+  scope: New freeze_evaluation.py and test_evaluation_manifest.py; e05s01 manifest preparation only.
+  remaining: Real independent corpus, execution collector and full evaluation after prerequisite stories; independence declarations require human verification.
+
+evaluation_manifest_final_checkpoint:
+  owner: parallel-continuation-root
+  status: draft_pr_open
+  pr: https://github.com/hallucination-dept/tripsit/pull/10
+  checkpoint: 7563252
+  base: feat/impact-review-workflow
+  changes: Only freezer, focused tests, preparatory task status and additive delivery state; current feature baseline merged in isolated worktree.
+  verification: All sixteen Python experiment tests passed before baseline merge; four manifest tests rerun successfully after state-only merge resolution; diff whitespace clean. No commit statuses registered at inspection.
+  remaining: Human review, real independently labeled corpus and end-to-end comparative evaluation. No merge performed.
+
+github_review_contract_workstream:
+  owner: parallel-continuation-root
+  status: started
+  authorization: User explicitly requested adding GitHub evidence summaries, interactive dashboard links, comment response/revision and review-decision synchronization to contract and implementation plan.
+  files: [specs/epics/e04-accountability/github-review-interaction.md, specs/epics/e04-accountability/e04s01-review-packet.md, specs/epics/e04-accountability/e04s02-human-decision.md, specs/epics/e04-accountability/e04s01-tasks.yaml, specs/epics/e04-accountability/e04s02-tasks.yaml, specs/epics/e01-ticket-to-pr/e01s03-publish-pr.md, specs/epics/e01-ticket-to-pr/e01s03-tasks.yaml]
+  scope: Documentation and planned failing tasks only; no code, active execution integration, deployment, GitHub messaging or acceptance changes.
+  verify: python3 specs/experiments/plan_selfcheck.py; YAML parse and cross-reference/task-format inspection
+
 issue_discovery_bug:
   request: express-testbed has issues but app reports no open issues.
   flow: fix_bug
@@ -484,6 +512,21 @@ issue_discovery_bug:
   plan: specs/bugs/BUG-issue-discovery-state.md
   implementation: Separate isolated worktree; preserve access checks, distinguish unavailable/empty/loading and verify selected option after async response.
   verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts && node --experimental-strip-types tests/github-discovery.test.ts && npm run check && npm run build
+
+github_review_contract_handoff:
+  owner: parallel-continuation-root
+  status: planned_and_reviewed_pr_open
+  pr: https://github.com/hallucination-dept/tripsit/pull/11
+  branch: docs/github-review-contract
+  checkpoint: 7081fbf
+  worktree: /tmp/tripsit-github-review-contract
+  contract: specs/epics/e04-accountability/github-review-interaction.md
+  affected: e04s01, new e01s05, e04s02, e01s03, scope, release plan and execution status
+  sequence: e04s01 packet -> e01s05 draft PR -> e04s02 PR-bound human inspection -> e01s03 updates/readiness
+  requirements: Safe GitHub evidence summary and exact authenticated graph/trace links; explicit bounded owner explain/revise commands; external review observations and human decision status synchronization. AI cannot accept/approve/merge.
+  verification: Planning selfcheck passed five epics/thirteen scope stories/sixty-six tasks/sixty-five BCP; YAML/new failing-task gates and diff whitespace checked; independent read-only review found no remaining high contradictions.
+  implementation: Not started by this agent. Ten new tasks failing; original runtime acceptance status unchanged. Generic plan consistency and status sync scripts absent; repository selfcheck used.
+  coordination: Merge/adopt this documentation plan before starting the new draft/decision/publication work; active implementation files untouched and no merge performed.
 
 private_snapshot_bug:
   request: User reports503snapshottingprivateexpress-testbedafterissuelistworks.
@@ -500,6 +543,25 @@ user_authorization_override:
   retained_behavior: Authentication, GitHub user/install access, exact revision binding, bounded inputs/timeouts and expiry remain ordinary correctness/security behavior.
   retention: Keep practical recurring deletion as nonblocking maintenance, never an additional private-intake prerequisite.
   source: Explicit latest user instruction supersedes prior agent-authored private admission and consent gates.
+
+github_review_contract_completion:
+  owner: parallel-continuation-root
+  status: complete_merged_into_feature_branch
+  pr: https://github.com/hallucination-dept/tripsit/pull/11
+  merge_commit: a2f9b2893b60f662bfb77da3045980546e0dc42b
+  target: feat/impact-review-workflow
+  verification: GitHub PR metadata confirms merged; isolated planning worktree clean.
+  remaining_agent_tasks: None for the authorized contract/planning request; runtime implementation remains planned and must respect active owners.
+
+evaluation_manifest_review_readiness:
+  owner: parallel-continuation-root
+  pr: https://github.com/hallucination-dept/tripsit/pull/10
+  status: ready_for_review_not_merged
+  reason: Preparatory subtask is complete independently of full evaluation; draft marker removed after user asked about merge readiness.
+  verification: Four manifest tests rerun and diff whitespace passed; GitHub reports mergeable; no commit statuses reported. Original sixteen experiment regressions passed.
+  target: feat/impact-review-workflow
+  limitation: No real labeled corpus or comparative evaluation completed.
+
 product_flow_correction:
   instruction: No deployment; use existing Gemma proxy inference and only returned text. First implement fix/feature from issue, then review changes and give advice.
   supersedes: New runner, check-execution, manual admission and deployment work introduced in this completion wave.
@@ -510,6 +572,7 @@ product_flow_correction:
   - Reviewer returns readable advice from message text with no required structured claim schema or probability interpretation.
   - Keep static impact and honest optional evidence gaps; no claim of executed checks or completed original runner-dependent acceptance.
   verification: Native issue/private generation/review regressions, actual Gemma text-only provider probe, frontend check/build and browser issue-to-candidate-to-advice flow.
+
 agentic_implementation_plan:
   user_instruction: Implementation must be agentic; humans review in the loop. Keep visual graph and assessments.
   code_scope: generation.ts/model-generation.ts automated bounded repository read/edit loop; candidates POST empty JSON; client/page Implement issue action without file picker; interactive graph and text advice.
@@ -517,6 +580,7 @@ agentic_implementation_plan:
   orchestration: Existing typed coordinator for issue/revision, candidate, graph and review artifacts; exact artifact identities invalidate stale assessments. Model advice and graph inform optional revision requests; human remains decision owner.
   harness_decision: Evaluate Pi/OpenCode SDK support but avoid a new general execution/runtime dependency for the current read/edit-only tools. LangGraph becomes useful for durable resumed multi-worker runs, not required for this bounded SvelteKit flow.
   verify: Native multi-round agent fixtures including stale/private/owner/cancellation, actual Gemma synthetic text probe, graphical desktop/mobile review flow and frontend check/build.
+
 vision_alignment:
   priority: User explicitly says skills guidance and VISION are supreme. Product vision is unchanged; skill build/verify/audit/release gates govern delivery.
   workflow: Autonomous issue implementation -> change-impact graph -> independent requirement/node-linked critique -> evidence/priority assessment -> agent-guided human inspection, revision or final decision.
@@ -525,6 +589,7 @@ vision_alignment:
   current_increment: No new service deployment; use existing Gemma proxy. Keep unrun verification explicit, rather than scope away planned verification.
   delivery: Release verified functional slices immediately as ready PRs with actual checks and review; do not merge without human approval.
   release_now: Private snapshot/source fix c49c747+db925a2 independently based on current main; graph/agent implementation remains parallel.
+
 discovery_refresh_fix:
   user_report: Minute polling resets whole UI; issue loading blocks repository switching.
   plan: specs/bugs/BUG-discovery-refresh-state.md
@@ -532,3 +597,12 @@ discovery_refresh_fix:
   dispatch: Isolated worktree, discovery controller/tests and minimal selector/state-filter page hunks; publish independent ready PR after verification.
   verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts && npm run check && npm run build
 
+implementation_checkpoint_current:
+  source: 736778b
+  agent: Autonomous frozen-repository read/context/edit loop implemented; actual Gemma proxy synthetic repair passed in two model calls, one read batch and one in-memory candidate. No GitHub/database writes or generated-code execution in probe.
+  graph: Interactive source/dependency graph and linked assessments integrated; keyboard browser interaction still being diagnosed, so larger feature is not declared complete.
+  review: New candidate automatically triggers independently prompted linked critique/readable advice; human guides/escalates/decides rather than selecting files or writing replacements.
+  private_intake: PR12 merged main f37faaf; private candidate/review authorization changes integrated in active branch.
+  refresh_bug: Isolated priority fix in progress; retain existing workspace through polling and allow repository switching while issues load.
+  release: Publish completed slices as ready PRs immediately after actual verification/audit/review. PR9 remains under verification, not merged.
+  skill_flow: build-epic/develop-tdd -> verify-work -> audit-code -> request-review -> release-branch; no completed-story claim before story acceptance.
