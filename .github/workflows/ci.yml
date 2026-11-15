@@ -1,0 +1,34 @@
+name: Pull request validation
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: craci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Check and build frontend
+        working-directory: frontend
+        run: npm run check && npm run build
+      - name: Run offline frontend tests
+        working-directory: frontend
+        run: node --experimental-strip-types --test $(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-db.test.ts' ! -name 'intake-retention.test.ts' | sort)
+      - name: Run Python model tests
+        run: python3 -m unittest discover -s tests
+      - name: Run admission-gate tests
+        run: python3 -m unittest discover -s specs/experiments/tests
