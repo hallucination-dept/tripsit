@@ -354,3 +354,12 @@ test('autonomous JSON frames accept one conventional code fence and reject surro
     assert.equal(f.calls.store, 0);
   }
 });
+
+test('server-bound autonomous replacements still reject malformed code values and unexpected authority fields', async () => {
+  for (const file of [{ path: 'new.ts', content: 17 }, { path: 'new.ts', content: '\ud800' }, { path: '../secret', content: 'text' }, { path: 'new.ts', content: 'text', ownerId: 'other' }]) {
+    const f = agentFixture();
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify({ files: [file] })), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+  }
+});
