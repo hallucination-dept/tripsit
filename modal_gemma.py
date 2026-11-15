@@ -1,4 +1,8 @@
-"""Modal-hosted OpenAI-compatible API for Gemma 4 31B with token probabilities."""
+"""Modal-hosted OpenAI-compatible API for Gemma 4 31B with token probabilities.
+
+Non-streamed chat completions return token probabilities. Streamed completions (used by the
+coding agent) are relayed unchanged. Tool calling uses vLLM's Gemma 4 parsers.
+"""
 
 import os
 import subprocess
@@ -7,12 +11,18 @@ import time
 import httpx
 import modal
 from model_output import add_token_probabilities
-from model_request import ClientDisconnected, while_connected
+from model_request import ClientDisconnected, UpstreamFailed, stream_upstream, while_connected
 
 
 MODEL_ID = os.environ.get("MODEL_ID", "google/gemma-4-31B-it")
 BACKEND_URL = "http://127.0.0.1:8001"
-MAX_MODEL_LEN = os.environ.get("MAX_MODEL_LEN", "8192")
+# Agent sessions need far more than a single review prompt.
+MAX_MODEL_LEN = os.environ.get("MAX_MODEL_LEN", "65536")
+# vLLM's Gemma 4 recipe recommends this template for tool calling; it ships in the image's examples.
+TOOL_CHAT_TEMPLATES = (
+    "/vllm-workspace/examples/tool_chat_template_gemma4.jinja",
+    "examples/tool_chat_template_gemma4.jinja",
+)
 
 app = modal.App("tripsitter-gemma-review")
 
@@ -56,7 +66,17 @@ class GemmaAPI:
             "0.95",
             "--logprobs-mode",
             "raw_logprobs",
+            "--enable-auto-tool-choice",
+            "--tool-call-parser",
+            "gemma4",
+            "--reasoning-parser",
+            "gemma4",
         ]
+        template = next((path for path in TOOL_CHAT_TEMPLATES if os.path.isfile(path)), None)
+        if template:
+            command += ["--chat-template", template]
+        else:
+            print("Gemma 4 tool chat template not found; using the model's default chat template.")
         self.vllm_process = subprocess.Popen(command)
         self._wait_until_ready()
 
@@ -89,7 +109,7 @@ class GemmaAPI:
     @modal.asgi_app(requires_proxy_auth=True)
     def web(self):
         from fastapi import FastAPI, HTTPException, Request
-        from fastapi.responses import JSONResponse
+        from fastapi.responses import JSONResponse, StreamingResponse
 
         api = FastAPI(title="Gemma 4 OpenAI-compatible API")
 
@@ -115,10 +135,16 @@ class GemmaAPI:
         async def chat_completions(request: Request):
             body = await request.json()
             if body.get("stream", False):
-                raise HTTPException(
-                    status_code=400,
-                    detail="Streaming is not supported by this endpoint because token probabilities are returned after generation.",
-                )
+                # Relay server-sent events unchanged; token probabilities are added only to
+                # non-streamed responses. Closing the relay on disconnect aborts generation.
+                client = httpx.AsyncClient(timeout=httpx.Timeout(900, connect=10))
+                try:
+                    chunks = await stream_upstream(client, f"{BACKEND_URL}/v1/chat/completions", body)
+                except UpstreamFailed as exc:
+                    raise HTTPException(status_code=exc.status, detail="The model request failed.") from exc
+                except httpx.HTTPError as exc:
+                    raise HTTPException(status_code=502, detail="The model request failed.") from exc
+                return StreamingResponse(chunks, media_type="text/event-stream", headers={"Cache-Control": "no-cache"})
 
             # Ask vLLM for the selected token's raw log probability at every
             # generated position. Convert it to probability in the response.
