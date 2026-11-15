@@ -14,5 +14,5 @@ export async function assessmentRuntime(headers: Headers, owner: string, signal:
   const reviewerConfigured = isReviewerConfigured(configuration);
   const reviewer = createReviewer(reviewerConfigured ? configuration : {});
   const verificationConfiguration = { url: RUNNER_API_URL, token: RUNNER_API_KEY, manifest: TRUSTED_CHECKS_JSON };
-  return { verificationAvailable: (assessment: Assessment) => verificationConfigured(verificationConfiguration, verificationContext(assessment)), service: createAssessment({ ...services, reviews: createReviewRecords(database), reviewer, verification: createVerification(verificationConfiguration), verificationRecords: createVerificationRecords(database) }), reviewerConfigured };
+  return { github: services.github, intake: services.intake, generation: services.generation, verificationAvailable: (assessment: Assessment) => verificationConfigured(verificationConfiguration, verificationContext(assessment)), service: createAssessment({ ...services, reviews: createReviewRecords(database), reviewer, verification: createVerification(verificationConfiguration), verificationRecords: createVerificationRecords(database) }), reviewerConfigured };
 }
