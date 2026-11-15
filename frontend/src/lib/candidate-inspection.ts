@@ -56,7 +56,8 @@ function assessment(value: unknown, selected: Selection): value is AssessmentVie
     || !rows(extracted.impact.affected, 2000, row => object(row.node) && text(row.node.id, 128))
     || !rows(extracted.impact.edges, 8000) || !rows(extracted.impact.gaps, 8192, gap => text(gap.kind, 128) && text(gap.reference))) return false;
   if (value.verificationConfigured !== undefined && typeof value.verificationConfigured !== 'boolean') return false;
-  if (value.dispatchPlan !== undefined && value.dispatchPlan !== null && (!object(value.dispatchPlan) || !['mandatory', 'selected', 'omitted'].every(key => rows((value.dispatchPlan as Record<string, unknown>)[key], 256, row => text(row.id, 128) && strings(row.reasons))))) return false;
+  if (value.dispatchPlan !== undefined && value.dispatchPlan !== null && (!object(value.dispatchPlan) || !['mandatory', 'selected', 'omitted'].every(key => rows((value.dispatchPlan as Record<string, unknown>)[key], 256, row => text(row.id, 128) && strings(row.reasons)
+    && (row.meanNegativeLogprob === undefined || row.meanNegativeLogprob === null || typeof row.meanNegativeLogprob === 'number' && Number.isFinite(row.meanNegativeLogprob) && row.meanNegativeLogprob >= 0))))) return false;
   return packet.acceptanceReady === false && packet.candidateCommit === null && digest(packet.packetDigest)
     && rows(packet.requirementCoverage, 128, row => text(row.id, 128) && text(row.criterion) && text(row.status, 128) && strings(row.checkIds, 256) && strings(row.executionIds, 1024)
       && object(row.source) && ['name', 'version', 'url'].every(key => text((row.source as Record<string, unknown>)[key])))

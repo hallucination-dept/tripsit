@@ -22,12 +22,18 @@ test('stages owner candidate with a locked snapshot and stable identity', async 
  assert.deepEqual(await f.service.stage('owner', 'item', 'candidate', signal), first);
  assert.equal(f.queries(), 2);
 });
-test('cross-owner, private and stale revisions never persist', async () => {
- for (const mode of ['other', 'private', 'stale']) {
+test('cross-owner, malformed and stale revisions never persist', async () => {
+ for (const mode of ['other', 'invalid', 'stale', 'revoked']) {
   const f = fixture();
-  if (mode === 'private') f.state.snapshot.private = true;
+  if (mode === 'invalid') f.state.snapshot.private = undefined as unknown as boolean;
   if (mode === 'stale') f.github.stagingTree = async () => { f.state.snapshot.baseSha = 'c'.repeat(40); return { baseSha: 'a'.repeat(40), treeSha: '4b825dc642cb6eb9a060e54bf8d69288fbee4904', entries: [] }; };
+  if (mode === 'revoked') { f.state.snapshot.private = true; f.github.stagingTree = async () => { throw new IntakeError(403, 'revoked'); }; }
   await assert.rejects(f.service.stage(mode === 'other' ? 'other' : 'owner', 'item', 'candidate', new AbortController().signal));
   assert.equal(f.queries(), 0);
  }
+});
+test('stages an authorized private repository candidate', async () => {
+ const f = fixture(); f.state.snapshot.private = true;
+ const staged = await f.service.stage('owner', 'item', 'candidate', new AbortController().signal);
+ assert.match(staged.candidateCommit, /^[a-f0-9]{40}$/); assert.equal(f.queries(), 1);
 });

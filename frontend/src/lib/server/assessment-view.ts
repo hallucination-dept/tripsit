@@ -33,13 +33,20 @@ export function assessmentView(owner: string, assessment: Assessment, reviewerCo
   const latest = [...verifications].reverse().find(record => Object.entries(identity).every(([key, value]) => record.identity[key as keyof PacketIdentity] === value));
   const definitions = latest?.result.checks.map(check => bound(check, check, latest.identity)) ?? [];
   const executions = verifications.flatMap(record => record.result.executions.map(execution => bound(execution, execution, record.identity)));
+  const signal = assessment.generation.tokenSignal;
+  const exact = signal?.mapping.status === 'exact' && signal.mapping.outputDigest === identity.candidateDigest
+    && signal.mapping.model === assessment.generation.model && signal.mapping.settingsDigest === assessment.generation.settingsDigest
+    && signal.observations.status === 'observed' && signal.observations.tokens.length > 0
+    && signal.observations.tokens.length === assessment.generation.observedTokens
+    && signal.mapping.observationsDigest === createHash('sha256').update(JSON.stringify(signal.observations)).digest('hex');
   const packet = buildPacket(owner, {
     identity,
     policy: bound({ requirements: assessment.policy.requirements }, assessment.policy, { ...identity, policyVersion: assessment.policy.version }),
     comparison: { model: assessment.generation.model, settingsDigest: assessment.generation.settingsDigest, revision: identity.candidateDigest },
     impact: bound({ summary: `${impact.impact.affected.length} affected nodes across ${impact.graph.nodes.length} supplied graph nodes. Semantic relationships and executable checks remain unverified.`,
       unknown: true, nodeIds: impact.graph.nodes.map(node => node.id).sort(compare), gaps: gapReferences }, impact, impactIdentity),
-    tokenMapping: bound({ mapping: 'unavailable', observedTokens: assessment.generation.observedTokens, reason: assessment.generation.mapping.reason }, assessment.generation),
+    tokenMapping: bound({ mapping: exact ? 'exact' : 'unavailable', observedTokens: assessment.generation.observedTokens,
+      reason: exact ? 'Exact response-to-file byte mapping is available. Individual checks may still lack comparable coverage.' : 'Exact token mapping is unavailable for this revision.' }, assessment.generation),
     reviews: proposals, checks: definitions, executions, reuse: [], pr: { id: null, isNew: true }
   });
   const currentReviews = reviews.filter(review => Object.entries(identity).every(([key, value]) => review.identity[key as keyof PacketIdentity] === value));

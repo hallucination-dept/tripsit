@@ -6,6 +6,7 @@ import { IntakeError } from '../src/lib/server/intake.ts';
 import type { WorkItem } from '../src/lib/server/records.ts';
 import type { StoredCandidate } from '../src/lib/server/generation.ts';
 import type { StoredReview } from '../src/lib/server/review-records.ts';
+import { mapCandidateTokenBytes, generationSettingsDigest } from '../src/lib/server/candidate-output.ts';
 const itemId = '11111111-1111-4111-8111-111111111111';
 const candidateId = '22222222-2222-4222-8222-222222222222';
 const encode = (content: string) => new TextEncoder().encode(content);
@@ -151,7 +152,21 @@ test('verification rechecks revision after remote execution and never persists s
  await assert.rejects(f.service.verify('other',itemId,candidateId,f.signal),{status:404});assert.equal(ran,1);
 });
 
-test('review refuses private snapshots, current private or malformed visibility, and revoked access', async () => {
+test('verification context carries revision-bound token mapping and candidate node sources', async () => {
+ const f = fixture(); const candidate = f.candidate.candidate;
+ const raw = encode(JSON.stringify({files:[{path:'a.ts',originalBlob:candidate.files[0].originalBlob,content:new TextDecoder().decode(candidate.files[0].content)}]}));
+ const tokens = Array.from(raw, byte => ({token:'x',bytes:[byte],logprob:-1}));
+ const observations = {status:'observed' as const,tokens};
+ const mapped = mapCandidateTokenBytes(raw,new Map([['a.ts',candidate.files[0].originalBlob]]),tokens,candidate.model,generationSettingsDigest(candidate.settings));
+ assert.equal(mapped.status,'exact'); if(mapped.status !== 'exact') return;
+ candidate.rawOutput=raw; candidate.outputDigest=mapped.outputDigest; candidate.observations=observations;
+ candidate.tokenByteMapping={...mapped,mode:'direct',observationsDigest:createHash('sha256').update(JSON.stringify(observations)).digest('hex')};
+ f.deps.verificationRecords={async list(){return[];},async append(){throw new Error('fixture stop');}};
+ f.deps.verification={async run(context){assert.equal(context.tokenSignal?.mapping.outputDigest,context.identity.candidateDigest);assert(context.nodes.some(node=>node.kind==='file' && node.source?.revision==='candidate' && node.source.blobSha===mapped.files[0].blobSha));throw new Error('fixture stop');}};
+ await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal));
+});
+
+test('review allows authorized private repositories and denies malformed visibility or revoked access', async () => {
  for (const mode of ['snapshot-private', 'current-private', 'malformed', 'revoked']) {
   const f = fixture();
   if (mode === 'snapshot-private') f.item.snapshot.private = true;
@@ -159,12 +174,18 @@ test('review refuses private snapshots, current private or malformed visibility,
    if (mode === 'revoked') throw new IntakeError(403, 'Access revoked.');
    return mode === 'malformed' ? undefined as unknown as boolean : mode === 'current-private';
   };
-  await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal));
-  assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+  if (mode === 'malformed' || mode === 'revoked') {
+   await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal));
+   assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+  } else {
+   f.deps.reviewer.review = async input => { f.calls.reviewer++; assert.equal(input.private, true); return {status:'unavailable',reason:'Fixture.'}; };
+   await f.service.review('owner', itemId, candidateId, f.signal);
+   assert.equal(f.calls.reviewer, 1); assert.equal(f.calls.append, 1);
+  }
  }
 });
 
-test('private or newly private repositories never reach the runner', async () => {
+test('private repositories reach an admitted runner only with current access', async () => {
   for (const mode of ['private', 'changed', 'denied', 'invalid']) {
     const f = fixture(); let ran = 0;
     if (mode === 'private') f.item.snapshot.private = true;
@@ -175,6 +196,6 @@ test('private or newly private repositories never reach the runner', async () =>
     f.deps.verification = { async run() { ran++; throw new Error('unexpected'); } };
     f.deps.verificationRecords = { async list() { return []; }, async append() { throw new Error('unexpected'); } };
     await assert.rejects(() => f.service.verify('owner', itemId, candidateId, f.signal));
-    assert.equal(ran, 0);
+    assert.equal(ran, ['private', 'changed'].includes(mode) ? 1 : 0);
   }
 });

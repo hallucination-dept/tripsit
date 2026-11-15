@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { IntakeError, whileActive, type IssueSnapshot } from './intake.ts';
 import type { WorkItem } from './records.ts';
-import type { StoredCandidate, GenerationContext } from './generation.ts';
+import type { StoredCandidate, GenerationContext, GeneratedCandidate, GenerationObservations } from './generation.ts';
 import { generationSettingsDigest } from './candidate-output.ts';
 import { buildImpact, type ImpactFile } from './impact-extractor.ts';
 import { snapshotPolicy } from './snapshot-policy.ts';
@@ -16,7 +16,8 @@ export type Assessment = {
   repositoryId: number;
   repositoryPrivate?: boolean;
   verifications?: StoredVerification[];
-  generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number };
+  generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number;
+    tokenSignal?: { mapping: NonNullable<GeneratedCandidate['tokenByteMapping']>; observations: GenerationObservations } };
   policy: ReturnType<typeof snapshotPolicy>['policy'];
   impact: ReturnType<typeof buildImpact>;
   reviews: StoredReview[];
@@ -82,7 +83,8 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     }
     const identity: ReviewIdentity = { ownerId: owner, itemId, candidateId, baseSha: item.snapshot.baseSha,
       candidateDigest: stored.candidate.outputDigest, snapshotDigest: policy.snapshotDigest, policyVersion: policy.policy.version };
-    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: generationSettingsDigest(stored.candidate.settings), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0 };
+    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: generationSettingsDigest(stored.candidate.settings), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0,
+      ...(stored.candidate.tokenByteMapping && stored.candidate.observations ? { tokenSignal: { mapping: stored.candidate.tokenByteMapping, observations: stored.candidate.observations } } : {}) };
     const stamp = JSON.stringify([identity, generation, item.expiresAt, stored.candidate.files.map(file => [file.path, file.originalBlob, file.blobSha])]);
     return { item, stored, identity, generation, stamp, policy: policy.policy };
   }
@@ -160,9 +162,8 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         const authorize = async () => {
           const current = await admit(owner, itemId, candidateId, active);
           if (current.stamp !== stamp) fail(409);
-          if (assessment.repositoryPrivate !== false || current.item.snapshot.private !== false ||
-            await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== false)
-            throw new AssessmentError(403, 'Private-source verification requires owner authorization and is unavailable.');
+          if (typeof await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== 'boolean')
+            throw new AssessmentError(403, 'Repository access is unavailable or invalid.');
         };
         await authorize();
         const result = await whileActive(() => dependencies.verification!.run(verificationContext(assessment), active, authorize), active);
@@ -178,10 +179,9 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         if (assessment.reviews.length >= 8) fail(429);
         const current = await admit(owner, itemId, candidateId, active);
         if (current.stamp !== stamp) fail(409);
-        if (assessment.repositoryPrivate !== false || current.item.snapshot.private !== false) throw new AssessmentError(403, 'Private-source review requires owner authorization and is unavailable.');
-        if (await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== false)
-          throw new AssessmentError(403, 'Private-source review requires owner authorization and is unavailable.');
-        const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: assessment.repositoryPrivate ?? false,
+        const visibility = await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active);
+        if (typeof visibility !== 'boolean') throw new AssessmentError(403, 'Repository access is unavailable or invalid.');
+        const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: current.item.snapshot.private || visibility,
           requirements: assessment.policy.requirements.map(row => ({ id: row.id, criterion: row.criterion, provenance: row.provenance, mandatory: row.mandatory })),
           nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })), files: assessment.files,
           issue };
@@ -201,7 +201,8 @@ export function verificationContext(assessment: Assessment): VerificationContext
   const current = assessment.reviews.filter(review => Object.entries(assessment.identity).every(([key, value]) => review.identity[key as keyof ReviewIdentity] === value));
   const claims = current.flatMap(review => review.result.status === 'completed' ? review.result.claims : []);
   return { identity: assessment.identity, repositoryId: assessment.repositoryId, files: assessment.files,
-    nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })),
+    nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path, kind: node.kind, source: node.source })),
+    tokenSignal: assessment.generation.tokenSignal,
     requirements: assessment.policy.requirements, comparison: { model: assessment.generation.model, settingsDigest: assessment.generation.settingsDigest, revision: assessment.identity.candidateDigest },
     impactUnknown: true, disagreements: assessment.policy.requirements.filter(requirement =>
       claims.some(claim => claim.requirementIds.includes(requirement.id) && claim.stance === 'supports')

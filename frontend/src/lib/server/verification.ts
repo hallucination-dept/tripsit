@@ -1,14 +1,17 @@
 import { createHash } from 'node:crypto';
 import { IntakeError, readJson, whileActive } from './intake.ts';
-import { prioritizeChecks, type PriorityComparison } from './priorities.ts';
+import { prioritizeChecks, type PriorityComparison, type SelectedTokenSignal } from './priorities.ts';
 import type { PacketIdentity, TrustedCheck, TrustedExecution } from './packet.ts';
+import type { GeneratedCandidate, GenerationObservations } from './generation.ts';
+import type { ImpactSource } from './impact.ts';
 
 export type OracleCheck = { id: string; language: 'python' | 'javascript' | 'typescript'; path: string; export: string;
   cases: Array<{ args: unknown[]; expected: unknown }>; requirementIds: string[]; nodeIds: string[];
   mandatory: boolean; impact: 'unknown' | 'critical' | 'high' | 'medium' | 'low'; timeoutMs: number };
 export type VerificationContext = { identity: PacketIdentity; repositoryId: number;
   files: Array<{ path: string; original: string | null; replacement: string }>;
-  nodes: Array<{ id: string; path: string }>; requirements: Array<{ id: string; mandatory: boolean }>;
+  nodes: Array<{ id: string; path: string; kind?: string; source?: ImpactSource }>; requirements: Array<{ id: string; mandatory: boolean }>;
+  tokenSignal?: { mapping: NonNullable<GeneratedCandidate['tokenByteMapping']>; observations: GenerationObservations };
   comparison: PriorityComparison; impactUnknown?: boolean; disagreements: string[] };
 export type VerificationEvidence = { checks: TrustedCheck[]; executions: TrustedExecution[];
   dispatchPlan?: ReturnType<typeof prioritizeChecks>;
@@ -36,6 +39,37 @@ function jsonOracle(value: unknown, depth = 0): boolean {
 }
 export const verificationDigest = (value: unknown) => createHash('sha256').update(canonical(value)).digest('hex');
 const blob = (content: string) => createHash('sha1').update(`blob ${Buffer.byteLength(content)}\0`).update(content).digest('hex');
+
+/** A check names a file, so use only the exact full-file candidate node; no symbol coverage is inferred. */
+export function fileTokenSignal(check: OracleCheck, context: VerificationContext): SelectedTokenSignal | undefined {
+  const data = context.tokenSignal, file = context.files.find(row => row.path === check.path);
+  if (!data || !file || data.observations.status !== 'observed' || data.mapping.status !== 'exact'
+    || data.mapping.outputDigest !== context.identity.candidateDigest || data.mapping.model !== context.comparison.model
+    || data.mapping.settingsDigest !== context.comparison.settingsDigest || context.comparison.revision !== context.identity.candidateDigest
+    || data.mapping.observationsDigest !== createHash('sha256').update(JSON.stringify(data.observations)).digest('hex')) return;
+  const size = Buffer.byteLength(file.replacement), fileBlob = blob(file.replacement);
+  const nodes = context.nodes.filter(node => node.kind === 'file' && node.path === check.path && node.source?.revision === 'candidate'
+    && node.source.path === check.path && node.source.blobSha === fileBlob && node.source.start === 0
+    && node.source.end === size && node.source.byteLength === size);
+  const rows = data.mapping.files.filter(row => row.path === check.path && row.blobSha === fileBlob);
+  if (nodes.length !== 1 || rows.length !== 1 || !check.nodeIds.includes(nodes[0].id) || !rows[0].segments.length) return;
+  const segments = rows[0].segments;
+  if (segments[0].fileStart !== 0 || segments.at(-1)!.fileEnd !== size
+    || segments.some((segment, index) => index > 0 && (segments[index - 1].fileEnd !== segment.fileStart || segments[index - 1].outputEnd !== segment.outputStart))) return;
+  const start = segments[0].outputStart, end = segments.at(-1)!.outputEnd;
+  let offset = 0, covered = start; const logprobs: number[] = [];
+  for (const token of data.observations.tokens) {
+    if (!token.bytes || !token.bytes.length || !Number.isFinite(token.logprob) || token.logprob > 0) return;
+    const next = offset + token.bytes.length;
+    if (offset >= start && next <= end) {
+      if (offset !== covered) return;
+      logprobs.push(token.logprob); covered = next;
+    }
+    offset = next;
+  }
+  if (!logprobs.length || covered !== end) return;
+  return { ...context.comparison, mapping: 'exact', span: { start: 0, end: size }, logprobs };
+}
 
 /** Only server-owned, exact repository/base-pinned manifests define behavioral oracles. */
 export function configuredChecks(manifest: string | undefined, context: VerificationContext): OracleCheck[] {
@@ -100,6 +134,7 @@ export function createVerification(configuration: Configuration) {
         if (!object(admission) || admission.status !== 'passed' || !hash(admission.configurationDigest)
           || !hash(admission.codeDigest) || !hash(admission.environmentDigest)) fail();
         const plan = prioritizeChecks(checks.map(check => ({ ...check, impact: context.impactUnknown ? 'unknown' : check.impact, missingEvidence: true,
+          signal: fileTokenSignal(check, context),
           reviewerDisagreement: check.requirementIds.some(id => context.disagreements.includes(id)) })), context.comparison);
         const ordered = [...plan.mandatory, ...plan.selected].map(row => checks.find(check => check.id === row.id)!);
         const files = context.files.map(file => ({ path: file.path, content: file.replacement, blobSha: blob(file.replacement) }));
