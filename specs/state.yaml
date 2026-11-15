@@ -1,5 +1,21 @@
 workflow_mode: solo-git
 project: TripSit
+autonomous_mvp_delivery:
+  base: 0701b3d5333f1577d539473a5554f0d6fd6f44f0
+  context_assumption: User requested assuming a much higher model context limit; actual deployment remains unverified.
+  pull_requests:
+    ci: https://github.com/hallucination-dept/tripsit/pull/14
+    integration_draft: https://github.com/hallucination-dept/tripsit/pull/9
+    priority_draft: https://github.com/hallucination-dept/tripsit/pull/8
+  backlog:
+  - Implement and verify owner decisions bound to reviewed revisions and evidence.
+  - Implement authorized, idempotent issue-linked PR publication after the decision contract exists.
+  - Map token uncertainty only when exact model token bytes can be reconciled.
+  - Connect impact and uncertainty to verification and run trusted revision-bound checks.
+  - Bind comparative evaluation to trusted executions and independently labeled outcomes.
+  - Implement destination-specific owner authorization for private-source dispatch.
+  - Verify the full authenticated journey and live gates without production changes.
+  status: Draft integration is incomplete; CI PR passed GitHub Actions; no merge authorized.
 active_flow: build_epic
 project_cycle:
   mode: standard
