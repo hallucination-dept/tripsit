@@ -133,3 +133,12 @@ test('packet traces a stored downstream failure to requirements and exact unchan
  const stale=assessmentView('owner',input,true,true).packet;
  assert.notEqual(stale.executions[0].evidenceStatus,'current'); assert(stale.gaps.some(gap=>gap.kind==='stale_artifact'));
 });
+
+test('plain advice remains readable but does not manufacture graph-linked claims or verified evidence', () => {
+ const input=fixture();
+ input.reviews=[{id:'33333333-3333-4333-8333-333333333333',identity:{...input.identity},createdAt:'2026-01-01T00:00:00Z',digest:digest('1'),result:{status:'completed',baseSha:input.identity.baseSha,candidateDigest:input.identity.candidateDigest,model:'gemma',destination:'https://fixture.example',retentionDisclosure:'Unspecified',promptDigest:digest('2'),responseDigest:digest('3'),advice:'Check the caller before accepting.',claims:[],checks:[]}}];
+ const view=assessmentView('owner',input,true);
+ assert.equal(view.reviews[0].result.status==='completed'&&view.reviews[0].result.advice,'Check the caller before accepting.');
+ assert.equal(view.packet.reviewerClaims[0].claims.length,0);assert(view.packet.gaps.some(gap=>gap.kind==='review_claim_mapping_unavailable'));
+ assert.equal(view.packet.verification.status,'unavailable');
+});
