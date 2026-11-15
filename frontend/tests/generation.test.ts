@@ -148,3 +148,97 @@ test('authorized private candidates use the same bounded generation and owner-sc
  assert.equal(f.calls.model,1);assert.equal((await f.service.get('owner','item',candidate.id,f.signal)).id,candidate.id);
  await assert.rejects(f.service.get('other','item',candidate.id,f.signal));
 });
+
+function agentFixture(privateRepository = false) {
+  const f = fixture();
+  f.item.snapshot.private = privateRepository;
+  const originals = new Map([['a.ts', 'export const value = 1;'], ['caller.ts', "import { value } from './a.ts';\nexport const call = () => value;"]]);
+  const reads: string[][] = [];
+  const prompts: Array<Record<string, unknown>> = [];
+  let turn = 0;
+  const dependencies = {
+    ...f.dependencies,
+    github: {
+      async files() { return [...originals].map(([path, content]) => ({ path, blobSha: blob(content) })); },
+      async context(_snapshot: unknown, paths: string[]) { reads.push([...paths]); return paths.map(path => ({ path, originalBlob: blob(originals.get(path)!), content: originals.get(path)! })); }
+    },
+    model: {
+      async generate(prompt: { instruction: string; data: string }) {
+        f.calls.model++;
+        assert.match(prompt.instruction, /read/u);
+        prompts.push(JSON.parse(prompt.data));
+        const actions = [{ read: ['a.ts'] }, { read: ['caller.ts'] }, { files: [{ path: 'a.ts', originalBlob: blob(originals.get('a.ts')!), content: 'export const value = 2;' }] }];
+        return { rawOutput: bytes(JSON.stringify(actions[turn++])), model: 'gemma', settings: {} };
+      }
+    }
+  };
+  return { ...f, originals, reads, prompts, dependencies, service: createGeneration(dependencies) };
+}
+
+test('autonomously reads additional frozen source then implements a change without human file selection', async () => {
+  for (const privateRepository of [false, true]) {
+    const f = agentFixture(privateRepository);
+    const candidate = await f.service.create('owner', 'item', undefined, f.signal);
+    assert.deepEqual(f.reads, [['a.ts'], ['caller.ts']]);
+    assert.equal(f.prompts.length, 3);
+    assert.deepEqual((f.prompts[0].repositoryFiles as Array<{ path: string }>).map(row => row.path), ['a.ts', 'caller.ts']);
+    assert.equal((f.prompts[0].files as unknown[]).length, 0);
+    assert.equal((f.prompts[1].files as unknown[]).length, 1);
+    assert.equal((f.prompts[2].files as unknown[]).length, 2);
+    assert.equal(candidate.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+    assert.equal(new TextDecoder().decode(candidate.candidate.files[0].content), 'export const value = 2;');
+    assert.equal(f.calls.store, 1);
+  }
+});
+
+test('autonomous generation can create a new file in an empty frozen repository', async () => {
+  const f = agentFixture();
+  f.dependencies.github.files = async () => [];
+  f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify({ files: [{ path: 'new.ts', originalBlob: null, content: 'export const value = 1;' }] })), model: 'gemma', settings: {} });
+  const stored = await f.service.create('owner', 'item', undefined, f.signal);
+  assert.equal(stored.candidate.files[0].originalBlob, null);
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.calls.store, 1);
+});
+
+test('autonomous tools reject unsafe, mixed, unknown or repeated reads and uninspected existing replacements', async () => {
+  for (const action of [{ read: ['../secret'] }, { read: ['missing.ts'] }, { read: [] }, { execute: 'bash' }, { read: ['a.ts'], files: [] }, { files: [{ path: 'a.ts', originalBlob: blob('export const value = 1;'), content: 'replace without reading' }] }]) {
+    const f = agentFixture();
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify(action)), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+    assert.equal(f.reads.length, 0);
+  }
+  const repeated = agentFixture();
+  repeated.dependencies.model.generate = async () => ({ rawOutput: bytes('{"read":["a.ts"]}'), model: 'gemma', settings: {} });
+  await assert.rejects(() => repeated.service.create('owner', 'item', undefined, repeated.signal));
+  assert.equal(repeated.calls.store, 0);
+  assert.deepEqual(repeated.reads, [['a.ts']]);
+});
+
+test('autonomous generation has six model turns, bounded source and cancellation for noncooperative tools', async () => {
+  const f = agentFixture();
+  const listing = Array.from({ length: 7 }, (_, index) => ({ path: `file${index}.ts`, blobSha: blob('source') }));
+  f.dependencies.github.files = async () => listing;
+  f.dependencies.github.context = async (_snapshot, paths) => { f.reads.push(paths); return paths.map(path => ({ path, originalBlob: blob('source'), content: 'source' })); };
+  f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify({ read: [listing[f.calls.model++].path] })), model: 'gemma', settings: {} });
+  await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+  assert.equal(f.calls.model, 6);
+  assert.equal(f.calls.store, 0);
+  const cancelled = agentFixture(); const controller = new AbortController();
+  cancelled.dependencies.github.files = async () => { controller.abort(); return new Promise(() => {}); };
+  await assert.rejects(() => cancelled.service.create('owner', 'item', undefined, controller.signal));
+  assert.equal(cancelled.calls.model, 0); assert.equal(cancelled.calls.store, 0);
+});
+
+test('autonomous generation rechecks access and the frozen revision around each tool and model call', async () => {
+  for (const stage of ['listing', 'context', 'model']) {
+    const f = agentFixture();
+    if (stage === 'listing') { const files = f.dependencies.github.files; f.dependencies.github.files = async () => { const value = await files(); f.item.snapshot.baseSha = 'b'.repeat(40); return value; }; }
+    if (stage === 'context') { const context = f.dependencies.github.context; f.dependencies.github.context = async (snapshot, paths) => { const value = await context(snapshot, paths); f.dependencies.intake.get = async () => { throw new IntakeError(403, 'revoked'); }; return value; }; }
+    if (stage === 'model') { const generate = f.dependencies.model.generate; f.dependencies.model.generate = async prompt => { const value = await generate(prompt); f.item.snapshot.supplied.body = 'changed'; return value; }; }
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+    assert.equal(f.calls.model, stage === 'listing' ? 0 : 1);
+  }
+});
