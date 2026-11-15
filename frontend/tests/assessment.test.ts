@@ -151,7 +151,7 @@ test('verification rechecks revision after remote execution and never persists s
  await assert.rejects(f.service.verify('other',itemId,candidateId,f.signal),{status:404});assert.equal(ran,1);
 });
 
-test('review refuses private snapshots, current private or malformed visibility, and revoked access', async () => {
+test('review allows authorized private repositories and denies malformed visibility or revoked access', async () => {
  for (const mode of ['snapshot-private', 'current-private', 'malformed', 'revoked']) {
   const f = fixture();
   if (mode === 'snapshot-private') f.item.snapshot.private = true;
@@ -159,12 +159,18 @@ test('review refuses private snapshots, current private or malformed visibility,
    if (mode === 'revoked') throw new IntakeError(403, 'Access revoked.');
    return mode === 'malformed' ? undefined as unknown as boolean : mode === 'current-private';
   };
-  await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal));
-  assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+  if (mode === 'malformed' || mode === 'revoked') {
+   await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal));
+   assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+  } else {
+   f.deps.reviewer.review = async input => { f.calls.reviewer++; assert.equal(input.private, true); return {status:'unavailable',reason:'Fixture.'}; };
+   await f.service.review('owner', itemId, candidateId, f.signal);
+   assert.equal(f.calls.reviewer, 1); assert.equal(f.calls.append, 1);
+  }
  }
 });
 
-test('private or newly private repositories never reach the runner', async () => {
+test('private repositories reach an admitted runner only with current access', async () => {
   for (const mode of ['private', 'changed', 'denied', 'invalid']) {
     const f = fixture(); let ran = 0;
     if (mode === 'private') f.item.snapshot.private = true;
@@ -175,6 +181,6 @@ test('private or newly private repositories never reach the runner', async () =>
     f.deps.verification = { async run() { ran++; throw new Error('unexpected'); } };
     f.deps.verificationRecords = { async list() { return []; }, async append() { throw new Error('unexpected'); } };
     await assert.rejects(() => f.service.verify('owner', itemId, candidateId, f.signal));
-    assert.equal(ran, 0);
+    assert.equal(ran, ['private', 'changed'].includes(mode) ? 1 : 0);
   }
 });
