@@ -1,6 +1,6 @@
 import { constants } from 'node:fs';
 import { access, mkdir, readFile, realpath, writeFile } from 'node:fs/promises';
-import { dirname, relative, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   AuthStorage, createAgentSession, createBashToolDefinition, createEditToolDefinition, createLocalBashOperations,
   createReadToolDefinition, createWriteToolDefinition, DefaultResourceLoader, defineTool, ModelRegistry, SessionManager, SettingsManager,
@@ -13,7 +13,14 @@ import { isolatedEnvironment } from './repository-workspace.ts';
 
 export type AgentModel = { baseUrl: string; apiKey: string; model: string; contextWindow: number; maxTokens: number };
 export type AgentEvent = { kind: 'assistant' | 'tool' | 'status' | 'error'; text: string };
-export type AgentOutcome = { summary: string; flags: FlagInput[] };
+// A file write by the edit or write tool: the file before and after it and the text the model wrote, which the run
+// scores for edit confidence (see edit-confidence.ts). Paths are repository-relative with forward slashes.
+export type FileEdit = {
+  toolCallId: string; tool: 'edit' | 'write'; path: string; before: string | null; after: string;
+  // Each replacement of an edit call, or the content of a write (oldText null).
+  parts: { oldText: string | null; newText: string }[];
+};
+export type AgentOutcome = { summary: string; flags: FlagInput[]; edits: FileEdit[] };
 
 const PROVIDER = 'tripsit-model';
 const DEFAULT_COMMAND_SECONDS = 120, MAX_COMMAND_SECONDS = 600;
@@ -55,9 +62,40 @@ function workspaceGuard(root: string) {
   };
 }
 
-function workspaceTools(root: string, home: string): ToolDefinition[] {
+// Files larger than this are written without being recorded for edit confidence.
+const MAX_RECORDED_CHARS = 1_000_000;
+
+// The edit and write tools run one at a time (no other tool runs alongside them), so each file write belongs to the
+// call that is running. Writes are recorded with that call's id and replacements.
+function editRecorder(root: string, edits: FileEdit[]) {
+  let active: Pick<FileEdit, 'toolCallId' | 'tool' | 'parts'> | null = null;
+  const text = (value: unknown) => typeof value === 'string' ? value : null;
+  const partsOf = (tool: FileEdit['tool'], params: Record<string, unknown>): FileEdit['parts'] => tool === 'write'
+    ? [{ oldText: null, newText: text(params.content) ?? '' }]
+    : (Array.isArray(params.edits) ? params.edits : []).map(edit => ({ oldText: text(edit?.oldText) ?? '', newText: text(edit?.newText) ?? '' }));
+  return {
+    // Wraps a tool definition so its file writes are attributed to the running call.
+    track(definition: ToolDefinition, tool: FileEdit['tool']): ToolDefinition {
+      return { ...definition, executionMode: 'sequential', async execute(toolCallId, params, ...rest) {
+        active = { toolCallId, tool, parts: partsOf(tool, params as Record<string, unknown>) };
+        try { return await definition.execute(toolCallId, params, ...rest); }
+        finally { active = null; }
+      } };
+    },
+    async write(absolute: string, content: string) {
+      const before = active ? await readFile(absolute, 'utf8').catch(() => null) : null;
+      await writeFile(absolute, content);
+      const path = relative(root, absolute);
+      if (!active || path.startsWith('..') || isAbsolute(path) || content.length > MAX_RECORDED_CHARS || (before?.length ?? 0) > MAX_RECORDED_CHARS) return;
+      edits.push({ ...active, path: path.split(sep).join('/'), before, after: content });
+    }
+  };
+}
+
+function workspaceTools(root: string, home: string, edits: FileEdit[]): ToolDefinition[] {
   const inside = workspaceGuard(root);
   const local = createLocalBashOperations();
+  const recorder = editRecorder(root, edits);
   // Each definition is typed by its own schema; pi accepts them as a heterogeneous list.
   return [
     createReadToolDefinition(root, { operations: {
@@ -69,15 +107,15 @@ function workspaceTools(root: string, home: string): ToolDefinition[] {
       operations: { exec: (command, cwd, options) => local.exec(command, cwd, { ...options,
         timeout: Math.min(options.timeout && options.timeout > 0 ? options.timeout : DEFAULT_COMMAND_SECONDS, MAX_COMMAND_SECONDS) }) }
     }),
-    createEditToolDefinition(root, { operations: {
+    recorder.track(createEditToolDefinition(root, { operations: {
       readFile: async path => readFile(await inside(path)),
-      writeFile: async (path, content) => writeFile(await inside(path), content),
+      writeFile: async (path, content) => recorder.write(await inside(path), content),
       access: async path => access(await inside(path), constants.R_OK | constants.W_OK)
-    } }),
-    createWriteToolDefinition(root, { operations: {
-      writeFile: async (path, content) => writeFile(await inside(path), content),
+    } }) as unknown as ToolDefinition, 'edit'),
+    recorder.track(createWriteToolDefinition(root, { operations: {
+      writeFile: async (path, content) => recorder.write(await inside(path), content),
       mkdir: async path => { await mkdir(await inside(path), { recursive: true }); }
-    } })
+    } }) as unknown as ToolDefinition, 'write')
   ] as unknown as ToolDefinition[];
 }
 
@@ -138,6 +176,7 @@ export async function runPiAgent(options: {
 }): Promise<AgentOutcome> {
   const root = await realpath(options.workspace);
   const flags: FlagInput[] = [];
+  const edits: FileEdit[] = [];
   const authStorage = AuthStorage.inMemory();
   authStorage.setRuntimeApiKey(PROVIDER, options.model.apiKey);
   const settingsManager = SettingsManager.inMemory({ compaction: { enabled: true }, retry: { enabled: true, maxRetries: 2 } });
@@ -160,7 +199,7 @@ export async function runPiAgent(options: {
     },
     authStorage, modelRegistry: ModelRegistry.inMemory(authStorage), resourceLoader, settingsManager,
     sessionManager: SessionManager.inMemory(), noTools: 'builtin',
-    customTools: [...workspaceTools(root, options.home), flagTool(flags) as unknown as ToolDefinition]
+    customTools: [...workspaceTools(root, options.home, edits), flagTool(flags) as unknown as ToolDefinition]
   });
   let summary = '';
   let failure = '';
@@ -192,7 +231,7 @@ export async function runPiAgent(options: {
       // The review turn only adds flags; a failure there keeps the change and its summary.
       if (failure) options.onEvent({ kind: 'error', text: clip(`The flag review stopped: ${failure}`, 600) });
     }
-    return { summary: finalSummary, flags };
+    return { summary: finalSummary, flags, edits };
   } finally {
     options.signal.removeEventListener('abort', abort);
     unsubscribe();

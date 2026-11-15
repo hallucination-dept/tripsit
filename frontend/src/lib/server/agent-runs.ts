@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { IntakeError } from './intake.ts';
 import type { ChangeGraph } from './change-graph.ts';
 import type { AgentFlag } from './flags.ts';
+import type { RunConfidence } from '../edit-confidence.ts';
 import type { PullRequest, RepositoryArchive } from './github.ts';
 
 export type RunStatus = 'preparing' | 'running' | 'analyzing' | 'publishing' | 'done' | 'failed' | 'cancelled';
@@ -12,6 +13,8 @@ export type RunResult = {
   pullRequest: PullRequest | null; publishNote: string | null;
   // Review flags the agent attached to its edits; runs saved before flags existed have none.
   flags?: AgentFlag[];
+  // Token confidence per changed node; runs saved before it existed have none.
+  confidence?: RunConfidence;
 };
 export type RunPicture = { graph: ChangeGraph; flags: AgentFlag[] };
 export type RunSummary = {

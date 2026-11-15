@@ -1,6 +1,6 @@
 import {
 	badgeColors, bezier, bubbleGeometry, buildCardModel, cardWidth, changeLabels, edgeLabel, geometry, layoutCards, symbolGlyph, symbolLabel,
-	type Bubble, type CardEdgeData
+	type CardEdgeData, type FlagBubble
 } from '#lib/graph-layout.ts';
 import type { ChangeGraph, ChangeKind, GraphNode } from '#lib/server/change-graph.ts';
 import { attention, attentionAlpha, flagIndex, flagLabels, flagRgb, strongest, type AgentFlag, type FlagKind } from '#lib/flag-levels.ts';
@@ -64,7 +64,7 @@ function flagIcon(kind: FlagKind, left: number, top: number) {
 
 // A flag bubble beside the card: an opaque comment box (page colour mixed with the flag hue) whose right-triangle notch
 // continues its top edge to the left, with the tip at the row it is about.
-function flagBubble(bubble: Bubble, nodeX: number, nodeY: number, cardRight: number, theme: GraphTheme) {
+function flagBubble(bubble: FlagBubble, nodeX: number, nodeY: number, cardRight: number, theme: GraphTheme) {
 	const { tint, accent } = attentionAlpha[attention(bubble.flag)];
 	const page = theme === 'dark' ? [13, 17, 23] : [255, 255, 255], hue = flagRgb.split(',').map(Number);
 	const mix = Math.min(1, tint + 0.1);
@@ -150,7 +150,8 @@ export async function renderGraphSvg(graph: ChangeGraph, theme: GraphTheme = 'li
 			parts.push(`<text class="${dim ? 'subtle' : 'strong'}" x="${round(left + 36)}" y="${round(middle + 4)}" font-size="12"${row.node.change === 'deleted' ? ' text-decoration="line-through"' : ''}>${escape(fit(symbolLabel(row.node, row.depth > 0), x + width - left - 46 - room, 12))}</text>`);
 			if (row.node.change !== 'unchanged') parts.push(badge(row.node.change, changeLabels[row.node.change], x + width - 10, middle));
 		});
-		for (const bubble of bubbles) parts.push(flagBubble(bubble, x, y, x + width, theme));
+		// The picture has no confidence data, so its bubbles are all review flags.
+		for (const bubble of bubbles) if (bubble.kind === 'flag') parts.push(flagBubble(bubble, x, y, x + width, theme));
 		return parts.join('');
 	});
 

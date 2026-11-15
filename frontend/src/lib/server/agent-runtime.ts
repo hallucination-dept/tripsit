@@ -6,6 +6,8 @@ import { database } from '#lib/auth.js';
 import { createAgentRunRecords } from './agent-run-records.ts';
 import { createAgentRuns, RunFailure, type RunExecutor, type RunFinisher } from './agent-runs.ts';
 import { buildChangeGraph } from './change-graph.ts';
+import { CaptureError, collectEditTokens, editTokensAvailable, forgetEditTokens, scoreEdits } from './edit-confidence.ts';
+import type { RunConfidence } from '../edit-confidence.ts';
 import type { PullRequest } from './github.ts';
 import { attachFlags, flagsMarkdown, type FlagInput } from './flags.ts';
 import { graphComment, graphImageKey, publicOrigin, validGraphImageKey } from './graph-comment.ts';
@@ -32,18 +34,22 @@ export function pullRequestText(runId: string, instruction: string, summary: str
 const executeRun: RunExecutor = async ({ id, archive, instruction, signal, emit, stage }) => {
   if (!agentConfigured()) throw new RunFailure('The agent model is not configured.');
   const root = await mkdtemp(join(tmpdir(), 'tripsit-run-'));
+  // Requests under /runs/<id> let the model service keep the tokens behind each edit (edit confidence).
+  const modal = MODAL_API_URL!.replace(/\/$/, ''), runBase = `${modal}/runs/${id}`;
+  let capturing = false, collected = false;
   try {
     const workspace = join(root, 'repo'), home = join(root, 'home'), agentDir = join(root, 'agent');
     await Promise.all([mkdir(workspace), mkdir(home), mkdir(agentDir)]);
     emit('status', 'Downloading the repository');
     const { entries } = await extractArchive(await archive.download(signal), workspace, signal);
     const base = await commitBase(workspace, home);
+    capturing = await editTokensAvailable(runBase, MODAL_PROXY_TOKEN!, signal);
     emit('status', `Repository ready (${entries} entries); starting the agent`);
     stage('running');
     const outcome = await runPiAgent({
       workspace, agentDir, home, repository: archive.repository, instruction, signal,
       onEvent: event => emit(event.kind, event.text),
-      model: { baseUrl: `${MODAL_API_URL!.replace(/\/$/, '')}/v1`, apiKey: MODAL_PROXY_TOKEN!,
+      model: { baseUrl: capturing ? `${runBase}/v1` : `${modal}/v1`, apiKey: MODAL_PROXY_TOKEN!,
         model: MODEL_ID || 'google/gemma-4-31B-it', contextWindow: 65_536, maxTokens: 8_192 }
     });
     stage('analyzing');
@@ -52,6 +58,21 @@ const executeRun: RunExecutor = async ({ id, archive, instruction, signal, emit,
     const graph = await buildChangeGraph({ files, changes, read: path => readWorkspaceText(workspace, path) });
     const flags = attachFlags(outcome.flags, graph);
     if (flags.length) emit('status', `The agent flagged ${flags.length} spot${flags.length === 1 ? '' : 's'} for review`);
+    let confidence: RunConfidence = { status: 'unavailable',
+      reason: capturing ? 'The agent did not change any files.' : 'The model service does not keep edit tokens yet.' };
+    if (capturing) {
+      try {
+        const calls = await collectEditTokens(runBase, MODAL_PROXY_TOKEN!, signal);
+        collected = true;
+        if (changes.length) confidence = scoreEdits({ edits: outcome.edits, calls, graph,
+          files: changes.map(({ path, before, after }) => ({ path, before, after })) });
+      } catch (cause) {
+        confidence = { status: 'unavailable', reason: cause instanceof CaptureError ? cause.message : 'The edit tokens could not be scored.' };
+      }
+    }
+    emit('status', confidence.status === 'scored'
+      ? `Scored edit confidence for ${confidence.nodes.length} graph node${confidence.nodes.length === 1 ? '' : 's'}`
+      : `No edit confidence: ${confidence.reason}`);
 
     let pullRequest: PullRequest | null = null, publishNote: string | null = null;
     if (!changes.length) publishNote = 'No pull request: the agent did not change any files.';
@@ -69,9 +90,10 @@ const executeRun: RunExecutor = async ({ id, archive, instruction, signal, emit,
       }
     }
     if (publishNote) emit(changes.length && archive.publish.available ? 'error' : 'status', publishNote);
-    return { summary: outcome.summary, graph, flags, truncated, pullRequest, publishNote,
+    return { summary: outcome.summary, graph, flags, confidence, truncated, pullRequest, publishNote,
       files: changes.map(({ path, change, binary, diff }) => ({ path, change, binary, diff })) };
   } finally {
+    if (capturing && !collected) forgetEditTokens(runBase, MODAL_PROXY_TOKEN!);
     await rm(root, { recursive: true, force: true });
   }
 };

@@ -678,3 +678,8 @@ session_closeout:
   local_app: http://localhost:5173; active source /tmp/tripsit-e01s01; server exec93651. Environment stays in primary frontend/.env, never committed.
   next_command: node --env-file=/home/u786288/projects/ohjunction/tripsit/frontend/.env --experimental-strip-types frontend/scripts/candidate-dry-run.ts 27eba683-198a-43ed-b27a-087a40addf1c
   context_window_update: User explicitly confirms larger context is coming soon; record as planned, not already active.
+edit_confidence:
+  plan: specs/EDIT_CONFIDENCE_PLAN.md
+  status: Implemented 2026-11-15 on fix/intake-error-logging, uncommitted; modal_gemma.py with the /runs routes deployed to Modal from the working tree with user authorization. A push to main without these changes redeploys the old service (runs then fall back to /v1).
+  verification: python3 -m unittest discover -s tests passed (36); frontend offline tests 305 of 306 (the github-auth stub failure logged in specs/bugs/github-auth-test-pool-mock.md); npm run check and npm run build passed; negentropy matched uqlm 0.6.8 within 3.3e-16.
+  open: Live capture route and one real pi run verified (see the plan). Commit and merge to keep the Modal routes on the next deploy; the production frontend uses them only after the app changes ship.

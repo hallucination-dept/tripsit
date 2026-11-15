@@ -234,7 +234,7 @@ implementation/review flow.
 
 ## Agent runs
 
-The **Agent runs** page (`/agent`) lets the pi coding agent, running Gemma 4 on Modal,
+The workspace (`/`, formerly the **Agent runs** page at `/agent`) lets the pi coding agent, running Gemma 4 on Modal,
 change a repository that the GitHub App can reach. The page shows the agent log, a
 dependency graph of the change, and a pull request link. Before using it:
 
@@ -250,12 +250,20 @@ dependency graph of the change, and a pull request link. Before using it:
    and say why no pull request was opened. Pull requests are opened from a `tripsit/…`
    branch on top of the analyzed commit and are never merged automatically. Each pull request then
    gets a comment with a picture of the change graph (light or dark to match GitHub) that links to
-   the interactive graph on `/agent`. The comment needs the app's public HTTPS address in
+   the interactive graph on `/`. The comment needs the app's public HTTPS address in
    `BETTER_AUTH_URL`; runs on a local server skip it. GitHub loads the picture without signing in,
    so its URL carries a key signed with `BETTER_AUTH_SECRET`: anyone with that link can see the
    file and symbol names in the graph, but no source code.
 3. The Modal app must run `modal_gemma.py` from this repository (tool calling, streaming,
    65,536-token context). A deploy from an older `main` reverts those settings.
+4. Edit confidence needs the Modal routes under `/runs/{run_id}` (deployed with `modal_gemma.py`,
+   which runs on every push to `main`). Each run sends its model requests there; the service
+   generates them non-streamed with the top 15 token logprobs, keeps the tokens behind every
+   `edit` and `write` call in the `tripsitter-run-tokens` Modal Dict, and the app reads and deletes
+   them after the run. The graph then shows each changed symbol and file with its lowest token
+   negentropy (uqlm's `min_token_negentropy`) and a length-adjusted score. Against an older
+   deployment, runs use `/v1` as before and report edit confidence as unavailable.
+   See `specs/EDIT_CONFIDENCE_PLAN.md`.
 
 The agent gets a shell in a temporary copy of the repository. Its environment carries no
 server secrets, but it can run repository code with the server's network and file access,

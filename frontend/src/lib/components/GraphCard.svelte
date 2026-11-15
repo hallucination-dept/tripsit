@@ -10,6 +10,8 @@
 	import FileCode from '@lucide/svelte/icons/file-code';
 	import FileText from '@lucide/svelte/icons/file-text';
 	import FlagIcon from '@lucide/svelte/icons/flag';
+	// A path forking in two: the model weighed other tokens here.
+	import Split from '@lucide/svelte/icons/split';
 	import MessageCircleQuestionMark from '@lucide/svelte/icons/message-circle-question-mark';
 	import Scale from '@lucide/svelte/icons/scale';
 	import TriangleAlert from '@lucide/svelte/icons/triangle-alert';
@@ -17,9 +19,13 @@
 	import Folder from '@lucide/svelte/icons/folder';
 	import Type from '@lucide/svelte/icons/type';
 	import Variable from '@lucide/svelte/icons/variable';
-	import { bubbleGeometry, bubbleMode, cardWidth, changeLabels, symbolGlyph, symbolLabel, type Bubble, type CardFlowNode, type GraphUi } from '#lib/graph-layout.ts';
+	import {
+		bubbleGeometry, bubbleMode, cardWidth, changeLabels, confidenceBubbleId, headCenter, lowConfidenceLabel, rowCenter, symbolGlyph, symbolLabel,
+		type Bubble, type CardFlowNode, type GraphUi
+	} from '#lib/graph-layout.ts';
 	import type { GraphNode } from '#lib/server/change-graph.ts';
 	import { attention, flagLabels, strongest, type AgentFlag, type FlagKind } from '#lib/flag-levels.ts';
+	import { isUnusual, metricLabels, percent, ringBelow, tintAlpha, type NodeConfidence } from '#lib/edit-confidence.ts';
 
 	let { id, data }: NodeProps<CardFlowNode> = $props();
 	const ui = getContext<GraphUi>('change-graph');
@@ -47,9 +53,12 @@
 		let inCode = false;
 		return lines.map(line => line.split('`').map((text, index) => ({ text, code: index > 0 ? (inCode = !inCode) : inCode })).filter(part => part.text));
 	}
-	// A closed bubble starts with "Kind:", shown in bold.
+	// A closed bubble starts with "Kind:" (or "Low confidence:"), shown in bold.
+	const bubbleLabel = (bubble: Bubble) => bubble.kind === 'flag' ? flagLabels[bubble.flag.kind] : lowConfidenceLabel;
+	const bubbleSummary = (bubble: Bubble) => bubble.kind === 'flag' ? `${flagLabels[bubble.flag.kind]}: ${bubble.flag.reason}`
+		: `${lowConfidenceLabel}: ${percent(bubble.score.confidence)}`;
 	const labelled = (bubble: Bubble, index: number, text: string) => {
-		const label = `${flagLabels[bubble.flag.kind]}:`;
+		const label = `${bubbleLabel(bubble)}:`;
 		return !bubble.open && index === 0 && text.startsWith(label) ? { label, rest: text.slice(label.length) } : { label: '', rest: text };
 	};
 	const width = $derived(cardWidth(data.card));
@@ -58,7 +67,47 @@
 	const zoom = $derived(viewport.current.zoom || 1);
 	const unzoom = $derived(1 / zoom);
 	const flagTitle = (flags: AgentFlag[]) => `${flags.length} review flag${flags.length === 1 ? '' : 's'}`;
+
+	// Edit confidence: every scored head and row is tinted and gets a ring (highlighted below `ringBelow`), which opens
+	// a comment with the details on hover, focus or click (a click keeps it open). Files and classes carry the lowest
+	// score of the edits inside them.
+	type Ring = { key: string; score: NodeConfidence; anchor: number; title: string; scope: string | null };
+	const headScore = $derived(ui.confidence(id));
+	const rowRings = $derived(data.rows.flatMap((row, index): Ring[] => {
+		const score = row.type === 'symbol' ? ui.confidence(row.id) : null;
+		if (!score || row.type !== 'symbol') return [];
+		const isClass = row.node.symbolKind === 'class';
+		return [{ key: row.id, score, anchor: rowCenter(index), title: isClass ? 'Class confidence' : 'Edit confidence', scope: isClass ? 'this class' : null }];
+	}));
+	const headRing = $derived<Ring | null>(headScore ? { key: id, score: headScore, anchor: headCenter, title: 'File confidence', scope: 'this file' } : null);
+	let peek = $state<string | null>(null), pinned = $state<string | null>(null);
+	// A low-confidence edit has its own bubble; its ring opens and closes that instead of a hover comment.
+	const bubbleOf = (key: string) => data.bubbles.find(bubble => bubble.kind === 'confidence' && bubble.id === confidenceBubbleId(key)) ?? null;
+	let hideTimer: ReturnType<typeof setTimeout> | undefined;
+	const show = (key: string) => { clearTimeout(hideTimer); peek = key; };
+	// A short delay lets the pointer travel from the ring to its comment.
+	const hide = () => { clearTimeout(hideTimer); hideTimer = setTimeout(() => { peek = null; }, 180); };
+	const shown = $derived([...(headRing ? [headRing] : []), ...rowRings].filter(ring => (ring.key === peek || ring.key === pinned) && !bubbleOf(ring.key)));
+	const tint = (score: NodeConfidence | null) => score ? String(tintAlpha(score.confidence)) : null;
+	const tokenText = (text: string) => text.trim() ? text : JSON.stringify(text);
+	const circumference = 2 * Math.PI * 6;
 </script>
+
+{#snippet ring(current: Ring)}
+	{@const key = current.key}
+	{@const score = current.score}
+	{@const own = bubbleOf(key)}
+	<button type="button" class="ring nodrag" class:active={own ? own.open : peek === key || pinned === key} class:low={score.confidence < ringBelow} class:unusual={isUnusual(score)}
+		aria-label="{current.title} {percent(score.confidence)}, details" aria-expanded={own ? own.open : pinned === key}
+		onmouseenter={() => { if (!own) show(key); }} onmouseleave={hide} onfocus={() => { if (!own) show(key); }} onblur={hide}
+		onclick={(event) => { event.stopPropagation(); if (own) ui.toggle(own.id); else pinned = pinned === key ? null : key; }}>
+		<svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+			<circle class="track" cx="8" cy="8" r="6" />
+			<circle class="arc" cx="8" cy="8" r="6" stroke-dasharray="{score.confidence * circumference} {circumference}" transform="rotate(-90 8 8)" />
+		</svg>
+		<span>{percent(score.confidence)}</span>
+	</button>
+{/snippet}
 
 {#snippet ports(key: string)}
 	<Handle type="target" position={Position.Left} id="in-l:{key}" isConnectable={false} class="port" />
@@ -70,7 +119,8 @@
 <div class="node">
 <div class="card kind-{node.kind} change-{node.change}" class:selected={ui.selected === id} style:width="{width}px" style:height="{data.cardHeight}px">
 	<!-- Flag attention is the only colour coding on cards and rows. -->
-	<div class="head flag-{level(ownFlags)}" role="button" tabindex="0" onclick={() => ui.select(id)} onkeydown={(event) => { if (event.key === 'Enter') ui.select(id); }}>
+	<div class="head flag-{level(ownFlags)}" class:scored={headScore !== null} style:--confidence-alpha={tint(headScore)} role="button" tabindex="0"
+		onclick={() => ui.select(id)} onkeydown={(event) => { if (event.key === 'Enter') ui.select(id); }}>
 		{@render ports('head')}
 		<div class="title">
 			{#if data.card.entries.length}
@@ -79,6 +129,7 @@
 			{/if}
 			<CardIcon size={14} class="card-icon" />
 			<span class="name" title={node.path || '/'}>{title}</span>
+			{#if headRing}{@render ring(headRing)}{/if}
 			{#if allFlags.length}<span class="flag-count flag-{level(allFlags)}" title={flagTitle(allFlags)}><FlagIcon size={11} />{allFlags.length}</span>{/if}
 			{#if node.change !== 'unchanged'}<span class="badge badge-{node.change}">{changeLabels[node.change]}</span>{/if}
 		</div>
@@ -91,7 +142,10 @@
 					{@const glyph = symbolGlyph(row.node)}
 					{@const SymbolIcon = symbolIcons[row.node.symbolKind ?? 'variable']}
 					{@const rowFlags = ui.flags(row.id)}
+					{@const rowScore = ui.confidence(row.id)}
+					{@const rowRing = rowRings.find(current => current.key === row.id)}
 					<li class="row change-{row.node.change} flag-{level(rowFlags)}" class:dim={!row.node.focus && row.node.change === 'unchanged'} class:selected={ui.selected === row.id}
+						class:scored={rowScore !== null} style:--confidence-alpha={tint(rowScore)}
 						style:padding-left="{8 + row.depth * 16}px" title="{row.node.symbolKind} · lines {row.node.lines}{row.node.change === 'unchanged' ? '' : ` · ${changeLabels[row.node.change]}`}">
 						{@render ports(row.id)}
 						{#if row.toggle}
@@ -100,6 +154,7 @@
 						{:else}<span class="chevron-space"></span>{/if}
 						<span class="glyph">{#if glyph}{glyph}{:else if SymbolIcon}<SymbolIcon size={13} />{/if}</span>
 						<button type="button" class="label" onclick={() => ui.select(row.id)}>{symbolLabel(row.node, row.depth > 0)}</button>
+						{#if rowRing}{@render ring(rowRing)}{/if}
 						{#if rowFlags.length}<span class="flag-mark flag-{level(rowFlags)}" title={flagTitle(rowFlags)}><FlagIcon size={11} /></span>{/if}
 						{#if row.node.change !== 'unchanged'}<span class="badge badge-{row.node.change}">{changeLabels[row.node.change]}</span>{/if}
 					</li>
@@ -116,19 +171,20 @@
 	{/if}
 </div>
 {#if data.bubbles.length}
-	<!-- Review flags pop out of the card as speech bubbles pointing at their row. -->
+	<!-- Review flags and low-confidence edits pop out of the card as speech bubbles pointing at their row. -->
 	{#each data.bubbles as bubble (bubble.id)}
-		{@const KindIcon = flagIcons[bubble.flag.kind]}
+		{@const KindIcon = bubble.kind === 'flag' ? flagIcons[bubble.flag.kind] : Split}
 		{@const mode = bubbleMode(bubble.open, zoom)}
-		<div class="bubble-group flag-{attention(bubble.flag)}" class:open={bubble.open} style:left="{width}px" style:top="{bubble.anchor}px" style:transform="scale({unzoom})">
-		<button type="button" class="bubble nodrag flag-{attention(bubble.flag)} mode-{mode}" class:open={bubble.open} aria-expanded={bubble.open}
-			aria-label={mode === 'icon' ? `${flagLabels[bubble.flag.kind]}: ${bubble.flag.reason}` : undefined}
+		{@const tone = bubble.kind === 'flag' ? `flag-${attention(bubble.flag)}` : 'conf'}
+		<div class="bubble-group {tone}" class:open={bubble.open} style:left="{width}px" style:top="{bubble.anchor}px" style:transform="scale({unzoom})">
+		<button type="button" class="bubble nodrag {tone} mode-{mode}" class:open={bubble.open} aria-expanded={bubble.open}
+			aria-label={mode === 'icon' ? bubbleSummary(bubble) : undefined}
 			style:left="{bubbleGeometry.gutter}px" style:top="{bubble.top - bubble.anchor}px"
 			style:width={mode === 'icon' ? undefined : `${bubbleGeometry.width}px`}
 			style:height="{mode === 'icon' ? 2 * bubbleGeometry.pad + bubbleGeometry.line : bubble.height}px"
-			title={bubble.open ? 'Close' : `${flagLabels[bubble.flag.kind]}: ${bubble.flag.reason}`}
+			title={bubble.open ? 'Close' : bubbleSummary(bubble)}
 			onclick={(event) => { event.stopPropagation(); ui.toggle(bubble.id); }}>
-			<KindIcon size={bubbleGeometry.icon} />
+			<KindIcon size={bubbleGeometry.icon} class={bubble.kind === 'confidence' ? 'branching' : undefined} />
 			{#if mode === 'icon'}
 				<!-- Zoomed out: just the kind and a chevron; clicking opens the whole comment, zooming in shows the preview. -->
 				<span class="bubble-chevron"><ChevronRight size={12} /></span>
@@ -143,6 +199,32 @@
 		</div>
 	{/each}
 {/if}
+{#each shown as current (current.key)}
+	{@const score = current.score}
+	{@const metric = ui.confidenceMetric ?? 'negentropy'}
+	<div class="conf-group" style:left="{width}px" style:top="{current.anchor}px" style:transform="scale({unzoom})">
+		<div class="conf-pop nodrag" role="dialog" tabindex="-1" aria-label="Edit confidence" style:left="{bubbleGeometry.gutter}px"
+			onmouseenter={() => show(current.key)} onmouseleave={hide}>
+			<p class="conf-head"><strong>{current.title}</strong><span class:unusual={isUnusual(score)}>{percent(score.confidence)}</span></p>
+			{#if current.scope}<p class="conf-scope">Lowest across all edits in {current.scope}</p>{/if}
+			<dl>
+				<dt>{metricLabels[metric]}</dt><dd>{score.confidence.toFixed(3)}</dd>
+				{#if metric === 'negentropy'}<dt>Min. token probability</dt><dd>{percent(score.minProbability)}</dd>{/if}
+				<dt>Tokens scored</dt><dd>{score.tokens}</dd>
+				{#if score.adjusted !== null}
+					<dt>Length-adjusted</dt><dd class:unusual={isUnusual(score)}>{score.adjusted.toFixed(2)} · {isUnusual(score) ? 'unusual' : 'typical'}</dd>
+				{/if}
+			</dl>
+			<p class="conf-weakest">Least sure on line {score.weakest.line}: <code>{tokenText(score.weakest.text)}</code> at {percent(score.weakest.probability)}</p>
+			{#if score.weakest.alternatives.length}
+				<ul class="conf-alts">
+					{#each score.weakest.alternatives as option, position (position)}<li><code>{tokenText(option.text)}</code><span>{percent(option.probability)}</span></li>{/each}
+				</ul>
+			{/if}
+			<p class="conf-foot">uqlm white-box score over the tokens that wrote this code. Length-adjusted: the chance a part this size has a token this unsure.</p>
+		</div>
+	</div>
+{/each}
 </div>
 
 <style>
@@ -185,6 +267,46 @@
 	.title .flag-count { margin-left: auto; }
 	.title .flag-count + .badge { margin-left: 6px; }
 	.flag-mark { display: inline-flex; flex-shrink: 0; color: rgba(var(--flag-rgb), max(var(--flag-accent), .75)); }
+	/* Edit confidence: a tint in its own hue that grows stronger as confidence falls. It is a background image, so it
+	   layers over a flag tint and over the selected row instead of replacing them. */
+	.head.scored, .row.scored { background-image: linear-gradient(rgba(var(--confidence-rgb), var(--confidence-alpha)), rgba(var(--confidence-rgb), var(--confidence-alpha))); }
+	/* Every scored edit has a ring; confident ones stay muted, those below the threshold are highlighted. */
+	.ring { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; padding: 1px 3px 1px 2px; color: var(--text-muted); font: 500 9.5px/1 var(--font-mono); cursor: pointer; }
+	.ring svg { display: block; }
+	.ring .track { fill: none; stroke: rgba(255, 255, 255, .16); stroke-width: 2.5; }
+	.ring .arc { fill: none; stroke: rgba(var(--confidence-rgb), .7); stroke-width: 2.5; }
+	.ring.low { color: var(--text); font-weight: 600; }
+	.ring.low .arc { stroke: rgb(var(--confidence-rgb)); }
+	.ring:hover, .ring.active { color: var(--text); }
+	.ring:hover .arc, .ring.active .arc { stroke: rgb(var(--confidence-rgb)); }
+	.ring.unusual span { color: var(--modified); }
+	.title .ring { margin-left: auto; }
+	.title .ring + .flag-count, .title .ring + .badge { margin-left: 6px; }
+	/* The confidence comment: like a flag bubble, beside the card and pointing at its row, in the confidence hue. */
+	.conf-group { position: absolute; width: 0; height: 0; transform-origin: 0 0; z-index: 3; pointer-events: none !important; }
+	.conf-pop { --pop-fill: color-mix(in srgb, rgb(var(--confidence-rgb)) 16%, var(--bg));
+		position: absolute; top: 0; width: 300px; padding: 8px 10px; pointer-events: auto; cursor: default;
+		background: var(--pop-fill); border: 1px solid rgb(var(--confidence-rgb)); box-shadow: 0 6px 18px rgba(0, 0, 0, .55);
+		color: var(--text); font: 400 11px/15px var(--font-mono); }
+	.conf-pop::before, .conf-pop::after { content: ''; position: absolute; clip-path: polygon(0 0, 100% 0, 100% 100%); }
+	.conf-pop::before { left: -11px; top: -1px; width: 11px; height: 11px; background: rgb(var(--confidence-rgb)); }
+	.conf-pop::after { left: -8.5px; top: 0; width: 9.5px; height: 8.5px; background: var(--pop-fill); }
+	.conf-pop p { margin: 0; }
+	.conf-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 6px !important; }
+	.conf-head strong { color: rgb(var(--confidence-rgb)); font-weight: 600; }
+	.conf-head span { font-size: 15px; font-weight: 600; }
+	.conf-scope { margin: -4px 0 6px !important; color: var(--text-subtle); }
+	.conf-pop dl { display: grid; grid-template-columns: auto auto; justify-content: space-between; gap: 2px 12px; margin: 0; }
+	.conf-pop dt { color: var(--text-muted); white-space: nowrap; }
+	.conf-pop dd { margin: 0; text-align: right; white-space: nowrap; }
+	.conf-pop .unusual { color: var(--modified); }
+	.conf-weakest { margin-top: 8px !important; padding-top: 6px; border-top: 1px solid rgba(var(--confidence-rgb), .4); color: var(--text-muted); }
+	.conf-pop code { padding: 0 1px; background: rgba(255, 255, 255, .1); color: var(--text); font: inherit; white-space: pre; }
+	.conf-alts { list-style: none; margin: 4px 0 0; padding: 0; display: grid; gap: 1px; }
+	.conf-alts li { display: flex; justify-content: space-between; gap: 12px; color: var(--text-muted); }
+	.conf-foot { margin-top: 8px !important; color: var(--text-subtle); font-size: 10px; line-height: 14px; }
+	/* A node showing a comment or an open bubble sits above its neighbours, which the bubble may overlay. */
+	:global(.svelte-flow__node:has(.conf-group)), :global(.svelte-flow__node:has(.bubble-group.open)) { z-index: 1000 !important; }
 	/* Flag bubbles: an opaque comment bubble beside the card pointing at its row; clicking opens the full text. */
 	.node { position: relative; width: 100%; height: 100%; pointer-events: none; }
 	.node > * { pointer-events: auto; }
@@ -211,6 +333,15 @@
 	.bubble-line { height: 15px; white-space: pre; overflow: hidden; }
 	.bubble-head, .bubble strong { color: rgb(var(--flag-rgb)); font-weight: 600; }
 	.bubble code { padding: 0 1px; background: rgba(255, 255, 255, .1); color: var(--text); font: inherit; }
+	/* Low-confidence bubbles: the flag bubble's shape in the confidence hue. */
+	/* Its own border: the flag bubble's border reads the flag accent variables, which these bubbles do not set. */
+	.bubble.conf { --bubble-fill: color-mix(in srgb, rgb(var(--confidence-rgb)) 16%, var(--bg)); border: 1px solid rgb(var(--confidence-rgb)); }
+	.bubble.conf:hover { --bubble-fill: color-mix(in srgb, rgb(var(--confidence-rgb)) 24%, var(--bg)); }
+	.bubble.conf::before { background: rgb(var(--confidence-rgb)); }
+	.bubble.conf :global(svg) { color: rgb(var(--confidence-rgb)); }
+	/* The split icon turned a quarter clockwise: one stem forking to the right, like the alternatives it stands for. */
+	.bubble :global(svg.branching) { transform: rotate(90deg); }
+	.bubble.conf .bubble-head, .bubble.conf strong { color: rgb(var(--confidence-rgb)); }
 	.more-toggle { display: flex; align-items: center; gap: 4px; width: 100%; height: 24px; padding: 0; color: var(--text-subtle); font: 400 11px/1 var(--font-mono); text-align: left; }
 	.more-toggle:hover { color: var(--text); }
 	.more { padding-left: 8px; }

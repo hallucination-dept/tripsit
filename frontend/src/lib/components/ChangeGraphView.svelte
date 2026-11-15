@@ -13,12 +13,14 @@
 	import type { RunFile } from '#lib/server/agent-runs.ts';
 	import type { ChangeGraph } from '#lib/server/change-graph.ts';
 	import { attention, byAttention, flagIndex, flagLabels, type AgentFlag } from '#lib/flag-levels.ts';
+	import Split from '@lucide/svelte/icons/split';
+	import { isUnusual, metricLabels, percent, ringBelow, tintAlpha, type NodeConfidence, type RunConfidence } from '#lib/edit-confidence.ts';
 
-	let { graph, files, flags = [] }: { graph: ChangeGraph; files: RunFile[]; flags?: AgentFlag[] } = $props();
+	let { graph, files, flags = [], confidence = null }: { graph: ChangeGraph; files: RunFile[]; flags?: AgentFlag[]; confidence?: RunConfidence | null } = $props();
 	const nodeTypes = { card: GraphCard };
 	const edgeTypes = { change: ChangeEdge };
 	// A plain copy: Svelte Flow node data must not hold reactive proxies from the page's run state.
-	const model = $derived(buildCardModel($state.snapshot(graph) as ChangeGraph, $state.snapshot(flags) as AgentFlag[]));
+	const model = $derived(buildCardModel($state.snapshot(graph) as ChangeGraph, $state.snapshot(flags) as AgentFlag[], $state.snapshot(confidence) as RunConfidence | null));
 	let open = $state<Set<string>>(new Set());
 	let selected = $state<string | null>(null);
 	let nodes = $state.raw<CardFlowNode[]>([]);
@@ -27,10 +29,13 @@
 	let canvas = $state<HTMLElement>();
 
 	const index = $derived(flagIndex(flags, model.owner, new Set(model.cards.keys())));
+	const scores = $derived(new Map<string, NodeConfidence>(confidence?.status === 'scored' ? confidence.nodes.map(node => [node.nodeId, node]) : []));
 	const ui: GraphUi = {
 		get selected() { return selected; },
 		flags: (id: string) => index.byNode.get(id) ?? [],
 		cardFlags: (id: string) => index.byCard.get(id) ?? [],
+		confidence: (id: string) => scores.get(id) ?? null,
+		get confidenceMetric() { return confidence?.status === 'scored' ? confidence.metric : null; },
 		select: (id: string) => { selected = selected === id ? null : id; },
 		toggle: (id: string) => {
 			const next = new Set(open);
@@ -81,6 +86,15 @@
 	const diff = $derived(!item ? '' : item.kind === 'symbol' ? graph.symbolDiffs[item.id] ?? ''
 		: item.kind === 'file' ? files.find(file => file.path === item.path)?.diff ?? '' : '');
 	const itemFlags = $derived(item ? byAttention(index.byNode.get(item.id) ?? []) : []);
+	const itemScore = $derived(item ? scores.get(item.id) ?? null : null);
+	// Lowest first; symbols when any were scored, otherwise files.
+	const scored = $derived.by(() => {
+		if (confidence?.status !== 'scored') return [];
+		const symbols = confidence.nodes.filter(node => byId.get(node.nodeId)?.kind === 'symbol');
+		return (symbols.length ? symbols : confidence.nodes.filter(node => byId.has(node.nodeId))).slice(0, 6);
+	});
+	const nodeName = (id: string) => { const node = byId.get(id); return !node ? id : node.kind === 'symbol' ? symbolLabel(node, false) : node.label; };
+	const tokenText = (text: string) => text.trim() ? text : JSON.stringify(text);
 	const flagPlace = (flag: AgentFlag) => flag.symbol ? `${flag.path} › ${flag.symbol}` : flag.path;
 	const lineClass = (line: string) => line.startsWith('@@') ? 'hunk' : line.startsWith('+') && !line.startsWith('+++') ? 'add'
 		: line.startsWith('-') && !line.startsWith('---') ? 'del' : '';
@@ -124,6 +138,18 @@
 					{#each itemFlags as flag (flag.id)}{@render flagEntry(flag, false)}{/each}
 				</ul>
 			{/if}
+			{#if itemScore}
+				<div class="confidence" class:unusual={isUnusual(itemScore)}>
+					<p class="confidence-head"><span>Edit confidence</span><strong>{percent(itemScore.confidence)}</strong></p>
+					<p class="confidence-note">{confidence?.status === 'scored' ? metricLabels[confidence.metric] : ''} over {itemScore.tokens} token{itemScore.tokens === 1 ? '' : 's'}{#if itemScore.adjusted !== null} · {isUnusual(itemScore) ? 'unusually uncertain' : 'typical'} for its size ({percent(itemScore.adjusted)}){/if}</p>
+					<p class="confidence-note">Least sure at line {itemScore.weakest.line}: <code>{tokenText(itemScore.weakest.text)}</code> at {percent(itemScore.weakest.probability)}</p>
+					{#if itemScore.weakest.alternatives.length}
+						<ul class="alternatives">
+							{#each itemScore.weakest.alternatives as option, position (position)}<li><code>{tokenText(option.text)}</code><span>{percent(option.probability)}</span></li>{/each}
+						</ul>
+					{/if}
+				</div>
+			{/if}
 			{#if links && (links.uses.length || links.usedBy.length)}
 				<dl class="relations">
 					{#if links.uses.length}<dt>Uses</dt><dd>{#each links.uses as name (name)}<span>{name}</span>{/each}</dd>{/if}
@@ -142,6 +168,16 @@
 					{#each byAttention(flags) as flag (flag.id)}{@render flagEntry(flag, true)}{/each}
 				</ul>
 			{/if}
+			{#if scored.length}
+				<p class="eyebrow">Edit confidence · least sure first</p>
+				<ul class="confidence-list">
+					{#each scored as score (score.nodeId)}
+						<li><button type="button" class:unusual={isUnusual(score)} onclick={() => { selected = score.nodeId; }}><span>{nodeName(score.nodeId)}</span><strong>{percent(score.confidence)}</strong></button></li>
+					{/each}
+				</ul>
+			{:else if confidence?.status === 'unavailable'}
+				<p class="note">Edit confidence: {confidence.reason}</p>
+			{/if}
 			<p class="eyebrow">Details</p>
 			<p class="note">Select a file or symbol to see its diff and what it is connected to. Code that uses something sits above it. Badges mark what the change added, modified or removed, including connections; removed connections are dashed.</p>
 			<ul class="legend">
@@ -150,6 +186,8 @@
 				<li><span class="glyph">new</span>constructor</li>
 				<li><span class="change change-added">added</span><span class="change change-modified">modified</span><span class="change change-deleted">removed</span></li>
 				<li><span class="flag-swatch flag-high"></span><span class="flag-swatch flag-medium"></span><span class="flag-swatch flag-low"></span>review flag, stronger = needs more attention</li>
+				<li>{#each [0.3, 0.6, 0.9] as level (level)}<span class="conf-swatch" style:--alpha={tintAlpha(level)}></span>{/each}edit confidence, stronger = less sure; rings on edits, classes and files (lowest of their edits)</li>
+				<li><span class="conf-mark"><Split size={12} class="branching" /></span>low confidence: an edit below {percent(ringBelow)}, with its least sure token</li>
 			</ul>
 		{/if}
 	</aside>
@@ -184,6 +222,23 @@
 	.relations dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
 	.relations span { padding: 0 5px; border: 1px solid var(--border); color: var(--text-muted); overflow-wrap: anywhere; }
 	.note { margin: 8px 0; color: var(--text-subtle); font: 400 11px/1.6 var(--font-mono); }
+	/* Edit confidence: neutral by default; a node unusually uncertain for its size gets the modified hue. */
+	.confidence { margin: 0 0 14px; padding: 8px 10px; border: 1px solid var(--border); font: 400 11px/1.5 var(--font-mono); }
+	.confidence.unusual { border-color: var(--modified); }
+	.confidence p { margin: 0; }
+	.confidence-head { display: flex; justify-content: space-between; align-items: baseline; color: var(--text-muted); }
+	.confidence-head strong { color: var(--text); font-size: 15px; font-weight: 600; }
+	.confidence.unusual .confidence-head strong { color: var(--modified); }
+	.confidence-note { margin-top: 4px !important; color: var(--text-subtle); overflow-wrap: anywhere; }
+	.confidence code, .alternatives code { color: var(--text); white-space: pre; }
+	.alternatives { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 2px; }
+	.alternatives li { display: flex; justify-content: space-between; gap: 10px; color: var(--text-subtle); }
+	.confidence-list { list-style: none; padding: 0; margin: 0 0 16px; display: grid; gap: 4px; }
+	.confidence-list button { width: 100%; display: flex; justify-content: space-between; gap: 10px; padding: 6px 10px; border: 1px solid var(--border); text-align: left; font: 400 11px/1.4 var(--font-mono); color: var(--text-muted); }
+	.confidence-list button:hover { border-color: var(--border-strong); color: var(--text); }
+	.confidence-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+	.confidence-list strong { color: var(--text); font-weight: 600; }
+	.confidence-list .unusual strong { color: var(--modified); }
 	.canvas > .note { padding: 20px; }
 	.diff { margin: 0; padding: 10px 0; border: 1px solid var(--border); background: var(--bg); font: 11px/1.6 var(--font-mono); overflow: auto; white-space: pre; }
 	.diff span { display: block; padding: 0 10px; min-height: 1.6em; color: var(--text-muted); }
@@ -207,6 +262,10 @@
 	.legend li { display: flex; align-items: center; gap: 8px; }
 	.flag-swatch { width: 14px; height: 14px; background: rgba(var(--flag-rgb), var(--flag-tint)); box-shadow: inset 2px 0 0 rgba(var(--flag-rgb), var(--flag-accent)); }
 	.legend li .flag-swatch + .flag-swatch { margin-left: -6px; }
+	.conf-swatch { flex-shrink: 0; width: 14px; height: 10px; border: 1px solid var(--border); background: rgba(var(--confidence-rgb), var(--alpha)); }
+	.legend li .conf-swatch + .conf-swatch { margin-left: -6px; }
+	.conf-mark :global(svg.branching) { transform: rotate(90deg); }
+	.conf-mark { display: inline-flex; flex-shrink: 0; padding: 1px 3px; border: 1px solid rgb(var(--confidence-rgb)); background: color-mix(in srgb, rgb(var(--confidence-rgb)) 16%, var(--bg)); color: rgb(var(--confidence-rgb)); }
 	.glyph { display: inline-flex; justify-content: center; min-width: 30px; padding: 0 3px; border: 1px solid var(--border); color: var(--info); font: 500 9.5px/16px var(--font-mono); }
 	@media (max-width: 900px) {
 		.graph-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(420px, 1fr) auto; height: auto; }

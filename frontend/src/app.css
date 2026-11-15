@@ -24,6 +24,7 @@
 	--info-bg: rgba(147, 197, 253, 0.1);
 	--token-rgb: 59, 130, 246;
 	--flag-rgb: 232, 121, 249; /* review flags: one hue, strength = attention (see flag-levels.ts) */
+	--confidence-rgb: 168, 85, 247; /* edit confidence: a violet kept apart from the pinker flag hue; strength = how unsure (see edit-confidence.ts) */
 	--font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 	--font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Consolas, monospace;
 }

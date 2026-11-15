@@ -78,3 +78,41 @@ Verification: `python3 -m unittest discover -s specs/experiments/tests -p 'test_
 - The endpoint does sample: three direct requests at temperature 1.0 returned three different sentences, so identical edits reflect a near-deterministic model on these tasks, not a configuration fault.
 
 Conclusion: on small, plausible edits, sample agreement and selected-token probability both report confidence for confidently made assumptions. They cannot cover the "assumption or judgment call" category; that needs explicit assumption flags or a ticket-versus-edit review pass. Sample agreement remains a candidate signal for larger or genuinely underdetermined edits, and its judge prompt would need to treat edge-case differences as disagreement for review use.
+
+## White-box scorer choice per changed node (uqlm 0.6.8)
+
+Status: investigation, 2026-11-15; implemented per `specs/EDIT_CONFIDENCE_PLAN.md`, not deployed.
+
+uqlm's white-box scorers fall into three groups (`uqlm/white_box/`):
+
+- Single generation, selected-token logprobs only: `min_probability`, `sequence_probability` (geometric mean when length-normalized).
+- Single generation, top-k logprobs (`top_k_logprobs=15`): `min_token_negentropy`, `mean_token_negentropy`, `probability_margin` (mean of top-1 minus top-2).
+- Multiple generations: `monte_carlo_probability`, `consistency_and_confidence`, `semantic_negentropy`, `semantic_density`, and `CodeGenUQ`'s `functional_negentropy_whitebox`; plus `p_true`, one extra judge call per item.
+
+The single-generation scorers only aggregate a list of token records, so any token slice can be scored. Passing the
+tokens that produced one function, class or file as one "response" yields a per-node score with no extra model calls.
+Sampled scorers need N full agent re-runs aligned per node; the functional-agreement prototype above showed Gemma's
+samples were identical on small edits.
+
+Choice: `min_token_negentropy` per node, falling back to `min_probability` when only selected-token logprobs exist.
+Averaging scorers (`sequence_probability`, `mean_token_negentropy`, `probability_margin`) are dominated by near-certain
+syntax tokens; the fixture runs had every candidate token at probability ≥ 0.991. A minimum keeps the single most
+uncertain decision in the node, and with top-k data that position also carries the alternatives the model weighed.
+Entropy over the raw distribution (`--logprobs-mode raw_logprobs`) does not depend on which token sampling picked.
+
+Caveats: minimums grow less confident with node length, so keep token counts beside the score. uqlm returns NaN for
+positions whose top-k list is not exactly `top_k_logprobs` long. Token signals miss decisions made confidently in
+reasoning (see the prototype results), so they complement assumption flags rather than replace them.
+
+Prerequisites: agent runs stream, and the Modal relay adds `logprobs` only to non-streamed requests with
+`top_logprobs: 0`; pi only takes a base URL and key, so it cannot surface logprobs itself. Proposed Modal-side capture:
+
+1. Route `/runs/{run_id}/v1/chat/completions` beside the existing route; the agent's base URL carries the run id.
+2. For those requests, call vLLM non-streamed with `logprobs: true, top_logprobs: 15` and replay the result to pi as
+   SSE. vLLM's streaming path can skip chunks the tool or reasoning parser holds back, losing their logprobs; the
+   non-streamed response covers every generated token, including the raw tool-call text.
+3. Keep each request's token records (token, bytes, logprob, top-k) under the run id, behind the proxy token, and serve
+   them from `GET /runs/{run_id}/logprobs` for the app to map onto changed symbols after the run.
+
+Still to confirm: Gemma 4's raw tool-call text reconstructs exactly from token bytes, and the replayed SSE satisfies
+pi's `openai-completions` client. Deploying the changed service needs explicit authorization.
