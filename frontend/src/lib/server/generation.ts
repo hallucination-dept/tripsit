@@ -107,7 +107,7 @@ export function createGeneration(dependencies: GenerationDependencies) {
         repository.set(row.path, row.blobSha);
       }
     }
-    const repositoryFiles = [...repository].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path, blobSha]) => ({ path, blobSha }));
+    const repositoryFiles = [...repository].sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([path]) => ({ path }));
     if (encoder.encode(JSON.stringify(repositoryFiles)).byteLength > 262_144) deny(413);
     const context = new Map<string, GenerationContext>();
     const toolHistory: Array<{ action: 'read'; results: Array<{ path: string; status: 'loaded' | 'cached' | 'not_found' }> }> = [];
