@@ -7,7 +7,7 @@ const base: Record<string, string> = {
   'package.json': JSON.stringify({ name: 'fixture', imports: { '#lib/*': './src/lib/*' } }),
   'tsconfig.json': '{ // comments are allowed here\n "compilerOptions": { "baseUrl": ".", "paths": { "@/*": ["src/*"] } } }',
   'svelte.config.js': 'export default {};',
-  'src/lib/math.ts': 'export function add(a: number, b: number) { return a + b; }\nexport function sub(a: number, b: number) { return a - b; }\nexport const unused = 1;\n',
+  'src/lib/math.ts': 'export function add(a: number, b: number) { return a + b; }\nexport function sub(a: number, b: number) { return add(a, -b); }\nexport const unused = 1;\n',
   'src/lib/format.ts': "import { add } from './math.ts';\nexport function total(values: number[]) { return values.reduce(add, 0); }\n",
   'src/lib/alias-user.ts': "import { add } from '@/lib/math';\nexport const two = add(1, 1);\n",
   'src/hash-user.ts': "import * as math from '#lib/math.ts';\nexport const three = math.add(1, 2);\n",
@@ -21,7 +21,7 @@ const base: Record<string, string> = {
 };
 const after: Record<string, string> = {
   ...base,
-  'src/lib/math.ts': 'export function add(a: number, b: number) { return b + a; }\nexport function mul(a: number, b: number) { return a * b; }\nexport const unused = 1;\n',
+  'src/lib/math.ts': 'export function add(a: number, b: number) { return b + a; }\nexport function mul(a: number, b: number) { return add(a, 0) * b; }\nexport const unused = 1;\n',
   'pkg/util.py': 'def helper():\n    return 42\n\n\ndef other():\n    return 2\n'
 };
 const changes: GraphChange[] = [
@@ -103,4 +103,12 @@ test('source analysis covers classes, components, python methods and multi-line 
   const py = scanImports('from .models import (\n    User as U,\n    Team,\n)\nimport os.path as osp\n', 'python');
   assert.deepEqual(py, [{ specifier: 'os.path', bindings: [{ local: 'osp', imported: '*' }] },
     { specifier: '.models', bindings: [{ local: 'U', imported: 'User' }, { local: 'Team', imported: 'Team' }] }]);
+});
+
+test('connections are marked added or removed by comparing the code before and after', () => {
+  assert.equal(edge('s:src/lib/math.ts#mul', 's:src/lib/math.ts#add')?.change, 'added', 'the new mul calls add');
+  assert.equal(edge('s:src/lib/math.ts#sub', 's:src/lib/math.ts#add')?.change, 'deleted', 'the removed sub called add');
+  assert.equal(edge('f:src/lib/format.ts', 's:src/lib/math.ts#add')?.change, 'unchanged', 'format.ts imported add before and after');
+  assert.equal(edge('f:src/lib/format.ts', 's:src/lib/math.ts#add')?.changed, true, 'it still touches edited code');
+  assert.ok(graph.edges.every(current => current.count >= 1 && !('seen' in current)));
 });

@@ -1,6 +1,6 @@
 import type { ElkNode } from 'elkjs/lib/elk-api';
 import type { Edge, Node, NodeHandle } from '@xyflow/svelte';
-import type { ChangeGraph, GraphNode } from '#lib/server/change-graph.ts';
+import type { ChangeGraph, ChangeKind, GraphNode } from '#lib/server/change-graph.ts';
 
 // Card geometry. GraphCard.svelte renders with the same numbers so the layout and the DOM agree.
 export const geometry = { fileWidth: 280, folderWidth: 220, head: 50, row: 24, listPadding: 4 };
@@ -19,14 +19,18 @@ export type CardModel = {
 };
 export type CardData = { card: Card; rows: CardRow[]; open: boolean };
 export type CardFlowNode = Node<CardData, 'card'>;
-export type CardEdgeData = { changed: boolean; count: number; members: string[] };
+// `change` is 'modified' when a merged connection both gained and lost (or kept) references.
+// `labelT` places the badge along the curve, staggered so parallel connections do not stack their badges.
+export type CardEdgeData = { changed: boolean; change: ChangeKind; count: number; members: string[]; labelT: number };
 // Shared with the card components through Svelte context.
 export type GraphUi = { readonly selected: string | null; select: (id: string) => void; toggle: (id: string) => void };
 type Anchor = { card: string; handle: string };
 type Box = { x: number; y: number; width: number; height: number };
 
 const dirOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
-const colors = { changed: '#fb923c', plain: '#6b6b6b' };
+// Edges stay neutral: colour is reserved for confidence. Change status is shown as badges.
+const edgeColor = '#6b6b6b';
+export const changeLabels: Record<ChangeKind, string> = { added: 'added', modified: 'modified', deleted: 'removed', unchanged: '' };
 
 // Files become cards holding their symbol outline; untouched folders and the "other files" buckets become small cards.
 // Folders that contain focus files are not drawn; each file card names its folder instead.
@@ -94,26 +98,51 @@ function anchorFor(model: CardModel, id: string, visible: Map<string, Set<string
 export function cardLinks(model: CardModel, open: Set<string>) {
 	const visible = new Map([...model.cards.values()].map(card =>
 		[card.id, new Set(visibleRows(card, open).flatMap(row => row.type === 'symbol' ? [row.id] : []))]));
-	const merged = new Map<string, { source: Anchor; target: Anchor; count: number; changed: boolean; members: Set<string> }>();
+	const merged = new Map<string, { source: Anchor; target: Anchor; count: number; changed: boolean; kinds: Set<ChangeKind>; members: Set<string> }>();
 	for (const edge of model.graph.edges) {
 		const source = anchorFor(model, edge.source, visible), target = anchorFor(model, edge.target, visible);
 		if (!source || !target || source.card === target.card) continue;
 		const key = `${source.card}:${source.handle}->${target.card}:${target.handle}`;
-		const link = merged.get(key) ?? { source, target, count: 0, changed: false, members: new Set<string>() };
+		const link = merged.get(key) ?? { source, target, count: 0, changed: false, kinds: new Set<ChangeKind>(), members: new Set<string>() };
 		link.count += edge.count;
 		link.changed ||= edge.changed;
+		link.kinds.add(edge.change ?? 'unchanged'); // runs saved before connection status existed
 		for (const id of [edge.source, edge.target, source.card, target.card, source.handle, target.handle]) if (id !== 'head') link.members.add(id);
 		merged.set(key, link);
 	}
-	return [...merged.entries()].map(([id, link]) => ({ id, ...link }));
+	return [...merged.entries()].map(([id, { kinds, ...link }]) =>
+		({ id, ...link, change: (kinds.size === 1 ? [...kinds][0] : 'modified') as ChangeKind }));
 }
 
 // `focus` is true or false while something is selected (its own edges stand out) and null otherwise.
-export function edgeStyle(changed: boolean, count: number, focus: boolean | null) {
+export function edgeStyle(changed: boolean, count: number, focus: boolean | null, change: ChangeKind = 'unchanged') {
 	const width = Math.min(changed ? 4 : 3, (changed ? 1.8 : 1) + Math.log2(count) * 0.6) + (focus ? 1 : 0);
 	const opacity = focus === false ? 0.12 : changed || focus ? 1 : 0.55;
-	return `stroke:${changed ? colors.changed : colors.plain};stroke-width:${width}px;opacity:${opacity};`;
+	return `stroke:${edgeColor};stroke-width:${width}px;opacity:${opacity};${change === 'deleted' ? 'stroke-dasharray:6 4;' : ''}`;
 }
+
+// A changed connection carries a small badge like the cards; otherwise the label only counts merged references.
+export function edgeLabel(change: ChangeKind, count: number) {
+	const times = count > 1 ? `×${count}` : '';
+	return change === 'unchanged' ? times || undefined : [changeLabels[change], times].filter(Boolean).join(' ');
+}
+// Badge colours match the app's --added/--modified/--deleted tokens; the edge line itself stays grey.
+export const badgeColors: Record<ChangeKind, string> = { added: '#4ade80', modified: '#fb923c', deleted: '#f87171', unchanged: '#8c8c8c' };
+const badgeLabelStyle = (change: ChangeKind) =>
+	`padding:1px 5px;border:1px solid ${badgeColors[change]};color:${badgeColors[change]};font:600 9px/1.4 var(--font-mono);text-transform:uppercase;letter-spacing:.06em;`;
+
+// Svelte Flow's default bezier between left/right handles, with a point at `t` for placing labels.
+export function bezier(sx: number, sy: number, sourceSide: 'l' | 'r', tx: number, ty: number, targetSide: 'l' | 'r') {
+	const offset = (distance: number) => distance >= 0 ? 0.5 * distance : 0.25 * 25 * Math.sqrt(-distance);
+	const c1 = sourceSide === 'r' ? sx + offset(tx - sx) : sx - offset(sx - tx);
+	const c2 = targetSide === 'l' ? tx - offset(tx - sx) : tx + offset(sx - tx);
+	const at = (t: number) => {
+		const u = 1 - t;
+		return { x: u ** 3 * sx + 3 * u * u * t * c1 + 3 * u * t * t * c2 + t ** 3 * tx, y: (u ** 3 + 3 * u * u * t) * sy + (3 * u * t * t + t ** 3) * ty };
+	};
+	return { path: `M${sx},${sy} C${c1},${sy} ${c2},${ty} ${tx},${ty}`, at };
+}
+const labelPositions = [0.5, 0.32, 0.68, 0.2, 0.8, 0.42, 0.58];
 
 // Edges leave and enter rows from the side facing the other card; between stacked cards they loop on the right.
 function sides(from: Box, to: Box): ['l' | 'r', 'l' | 'r'] {
@@ -174,15 +203,19 @@ export async function layoutCards(model: CardModel, open: Set<string>): Promise<
 			data: { card, rows: rows.get(card.id)!, open: open.has(card.id) }
 		};
 	});
+	const badges = new Map<string, number>();
 	const edges = links.map((link): Edge => {
+		const pair = [link.source.card, link.target.card].sort().join('|');
+		const slot = link.change === 'unchanged' ? 0 : badges.get(pair) ?? 0;
+		if (link.change !== 'unchanged') badges.set(pair, slot + 1);
 		const [out, into] = sides(boxes.get(link.source.card)!, boxes.get(link.target.card)!);
-		const color = link.changed ? colors.changed : colors.plain;
 		return {
 			id: link.id, source: link.source.card, target: link.target.card,
-			sourceHandle: `out-${out}:${link.source.handle}`, targetHandle: `in-${into}:${link.target.handle}`, type: 'default',
-			markerEnd: { type: 'arrowclosed', width: 14, height: 14, color }, style: edgeStyle(link.changed, link.count, null),
-			label: link.count > 1 ? String(link.count) : undefined,
-			data: { changed: link.changed, count: link.count, members: [...link.members] } satisfies CardEdgeData
+			sourceHandle: `out-${out}:${link.source.handle}`, targetHandle: `in-${into}:${link.target.handle}`, type: 'change',
+			markerEnd: { type: 'arrowclosed', width: 14, height: 14, color: edgeColor }, style: edgeStyle(link.changed, link.count, null, link.change),
+			label: edgeLabel(link.change, link.count), labelStyle: link.change === 'unchanged' ? undefined : badgeLabelStyle(link.change),
+			data: { changed: link.changed, change: link.change, count: link.count, members: [...link.members],
+				labelT: labelPositions[slot % labelPositions.length] } satisfies CardEdgeData
 		};
 	});
 	return { nodes, edges };

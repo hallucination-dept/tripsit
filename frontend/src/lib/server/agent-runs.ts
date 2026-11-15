@@ -28,7 +28,11 @@ export type RunStore = {
   save(owner: string, run: RunDetail): Promise<void>;
   list(owner: string): Promise<RunSummary[]>;
   get(owner: string, id: string): Promise<RunDetail | null>;
+  // The graph of a finished, unexpired run regardless of owner; callers must authorize the request themselves.
+  graph(id: string): Promise<ChangeGraph | null>;
 };
+// Runs after a successful run is saved, e.g. to comment on its pull request. A returned text is added to the run log.
+export type RunFinisher = (run: { id: string; archive: RepositoryArchive; result: RunResult }) => Promise<string | null>;
 
 // Messages of this error are shown to the run's owner; other failures stay generic.
 export class RunFailure extends Error {}
@@ -52,7 +56,7 @@ type Run = {
   saveTimer: ReturnType<typeof setTimeout> | null; saving: Promise<void>;
 };
 type Options = {
-  execute: RunExecutor; store: RunStore; clock?: () => number; id?: () => string; deadlineMs?: number;
+  execute: RunExecutor; store: RunStore; finish?: RunFinisher; clock?: () => number; id?: () => string; deadlineMs?: number;
   maxActive?: number; perHour?: number; maxEvents?: number; retentionMs?: number; saveDelayMs?: number;
 };
 
@@ -132,6 +136,11 @@ export function createAgentRuns(options: Options) {
       await persist(run, true);
       active.delete(run.id);
     }
+    if (run.status === 'done' && run.result && options.finish) {
+      const note = await options.finish({ id: run.id, archive: run.archive, result: run.result })
+        .catch(() => 'A follow-up step after the run failed.');
+      if (note) { emit(run, 'status', note); await persist(run, true); }
+    }
   }
 
   return {
@@ -165,6 +174,10 @@ export function createAgentRuns(options: Options) {
       const current = settle(stored);
       if (current !== stored) await options.store.save(owner, current).catch(() => {});
       return current;
+    },
+    async graph(id: string): Promise<ChangeGraph | null> {
+      const run = active.get(id);
+      return run ? run.result?.graph ?? null : options.store.graph(id);
     },
     async list(owner: string): Promise<RunSummary[]> {
       const live = new Map([...active.values()].filter(run => run.owner === owner).map(run => [run.id, summary(run)]));

@@ -1,9 +1,12 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import { replaceState } from '$app/navigation';
+	import { page } from '$app/state';
 	import { authClient } from '#lib/auth-client.js';
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import ChangeGraphView from '#lib/components/ChangeGraphView.svelte';
 	import Logo from '#lib/components/Logo.svelte';
+	import Spinner from '#lib/components/Spinner.svelte';
 	import type { RunDetail, RunStatus, RunSummary } from '#lib/server/agent-runs.ts';
 
 	const session = authClient.useSession();
@@ -13,6 +16,8 @@
 	let runs = $state<RunSummary[]>([]);
 	let run = $state<RunDetail | null>(null);
 	let starting = $state(false);
+	let runsLoading = $state(false);
+	let opening = $state('');
 	let issueLoading = $state(0);
 	let error = $state('');
 	let pollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -30,6 +35,9 @@
 			run = null; runs = []; error = '';
 			void discoveryController.start(current);
 			if (current) void loadRuns();
+			// Links from pull request comments open a run directly: /agent?run=<id>.
+			const linked = page.url.searchParams.get('run');
+			if (current && linked) void openRun(linked);
 		});
 		return () => untrack(() => { clearTimeout(pollTimer); discoveryController.stop(); });
 	});
@@ -44,10 +52,12 @@
 
 	async function loadRuns() {
 		const requester = owner;
+		runsLoading = true;
 		try {
 			const data = await api('/api/agent-runs');
 			if (requester === owner) runs = data.runs;
 		} catch (cause) { if (requester === owner) error = message(cause); }
+		finally { if (requester === owner) runsLoading = false; }
 	}
 
 	function poll() {
@@ -66,9 +76,14 @@
 	}
 
 	async function openRun(id: string) {
-		error = '';
-		try { run = (await api(`/api/agent-runs/${id}`)).run; poll(); }
+		error = ''; opening = id;
+		try {
+			run = (await api(`/api/agent-runs/${id}`)).run;
+			replaceState(`?run=${encodeURIComponent(id)}`, {});
+			poll();
+		}
 		catch (cause) { error = message(cause); }
+		finally { if (opening === id) opening = ''; }
 	}
 
 	async function startRun() {
@@ -112,7 +127,7 @@
 
 <main>
 	{#if $session.isPending}
-		<p class="note">Loading your session…</p>
+		<p class="note"><Spinner /> Loading your session…</p>
 	{:else if !$session.data}
 		<section class="panel signed-out">
 			<h1>Agent runs</h1>
@@ -123,14 +138,14 @@
 			<div>
 				<p class="eyebrow">pi agent · Gemma 4</p>
 				<h1>Change a repository</h1>
-				<p class="intro">The agent edits a fresh copy of the default branch. Nothing is committed or pushed; the result is a dependency graph of what changed.</p>
+				<p class="intro">The agent edits a fresh copy of the default branch. The result is a dependency graph of what changed and, when you can push to the repository, a pull request. Nothing is merged.</p>
 			</div>
 		</div>
 
 		<div class="setup-grid">
 			<section class="panel form-panel" aria-labelledby="new-run-heading">
 				<h2 id="new-run-heading">New run</h2>
-				<label for="repository">Repository</label>
+				<label for="repository">Repository{#if discovery.loading && !discovery.repositories.length} <Spinner />{/if}</label>
 				<select id="repository" value={discovery.repository} disabled={discovery.loading && !discovery.repositories.length}
 					onchange={(event) => discoveryController.selectRepository(event.currentTarget.value)}>
 					{#if !discovery.repositories.length}<option value="">{discovery.loading ? 'Loading repositories…' : 'No repositories available'}</option>{/if}
@@ -143,7 +158,7 @@
 					<ul class="issue-shortcuts">
 						{#each discovery.issues.slice(0, 8) as issue (issue.id)}
 							<li><button type="button" class="shortcut" disabled={issueLoading !== 0} onclick={() => useIssue(issue.number)}>
-								<span class="number">#{issue.number}</span> {issue.title}{issueLoading === issue.number ? ' …' : ''}
+								<span class="number">#{issue.number}</span> {issue.title}{#if issueLoading === issue.number} <Spinner />{/if}
 							</button></li>
 						{/each}
 					</ul>
@@ -153,7 +168,7 @@
 				<div class="form-footer">
 					<span class="hint">{instruction.trim().length}/8000</span>
 					<button class="button-primary" disabled={starting || !discovery.repository || !instruction.trim() || (run !== null && !finished(run.status))} onclick={startRun}>
-						{starting ? 'Starting…' : 'Run agent'}
+						{#if starting}<Spinner /> Starting…{:else}Run agent{/if}
 					</button>
 				</div>
 				{#if discovery.error}<p class="error">{discovery.error}</p>{/if}
@@ -161,18 +176,18 @@
 			</section>
 
 			<section class="panel runs-panel" aria-labelledby="runs-heading">
-				<div class="panel-heading"><h2 id="runs-heading">Recent runs</h2><button class="button-quiet" onclick={loadRuns}>Refresh</button></div>
+				<div class="panel-heading"><h2 id="runs-heading">Recent runs</h2><button class="button-quiet" onclick={loadRuns} disabled={runsLoading}>{#if runsLoading}<Spinner /> {/if}Refresh</button></div>
 				{#if runs.length}
 					<ul class="run-list">
 						{#each runs as item (item.id)}
 							<li><button type="button" class:active={run?.id === item.id} onclick={() => openRun(item.id)}>
 								<span class="run-title">{item.instruction.split('\n')[0]}</span>
-								<span class="run-meta">{item.repository} · <span class="status status-{item.status}">{statusLabel[item.status]}</span>{item.changedFiles !== null ? ` · ${item.changedFiles} files` : ''}{item.pullRequest ? ` · PR #${item.pullRequest.number}` : ''}</span>
+								<span class="run-meta">{item.repository} · <span class="status status-{item.status}">{#if !finished(item.status)}<Spinner size={11} /> {/if}{statusLabel[item.status]}</span>{#if opening === item.id} <Spinner size={11} />{/if}{item.changedFiles !== null ? ` · ${item.changedFiles} files` : ''}{item.pullRequest ? ` · PR #${item.pullRequest.number}` : ''}</span>
 							</button></li>
 						{/each}
 					</ul>
 				{:else}
-					<p class="note">No runs yet. Runs are kept in server memory for a few hours.</p>
+					<p class="note">{#if runsLoading}<Spinner /> Loading runs…{:else}No runs yet. Runs are kept for seven days.{/if}</p>
 				{/if}
 			</section>
 		</div>
@@ -186,7 +201,7 @@
 					</div>
 					<div class="run-actions">
 						{#if run.pullRequest}<a class="pull-request" href={run.pullRequest.url} target="_blank" rel="noopener noreferrer">Pull request #{run.pullRequest.number} ↗</a>{/if}
-						<span class="status status-{run.status}">{statusLabel[run.status]}</span>
+						<span class="status status-{run.status}">{#if !finished(run.status)}<Spinner size={12} /> {/if}{statusLabel[run.status]}</span>
 						{#if !finished(run.status)}<button class="button-quiet" onclick={cancelRun}>Cancel</button>{/if}
 					</div>
 				</div>

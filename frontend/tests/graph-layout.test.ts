@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildCardModel, cardLinks, cardSize, geometry, layoutCards, relations, symbolGlyph, visibleRows } from '../src/lib/graph-layout.ts';
+import { buildCardModel, cardLinks, cardSize, edgeLabel, edgeStyle, geometry, layoutCards, relations, symbolGlyph, visibleRows } from '../src/lib/graph-layout.ts';
 import { buildChangeGraph } from '../src/lib/server/change-graph.ts';
 
 const before = [
@@ -60,5 +60,9 @@ test('the layout is vertical: dependents above dependencies, no overlaps, edges 
   const horizontal = use.position.x >= target.position.x + target.width! || use.position.x + use.width! <= target.position.x;
   assert.match(toBox.sourceHandle!, horizontal ? /^out-[lr]:head$/ : /^out-r:head$/);
   assert.match(toBox.targetHandle!, horizontal ? /^in-[lr]:/ : /^in-r:/);
-  assert.match(String(toBox.style), /#6b6b6b/, 'an edge into an unchanged class is grey');
+  assert.ok(edges.every(edge => /#6b6b6b/.test(String(edge.style))), 'edges are never colour coded');
+  assert.equal(edgeLabel('added', 1), 'added');
+  assert.equal(edgeLabel('deleted', 3), 'removed ×3');
+  assert.equal(edgeLabel('unchanged', 1), undefined);
+  assert.match(edgeStyle(true, 1, null, 'deleted'), /stroke-dasharray/, 'removed connections are dashed');
 });

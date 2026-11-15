@@ -27,7 +27,8 @@ function memoryStore() {
         return summary;
       }).reverse();
     },
-    async get(owner, id) { const row = rows.get(id); return row?.owner === owner ? structuredClone(row.run) : null; }
+    async get(owner, id) { const row = rows.get(id); return row?.owner === owner ? structuredClone(row.run) : null; },
+    async graph(id) { const run = rows.get(id)?.run; return run?.status === 'done' ? run.result?.graph ?? null : null; }
   };
   return { rows, writes, store };
 }
@@ -143,4 +144,28 @@ test('run input requires a repository and a bounded instruction', () => {
     { repository: 'team/app', instruction: 'x'.repeat(8001) }, { repository: 'team/app', instruction: 'ok', extra: true }]) {
     assert.throws(() => parseRunInput(value), (error: Error & { status?: number }) => error.status === 400);
   }
+});
+
+test('after a successful run is saved, the finisher runs and its note joins the log', async () => {
+  const fake = controllable(), memory = memoryStore();
+  let next = 0;
+  const seen: string[] = [];
+  const runs = createAgentRuns({ execute: fake.execute, store: memory.store, id: () => `run-${++next}`, saveDelayMs: 1,
+    finish: async ({ id, result: finished }) => {
+      seen.push(`${id}:${memory.rows.get(id)?.run.status}:${finished.pullRequest?.number}`);
+      return 'Added the change graph to pull request #12';
+    } });
+  await runs.start('owner', archive, 'with a pull request');
+  assert.equal(await runs.graph('run-1'), null, 'no graph while the run is working');
+  fake.pending[0].resolve(result);
+  await settle();
+  assert.deepEqual(seen, ['run-1:done:12'], 'the run was stored as done before the finisher ran');
+  const done = await runs.get('owner', 'run-1');
+  assert.equal(done.events.at(-1)?.text, 'Added the change graph to pull request #12');
+  assert.equal(memory.rows.get('run-1')?.run.events.at(-1)?.text, 'Added the change graph to pull request #12', 'the note is saved');
+  assert.deepEqual(await runs.graph('run-1'), result.graph, 'a finished run serves its graph from storage');
+  await runs.start('owner', archive, 'failing');
+  fake.pending[1].reject(new Error('boom'));
+  await settle();
+  assert.equal(seen.length, 1, 'failed runs are not finished');
 });

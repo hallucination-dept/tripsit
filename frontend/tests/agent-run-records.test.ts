@@ -47,6 +47,9 @@ test('runs round-trip per owner, list without their details, expire, and purge o
   assert.equal(stored?.finishedAt, '2026-11-15T10:05:00.000Z');
   assert.equal(await records.get('other', runId(1)), null);
   assert.equal(await records.get('owner', 'not-a-uuid'), null);
+  assert.deepEqual(await records.graph(runId(1)), finished.result?.graph, 'the graph of a finished run is readable by id');
+  assert.equal(await records.graph(runId(2)), null, 'unfinished runs have no graph picture');
+  assert.equal(await records.graph('not-a-uuid'), null);
 
   const listed = await records.list('owner');
   assert.deepEqual(listed.map(row => row.id), [runId(2), runId(1)], 'newest first');

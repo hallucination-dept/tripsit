@@ -11,7 +11,8 @@ export type GraphNode = {
   // Symbols that changed, or that use or are used by a changed symbol in the same file.
   focus: boolean;
 };
-export type GraphEdge = { id: string; source: string; target: string; count: number; changed: boolean };
+// `changed`: an end of the edge is edited. `change`: the dependency itself is new, gone, or present before and after.
+export type GraphEdge = { id: string; source: string; target: string; count: number; changed: boolean; change: 'added' | 'deleted' | 'unchanged' };
 export type ChangeGraph = {
   nodes: GraphNode[]; edges: GraphEdge[]; symbolDiffs: Record<string, string>;
   stats: { files: number; changedFiles: number; focusFiles: number; hiddenNeighbors: number; symbols: number };
@@ -22,6 +23,8 @@ type Options = {
   maxNeighbors?: number; maxSymbolsPerFile?: number; maxSourceFiles?: number;
 };
 
+type Side = 'before' | 'after';
+const sides: Side[] = ['before', 'after'];
 const dirOf = (path: string) => path.includes('/') ? path.slice(0, path.lastIndexOf('/')) : '';
 const baseName = (path: string) => path.slice(path.lastIndexOf('/') + 1);
 const ancestors = (path: string) => path.split('/').slice(0, -1).map((_, index, parts) => parts.slice(0, index + 1).join('/'));
@@ -159,19 +162,30 @@ export async function buildChangeGraph(options: Options): Promise<ChangeGraph> {
   }
   const resolver = createResolver(pathSet, configs);
 
+  const importsIn = (path: string, text: string | null) => {
+    const targets = new Map<string, SourceImport[]>();
+    const language = sourceLanguage(path);
+    if (text === null || !language) return targets;
+    for (const record of scanImports(text, language)) {
+      for (const target of resolver.resolve(path, record, language)) {
+        if (target !== path) targets.set(target, [...(targets.get(target) ?? []), record]);
+      }
+    }
+    return targets;
+  };
   const outgoing = new Map<string, Map<string, SourceImport[]>>();
   const incoming = new Map<string, Set<string>>();
   for (const [path, text] of texts) {
-    const language = sourceLanguage(path)!;
-    for (const record of scanImports(text, language)) {
-      for (const target of resolver.resolve(path, record, language)) {
-        if (target === path) continue;
-        const targets = outgoing.get(path) ?? new Map<string, SourceImport[]>();
-        outgoing.set(path, targets.set(target, [...(targets.get(target) ?? []), record]));
-        incoming.set(target, (incoming.get(target) ?? new Set<string>()).add(path));
-      }
-    }
+    const targets = importsIn(path, text);
+    if (targets.size) outgoing.set(path, targets);
+    for (const target of targets.keys()) incoming.set(target, (incoming.get(target) ?? new Set<string>()).add(path));
   }
+  // Imports before and after the change; unchanged files have the same imports on both sides.
+  const importSides = (path: string) => {
+    const change = changes.get(path);
+    const current = outgoing.get(path) ?? new Map<string, SourceImport[]>();
+    return change && texts.has(path) ? { before: importsIn(path, change.before), after: importsIn(path, change.after) } : { before: current, after: current };
+  };
 
   // Focus: changed files and their direct imports and importers.
   const changed = paths.filter(path => changes.has(path));
@@ -220,7 +234,8 @@ export async function buildChangeGraph(options: Options): Promise<ChangeGraph> {
   for (const node of nodes.values()) if (node.kind === 'others') node.label = `${node.files} other file${node.files === 1 ? '' : 's'}`;
 
   // Changed files expand into symbols whose status compares their source before and after.
-  const symbolsByFile = new Map<string, Map<string, { symbol: SourceSymbol; id: string }>>();
+  type SymbolEntry = { symbol: SourceSymbol; id: string; references: Record<Side, string[]> };
+  const symbolsByFile = new Map<string, Map<string, SymbolEntry>>();
   const symbolDiffs: Record<string, string> = {};
   for (const path of changed) {
     const change = changes.get(path)!;
@@ -244,13 +259,13 @@ export async function buildChangeGraph(options: Options): Promise<ChangeGraph> {
     const fileNode = nodes.get(nodeIds.file(path))!;
     fileNode.group = true;
     fileNode.hiddenSymbols = names.length - visible.length;
-    const entries = new Map<string, { symbol: SourceSymbol; id: string }>();
+    const entries = new Map<string, SymbolEntry>();
     for (const name of visible) {
       const symbol = current(name), id = nodeIds.symbol(path, name), kind = status(name);
       addNode({ id, kind: 'symbol', label: name, path, parent: fileNode.id, change: kind, containsChanges: kind !== 'unchanged',
         symbolKind: symbol.kind, symbolForm: symbol.form, focus: focused(name),
         lines: symbol.start === symbol.end ? `${symbol.start}` : `${symbol.start}–${symbol.end}` });
-      entries.set(name, { symbol, id });
+      entries.set(name, { symbol, id, references: { before: previous.get(name)?.references ?? [], after: next.get(name)?.references ?? [] } });
       if (kind !== 'unchanged') {
         const lines = (text: string | undefined) => text ? `${text.replace(/\n$/, '')}\n` : '';
         const patch = createTwoFilesPatch(`a/${path}`, `b/${path}`, lines(previous.get(name)?.text), lines(next.get(name)?.text), '', '', { context: 3 });
@@ -261,48 +276,60 @@ export async function buildChangeGraph(options: Options): Promise<ChangeGraph> {
   }
 
   // Edges point from the dependent to its dependency.
-  const edges = new Map<string, GraphEdge>();
-  const connect = (source: string, target: string) => {
+  // Each edge is recorded from the code before and after the change, which tells new dependencies from removed ones.
+  const edges = new Map<string, { id: string; source: string; target: string; seen: Record<Side, number> }>();
+  const connect = (source: string, target: string, side: Side) => {
     if (source === target || !nodes.has(source) || !nodes.has(target)) return;
     const id = `${source}->${target}`;
-    const edge = edges.get(id);
-    if (edge) edge.count++; else edges.set(id, { id, source, target, count: 1, changed: false });
+    const edge = edges.get(id) ?? { id, source, target, seen: { before: 0, after: 0 } };
+    edge.seen[side]++;
+    edges.set(id, edge);
   };
   const symbolTarget = (path: string, imported: string) => {
     const entries = symbolsByFile.get(path);
     const hit = !entries ? undefined : imported === 'default' ? [...entries.values()].find(entry => entry.symbol.isDefault) : entries.get(imported);
     return hit ? hit.id : representative(path);
   };
-  for (const [from, targets] of outgoing) {
+  for (const from of texts.keys()) {
     if (symbolsByFile.has(from)) continue;
-    for (const [to, records] of targets) {
-      const bindings = records.flatMap(record => record.bindings).filter(binding => binding.imported !== '*');
-      if (!symbolsByFile.has(to) || !bindings.length) connect(representative(from), representative(to));
-      for (const binding of symbolsByFile.has(to) ? bindings : []) connect(representative(from), symbolTarget(to, binding.imported));
+    const imports = importSides(from);
+    for (const side of sides) {
+      for (const [to, records] of imports[side]) {
+        const bindings = records.flatMap(record => record.bindings).filter(binding => binding.imported !== '*');
+        if (!symbolsByFile.has(to) || !bindings.length) connect(representative(from), representative(to), side);
+        for (const binding of symbolsByFile.has(to) ? bindings : []) connect(representative(from), symbolTarget(to, binding.imported), side);
+      }
     }
   }
   for (const [path, entries] of symbolsByFile) {
-    const locals = new Map<string, { target: string; imported: string }>();
-    for (const [to, records] of outgoing.get(path) ?? []) for (const record of records) for (const binding of record.bindings) locals.set(binding.local, { target: to, imported: binding.imported });
-    const reached = new Set<string>();
-    for (const { symbol, id } of entries.values()) {
-      for (const reference of symbol.references) {
-        const local = entries.get(reference);
-        if (local) { connect(id, local.id); continue; }
-        const binding = locals.get(reference);
-        if (!binding) continue;
-        connect(id, binding.imported === '*' ? representative(binding.target) : symbolTarget(binding.target, binding.imported));
-        reached.add(binding.target);
+    const imports = importSides(path);
+    for (const side of sides) {
+      const locals = new Map<string, { target: string; imported: string }>();
+      for (const [to, records] of imports[side]) for (const record of records) for (const binding of record.bindings) locals.set(binding.local, { target: to, imported: binding.imported });
+      const reached = new Set<string>();
+      for (const { id, references } of entries.values()) {
+        for (const reference of references[side]) {
+          const local = entries.get(reference);
+          if (local) { connect(id, local.id, side); continue; }
+          const binding = locals.get(reference);
+          if (!binding) continue;
+          connect(id, binding.imported === '*' ? representative(binding.target) : symbolTarget(binding.target, binding.imported), side);
+          reached.add(binding.target);
+        }
       }
+      for (const to of imports[side].keys()) if (!reached.has(to)) connect(nodeIds.file(path), representative(to), side);
     }
-    for (const to of outgoing.get(path)?.keys() ?? []) if (!reached.has(to)) connect(nodeIds.file(path), representative(to));
   }
-  for (const edge of edges.values()) edge.changed = nodes.get(edge.source)!.change !== 'unchanged' || nodes.get(edge.target)!.change !== 'unchanged';
+  const graphEdges = [...edges.values()].map(({ id, source, target, seen }): GraphEdge => ({
+    id, source, target, count: seen.after || seen.before,
+    changed: nodes.get(source)!.change !== 'unchanged' || nodes.get(target)!.change !== 'unchanged',
+    change: seen.before && seen.after ? 'unchanged' : seen.after ? 'added' : 'deleted'
+  }));
 
   const depth = (node: GraphNode): number => node.parent ? 1 + depth(nodes.get(node.parent)!) : 0;
   const ordered = [...nodes.values()].map(node => ({ node, depth: depth(node) })).sort((a, b) => a.depth - b.depth).map(row => row.node);
   return {
-    nodes: ordered, edges: [...edges.values()], symbolDiffs,
+    nodes: ordered, edges: graphEdges, symbolDiffs,
     stats: { files: paths.length, changedFiles: changed.length, focusFiles: focus.size,
       hiddenNeighbors: Math.max(0, neighbors.length - maxNeighbors), symbols: [...symbolsByFile.values()].reduce((sum, entries) => sum + entries.size, 0) }
   };

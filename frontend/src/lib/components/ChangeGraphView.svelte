@@ -3,9 +3,11 @@
 	import { Background, Controls, SvelteFlow, type Edge } from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import FitOnReady from './FitOnReady.svelte';
+	import ChangeEdge from './ChangeEdge.svelte';
 	import GraphCard from './GraphCard.svelte';
+	import Spinner from './Spinner.svelte';
 	import {
-		buildCardModel, describeSymbol, edgeStyle, layoutCards, relations, symbolLabel,
+		buildCardModel, changeLabels, describeSymbol, edgeStyle, layoutCards, relations, symbolLabel,
 		type CardEdgeData, type CardFlowNode, type GraphUi
 	} from '#lib/graph-layout.ts';
 	import type { RunFile } from '#lib/server/agent-runs.ts';
@@ -13,6 +15,7 @@
 
 	let { graph, files }: { graph: ChangeGraph; files: RunFile[] } = $props();
 	const nodeTypes = { card: GraphCard };
+	const edgeTypes = { change: ChangeEdge };
 	// A plain copy: Svelte Flow node data must not hold reactive proxies from the page's run state.
 	const model = $derived(buildCardModel($state.snapshot(graph) as ChangeGraph));
 	let open = $state<Set<string>>(new Set());
@@ -60,7 +63,7 @@
 	function highlight(list: Edge[], focus: string | null) {
 		return list.map(edge => {
 			const data = edge.data as CardEdgeData;
-			return { ...edge, style: edgeStyle(data.changed, data.count, focus ? data.members.includes(focus) : null) };
+			return { ...edge, style: edgeStyle(data.changed, data.count, focus ? data.members.includes(focus) : null, data.change) };
 		});
 	}
 	$effect(() => {
@@ -82,14 +85,14 @@
 		{#if layoutError}
 			<p class="note">{layoutError}</p>
 		{:else if nodes.length}
-			<SvelteFlow bind:nodes bind:edges {nodeTypes} colorMode="dark" minZoom={0.05} maxZoom={2} zIndexMode="auto"
-				nodesConnectable={false} elementsSelectable={false} onpaneclick={() => { selected = null; }}>
+			<SvelteFlow bind:nodes bind:edges {nodeTypes} {edgeTypes} colorMode="dark" minZoom={0.05} maxZoom={2} zIndexMode="auto"
+				nodesConnectable={false} nodesDraggable={false} elementsSelectable={false} onpaneclick={() => { selected = null; }}>
 				<FitOnReady container={canvas} />
 				<Background gap={20} />
 				<Controls showLock={false} />
 			</SvelteFlow>
 		{:else}
-			<p class="note">Laying out the graph…</p>
+			<p class="note"><Spinner /> Laying out the graph…</p>
 		{/if}
 	</div>
 	<aside class="details" aria-live="polite">
@@ -97,7 +100,7 @@
 			<p class="eyebrow">{item.kind === 'symbol' ? describeSymbol(item) : item.kind === 'others' ? 'other files' : item.kind}</p>
 			<h3>{item.kind === 'symbol' ? symbolLabel(item, false) : item.kind === 'others' ? `${item.files} other files` : item.label}</h3>
 			<p class="path"><code>{item.path || '/'}</code>{#if item.lines} · lines {item.lines}{/if}</p>
-			{#if item.change !== 'unchanged'}<p class="change change-{item.change}">{item.change}</p>{/if}
+			{#if item.change !== 'unchanged'}<p class="change change-{item.change}">{changeLabels[item.change]}</p>{/if}
 			{#if links && (links.uses.length || links.usedBy.length)}
 				<dl class="relations">
 					{#if links.uses.length}<dt>Uses</dt><dd>{#each links.uses as name (name)}<span>{name}</span>{/each}</dd>{/if}
@@ -111,12 +114,12 @@
 			{/if}
 		{:else}
 			<p class="eyebrow">Details</p>
-			<p class="note">Select a file or symbol to see its diff and what it is connected to. Code that uses something sits above it; orange edges touch edited code.</p>
+			<p class="note">Select a file or symbol to see its diff and what it is connected to. Code that uses something sits above it. Badges mark what the change added, modified or removed, including connections; removed connections are dashed.</p>
 			<ul class="legend">
 				<li><span class="glyph">fn</span>function or method</li>
 				<li><span class="glyph">()=&gt;</span>arrow function</li>
 				<li><span class="glyph">new</span>constructor</li>
-				<li><span class="mark added">+</span>added <span class="mark modified">~</span>modified <span class="mark deleted">−</span>deleted</li>
+				<li><span class="change change-added">added</span><span class="change change-modified">modified</span><span class="change change-deleted">removed</span></li>
 			</ul>
 		{/if}
 	</aside>
@@ -141,9 +144,11 @@
 	h3 { margin: 0 0 6px; color: var(--text); font: 600 15px/1.4 var(--font-sans); overflow-wrap: anywhere; }
 	.path { margin: 0 0 10px; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); overflow-wrap: anywhere; }
 	code { font: 11px var(--font-mono); color: var(--text-muted); }
-	.change { display: inline-block; margin: 0 0 12px; padding: 1px 7px; color: #000; background: var(--modified); font: 600 10px/1.6 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
-	.change-added { background: var(--added); }
-	.change-deleted { background: var(--deleted); }
+	.change { display: inline-block; margin: 0 0 12px; padding: 1px 6px; border: 1px solid currentColor; font: 600 9.5px/1.6 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+	.change-added { color: var(--added); background: var(--added-bg); }
+	.change-modified { color: var(--modified); background: var(--modified-bg); }
+	.change-deleted { color: var(--deleted); background: var(--deleted-bg); }
+	.legend .change { margin: 0; }
 	.relations { margin: 0 0 14px; display: grid; grid-template-columns: 64px minmax(0, 1fr); gap: 6px 10px; font: 400 11px/1.5 var(--font-mono); }
 	.relations dt { color: var(--text-subtle); }
 	.relations dd { margin: 0; display: flex; flex-wrap: wrap; gap: 4px; }
@@ -158,10 +163,6 @@
 	.legend { list-style: none; padding: 0; margin: 12px 0 0; display: grid; gap: 8px; color: var(--text-muted); font: 400 11px/1.5 var(--font-mono); }
 	.legend li { display: flex; align-items: center; gap: 8px; }
 	.glyph { display: inline-flex; justify-content: center; min-width: 30px; padding: 0 3px; border: 1px solid var(--border); color: var(--info); font: 500 9.5px/16px var(--font-mono); }
-	.mark { font: 700 13px/1 var(--font-mono); }
-	.mark.added { color: var(--added); }
-	.mark.modified { color: var(--modified); }
-	.mark.deleted { color: var(--deleted); }
 	@media (max-width: 900px) {
 		.graph-shell { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(420px, 1fr) auto; height: auto; }
 		.canvas { height: 64vh; }

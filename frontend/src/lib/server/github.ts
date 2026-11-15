@@ -42,7 +42,8 @@ export type PullRequestFile = { path: string; mode: '100644' | '100755'; content
 export type PullRequestChange = { branch: string; title: string; body: string; message: string; files: PullRequestFile[] };
 export type PullRequest = { number: number; url: string; branch: string };
 export type Publisher =
-  | { available: true; create: (change: PullRequestChange, signal: AbortSignal) => Promise<PullRequest> }
+  | { available: true; create: (change: PullRequestChange, signal: AbortSignal) => Promise<PullRequest>;
+      comment: (pullRequest: number, body: string, signal: AbortSignal) => Promise<void> }
   | { available: false; reason: string };
 export type RepositoryArchive = {
   repository: string; branch: string; sha: string;
@@ -157,7 +158,14 @@ export function createGitHub(options: Options) {
     } catch {
       return { available: false, reason: 'the TripSit GitHub App needs read and write access to Contents and Pull requests' };
     }
-    return { available: true, create: (change, publishSignal) => openPullRequest(repo, sha, token, change, publishSignal) };
+    return {
+      available: true,
+      create: (change, publishSignal) => openPullRequest(repo, sha, token, change, publishSignal),
+      comment: async (pullRequest, body, commentSignal) => {
+        if (!Number.isSafeInteger(pullRequest) || pullRequest < 1 || !body.trim() || body.length > 60_000) throw new IntakeError(400, 'The pull request comment is invalid.');
+        await request(`/repos/${repo.repository}/issues/${pullRequest}/comments`, token, commentSignal, { body });
+      }
+    };
   }
 
   // Builds the commit on top of the real base commit with the Git Data API, then opens the pull request.

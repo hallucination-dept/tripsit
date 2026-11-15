@@ -13,7 +13,7 @@
 	import Folder from '@lucide/svelte/icons/folder';
 	import Type from '@lucide/svelte/icons/type';
 	import Variable from '@lucide/svelte/icons/variable';
-	import { symbolGlyph, symbolLabel, type CardFlowNode, type GraphUi } from '#lib/graph-layout.ts';
+	import { changeLabels, symbolGlyph, symbolLabel, type CardFlowNode, type GraphUi } from '#lib/graph-layout.ts';
 	import type { GraphNode } from '#lib/server/change-graph.ts';
 
 	let { id, data }: NodeProps<CardFlowNode> = $props();
@@ -30,7 +30,6 @@
 	}
 	const symbolIcons: Partial<Record<NonNullable<GraphNode['symbolKind']>, Component>> =
 		{ class: Box, variable: Variable, type: Type, module: Braces, markup: CodeXml };
-	const marks = { added: '+', modified: '~', deleted: '−', unchanged: '' };
 	const title = $derived(node.kind === 'others' ? `${node.files} other file${node.files === 1 ? '' : 's'}` : node.label);
 	const detail = $derived(node.kind === 'file' ? data.card.breadcrumb : `${data.card.breadcrumb} · ${node.files} file${node.files === 1 ? '' : 's'}`);
 	const CardIcon = $derived(cardIcon());
@@ -53,7 +52,7 @@
 			{/if}
 			<CardIcon size={14} class="card-icon" />
 			<span class="name" title={node.path || '/'}>{title}</span>
-			{#if node.change !== 'unchanged'}<span class="badge">{node.change}</span>{/if}
+			{#if node.change !== 'unchanged'}<span class="badge badge-{node.change}">{changeLabels[node.change]}</span>{/if}
 		</div>
 		<div class="crumb">{detail}</div>
 	</div>
@@ -64,7 +63,7 @@
 					{@const glyph = symbolGlyph(row.node)}
 					{@const SymbolIcon = symbolIcons[row.node.symbolKind ?? 'variable']}
 					<li class="row change-{row.node.change}" class:dim={!row.node.focus && row.node.change === 'unchanged'} class:selected={ui.selected === row.id}
-						style:padding-left="{8 + row.depth * 16}px" title="{row.node.symbolKind} · lines {row.node.lines}{row.node.change === 'unchanged' ? '' : ` · ${row.node.change}`}">
+						style:padding-left="{8 + row.depth * 16}px" title="{row.node.symbolKind} · lines {row.node.lines}{row.node.change === 'unchanged' ? '' : ` · ${changeLabels[row.node.change]}`}">
 						{@render ports(row.id)}
 						{#if row.toggle}
 							<button type="button" class="chevron nodrag" class:open={row.open} aria-label={row.open ? 'Collapse members' : 'Expand members'}
@@ -72,7 +71,7 @@
 						{:else}<span class="chevron-space"></span>{/if}
 						<span class="glyph">{#if glyph}{glyph}{:else if SymbolIcon}<SymbolIcon size={13} />{/if}</span>
 						<button type="button" class="label" onclick={() => ui.select(row.id)}>{symbolLabel(row.node, row.depth > 0)}</button>
-						{#if row.node.change !== 'unchanged'}<span class="mark" aria-label={row.node.change}>{marks[row.node.change]}</span>{/if}
+						{#if row.node.change !== 'unchanged'}<span class="badge badge-{row.node.change}">{changeLabels[row.node.change]}</span>{/if}
 					</li>
 				{:else}
 					<li class="row more">
@@ -91,27 +90,23 @@
 	/* Heights mirror `geometry` in graph-layout.ts: 1px border, 50px head, 1px divider, 4px list padding, 24px rows. */
 	.card { width: 100%; height: 100%; display: flex; flex-direction: column; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: 400 12px/1 var(--font-mono); overflow: hidden; }
 	.card.selected { border-color: var(--text); }
-	.card.change-added { border-color: var(--added); }
-	.card.change-modified { border-color: var(--modified); }
-	.card.change-deleted { border-color: var(--deleted); border-style: dashed; }
+	.card.change-deleted { border-style: dashed; }
 	.kind-directory, .kind-others { background: var(--surface-raised); }
 	.head { position: relative; flex: 0 0 50px; height: 50px; padding: 8px 10px; display: flex; flex-direction: column; justify-content: center; gap: 4px; cursor: pointer; }
 	.title { display: flex; align-items: center; gap: 6px; min-width: 0; height: 18px; }
 	.title :global(.card-icon) { flex-shrink: 0; color: var(--text-muted); }
 	.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; font-size: 12.5px; }
-	.badge { margin-left: auto; flex-shrink: 0; padding: 2px 5px; color: #000; background: var(--modified); font: 600 9.5px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
-	.change-added .badge { background: var(--added); }
-	.change-deleted .badge { background: var(--deleted); }
+	/* Only the badge carries the change colour; cards and rows stay neutral (colour there is reserved for confidence). */
+	.badge { margin-left: auto; flex-shrink: 0; padding: 2px 4px; border: 1px solid currentColor; font: 600 9px/1 var(--font-mono); text-transform: uppercase; letter-spacing: .06em; }
+	.badge-added { color: var(--added); background: var(--added-bg); }
+	.badge-modified { color: var(--modified); background: var(--modified-bg); }
+	.badge-deleted { color: var(--deleted); background: var(--deleted-bg); }
 	.crumb { height: 14px; line-height: 14px; color: var(--text-subtle); font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 	.kind-file .crumb { padding-left: 20px; }
 	.rows { list-style: none; margin: 0; padding: 4px 0; border-top: 1px solid var(--border); }
 	.row { position: relative; height: 24px; display: flex; align-items: center; gap: 4px; padding-right: 10px; }
 	.row.selected { background: var(--surface-hover); }
-	.row.change-added { background: var(--added-bg); }
-	.row.change-modified { background: var(--modified-bg); }
-	.row.change-deleted { background: var(--deleted-bg); }
 	.row.change-deleted .label { text-decoration: line-through; }
-	.row.selected.change-added, .row.selected.change-modified, .row.selected.change-deleted { outline: 1px solid var(--text); outline-offset: -1px; }
 	.row.dim .label, .row.dim .glyph { color: var(--text-subtle); }
 	.chevron { display: inline-grid; place-items: center; width: 16px; height: 16px; padding: 0; flex-shrink: 0; color: var(--text-subtle); transition: transform .12s ease; }
 	.chevron:hover { color: var(--text); }
@@ -119,9 +114,6 @@
 	.chevron-space { width: 16px; flex-shrink: 0; }
 	.glyph { display: inline-flex; align-items: center; justify-content: center; min-width: 30px; height: 16px; padding: 0 3px; flex-shrink: 0; border: 1px solid var(--border); color: var(--info); font: 500 9.5px/1 var(--font-mono); }
 	.label { min-width: 0; padding: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; color: var(--text); font: 400 12px/24px var(--font-mono); flex: 1; }
-	.mark { flex-shrink: 0; width: 14px; text-align: center; font: 700 13px/1 var(--font-mono); color: var(--modified); }
-	.change-added .mark { color: var(--added); }
-	.change-deleted .mark { color: var(--deleted); }
 	.more-toggle { display: flex; align-items: center; gap: 4px; width: 100%; height: 24px; padding: 0; color: var(--text-subtle); font: 400 11px/1 var(--font-mono); text-align: left; }
 	.more-toggle:hover { color: var(--text); }
 	.more { padding-left: 8px; }

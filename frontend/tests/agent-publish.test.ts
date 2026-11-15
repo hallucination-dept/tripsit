@@ -35,6 +35,7 @@ function github(options: { push?: boolean; writeAllowed?: boolean } = {}) {
     if (path === '/repos/team/repo/git/commits') return json({ sha: sha('d') }, 201);
     if (path === '/repos/team/repo/git/refs') return json({ ref: body?.ref }, 201);
     if (path === '/repos/team/repo/pulls') return json({ number: 12, html_url: 'https://github.com/team/repo/pull/12' }, 201);
+    if (path === '/repos/team/repo/issues/12/comments') return json({ id: 99 }, 201);
     return json({ message: 'Not Found' }, 404);
   };
   return { calls, client: createGitHub({ appId: '9', privateKey, accountId: '42', userToken: 'user-token', fetcher }) };
@@ -67,6 +68,10 @@ test('a run on a writable repository opens a pull request on top of the real bas
   assert.deepEqual(write[4].body, { message: 'Add a helper\n\nOpened by TripSit.', tree: sha('c'), parents: [base] });
   assert.deepEqual(write[5].body, { ref: 'refs/heads/tripsit/0123abcd', sha: sha('d') });
   assert.deepEqual(write[6].body, { title: 'Add a helper', head: 'tripsit/0123abcd', base: 'main', body: 'Instruction\n\nSummary' });
+  await archive.publish.comment(12, '### Change graph', AbortSignal.timeout(5000));
+  const comment = calls.at(-1)!;
+  assert.deepEqual([comment.method, comment.path, comment.token, comment.body], ['POST', '/repos/team/repo/issues/12/comments', 'Bearer write-token', { body: '### Change graph' }]);
+  await assert.rejects(archive.publish.comment(0, 'x', AbortSignal.timeout(5000)), /comment is invalid/);
   const tokenRequests = calls.filter(call => call.path === '/app/installations/7/access_tokens').map(call => call.body);
   assert.deepEqual(tokenRequests.map(body => body?.permissions), [{ contents: 'read', issues: 'read' }, { contents: 'write', pull_requests: 'write' }]);
   assert.deepEqual(tokenRequests.map(body => body?.repository_ids), [[5], [5]], 'tokens are scoped to the one repository');
