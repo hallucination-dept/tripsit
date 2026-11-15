@@ -49,6 +49,6 @@ test('revision and literal path search filter context without fabricating depend
 test('advice highlights require an explicit known path or node identifier with token boundaries', () => {
   const input = node('candidate:abcdef', 'candidate', 'src/a.ts');
   for (const advice of ['Inspect `src/a.ts`.', 'src/a.ts:12 has a concern.', 'Node candidate:abcdef is mentioned.']) assert(mentionsNode(advice, input));
-  for (const advice of ['Inspect src/a.tsx instead.', 'Inspect other/src/a.ts.', 'candidate:abcdef0', 'General suggestion, no source reference.']) assert(!mentionsNode(advice, input));
+  for (const advice of ['Inspect src/a.tsx instead.', 'Inspect other/src/a.ts.', 'candidate:abcdef0', '𐐀src/a.ts', 'src/a.ts𐐀', 'General suggestion, no source reference.']) assert(!mentionsNode(advice, input));
   assert(!mentionsNode('anything', { ...input, id: '', source: undefined }));
 });
