@@ -8,7 +8,10 @@ test('publication route enforces session, same-origin and empty input before cal
  const hooks=registerHooks({resolve(specifier,context,next){
   const mocks:Record<string,string>={
    '#lib/auth.js':'export const database={};',
-   '#lib/server/generation-runtime.ts':'export const candidateServices=async()=>({});',
+   '#lib/server/assessment-runtime.ts':'export const assessmentRuntime=async()=>({});',
+   '#lib/server/assessment.ts':'export const verificationContext=value=>value;',
+   '#lib/server/verification.ts':'export const configuredChecks=()=>[];',
+   '$app/env/private':'export const TRUSTED_CHECKS_JSON=undefined;',
    '#lib/server/publication.ts':'export const createPublication=()=>({publish:(...args)=>globalThis.publishFixture(...args)});'
   };
   return mocks[specifier]?{url:`data:text/javascript,${encodeURIComponent(mocks[specifier])}`,shortCircuit:true}:next(specifier,context);

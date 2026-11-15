@@ -2,11 +2,15 @@ import { createHash } from 'node:crypto';
 import { IntakeError, whileActive } from './intake.ts';
 import { stageCandidate } from './candidate-staging.ts';
 import { snapshotPolicy } from './snapshot-policy.ts';
+import { assertAcceptanceEvidence } from './human-decision.ts';
 import { publicationRemote, writeStagedGitObjects } from './publication-git.ts';
 import type { WorkItem } from './records.ts';
 import type { StoredCandidate } from './generation.ts';
 import type { IssueSnapshot } from './intake.ts';
 import type { TreeEntry } from './candidate-staging.ts';
+import type { Assessment } from './assessment.ts';
+import type { OracleCheck } from './verification.ts';
+import type { TrustedRequiredManifest } from './trusted-required-manifest.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{rows: Record<string,unknown>[]}> };
 type Access = { repository: string; repositoryId: number; branch: string; token: string };
@@ -14,7 +18,8 @@ type Dependencies = { database: Database; intake: {get(owner:string,id:string,si
   generation: {get(owner:string,item:string,id:string,signal:AbortSignal):Promise<StoredCandidate>};
   github: { publicationAccess(repository:string,id:number,signal:AbortSignal):Promise<Access>;
     stagingTree(snapshot:IssueSnapshot,signal:AbortSignal):Promise<{baseSha:string;treeSha:string;entries:TreeEntry[]}> };
-  fetcher?: typeof fetch; policy?: typeof snapshotPolicy };
+  acceptance: (owner:string,item:string,candidate:string,signal:AbortSignal)=>Promise<{ assessment:Assessment; manifest:TrustedRequiredManifest; checks:OracleCheck[] }>;
+  fetcher?: typeof fetch };
 const stale = () => new IntakeError(409,'Publication requires a current accepted decision and matching staged revision.');
 const canonical = (value:unknown) => JSON.stringify(value,(_key,entry) => entry && typeof entry === 'object' && !Array.isArray(entry)
   ? Object.fromEntries(Object.keys(entry).sort().map(key => [key,entry[key]])) : entry);
@@ -22,7 +27,7 @@ const digest = (value:string) => createHash('sha256').update(value).digest('hex'
 const uuid = (value:string) => /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(value);
 
 /** Trusted publication path; never merges, approves, or force-updates a ref. */
-export function createPublication({database,intake,generation,github,fetcher,policy: selectPolicy = snapshotPolicy}:Dependencies) {
+export function createPublication({database,intake,generation,github,fetcher,acceptance}:Dependencies) {
  async function query(sql:string,values:unknown[]) { try {return await database.query(sql,values);} catch {throw new IntakeError(503,'Publication storage is unavailable.');} }
  return { async publish(owner:string,itemId:string,candidateId:string,packetId:string,signal:AbortSignal) {
   if (!owner) throw new IntakeError(401,'Sign in before publishing.');
@@ -31,7 +36,7 @@ export function createPublication({database,intake,generation,github,fetcher,pol
   if (!Number.isSafeInteger(item.snapshot.issueNumber) || item.snapshot.issueNumber < 1) throw stale();
   async function admitted() {
    const result = await query(`SELECT r.body,r.packet_digest,r.source_digest,r.snapshot_digest,r.commit_sha,p.payload,s.payload AS snapshot,
-     t.tree_sha,t.objects,t.base_sha,t.output_digest,d.id AS decision_id,d.inspection,d.unchecked_scope,d.residual_risk
+     t.tree_sha,t.objects,t.base_sha,t.output_digest,d.id AS decision_id,d.inspection,d.deep_inspection,d.unchecked_scope,d.residual_risk
      FROM tripsit_revision_packets r JOIN tripsit_candidate_payloads p ON p.candidate_id=r.candidate_id
      JOIN tripsit_candidates c ON c.id=p.candidate_id JOIN tripsit_work_items w ON w.id=p.work_item_id
      JOIN tripsit_snapshots s ON s.work_item_id=w.id JOIN tripsit_candidate_stages t ON t.candidate_id=c.id
@@ -42,20 +47,16 @@ export function createPublication({database,intake,generation,github,fetcher,pol
    const row=result.rows[0];
    if (!row || typeof row.body !== 'string' || Buffer.byteLength(row.body)>2097152 || typeof row.packet_digest !== 'string'
      || digest(row.body)!==row.packet_digest || digest(canonical(row.payload))!==row.source_digest || digest(canonical(row.snapshot))!==row.snapshot_digest
-     || canonical(item.snapshot)!==canonical(row.snapshot) || ![row.inspection,row.unchecked_scope,row.residual_risk].every(value => typeof value==='string' && value.trim())) throw stale();
+     || canonical(item.snapshot)!==canonical(row.snapshot) || row.deep_inspection !== true || ![row.inspection,row.unchecked_scope,row.residual_risk].every(value => typeof value==='string' && value.trim())) throw stale();
    let packet; try { packet=JSON.parse(row.body); } catch { throw stale(); }
-   const policy=selectPolicy(item);
-   if (packet?.acceptanceReady!==true || packet.candidateCommit!==row.commit_sha || packet.identity?.ownerId!==owner
+   const policy=snapshotPolicy(item);
+   if (packet?.acceptanceReady!==false || packet.candidateCommit!==row.commit_sha || packet.identity?.ownerId!==owner
      || packet.identity?.itemId!==itemId || packet.identity?.candidateId!==candidateId || packet.identity?.baseSha!==item.snapshot.baseSha
-     || packet.identity?.candidateDigest!==row.output_digest || packet.identity?.snapshotDigest!==policy.snapshotDigest || packet.identity?.policyVersion!==policy.policy.version
-     || !Array.isArray(packet.requirementCoverage) || !policy.policy.requirements.filter(r => r.mandatory).length
-     || policy.policy.requirements.filter(r => r.mandatory).some(requirement => {
-       const matching = packet.requirementCoverage.filter((row: any) => row?.id === requirement.id);
-       return matching.length !== 1 || matching[0].mandatory !== true || matching[0].applicability !== requirement.applicability
-         || (requirement.applicability === 'applicable' ? matching[0].status !== 'passed_exercised_checks'
-           : requirement.applicability === 'not_applicable' ? matching[0].status !== 'not_applicable' : true);
-     })) throw stale();
-   return row;
+     || packet.identity?.candidateDigest!==row.output_digest || row.base_sha!==item.snapshot.baseSha
+     || packet.identity?.snapshotDigest!==policy.snapshotDigest || packet.identity?.policyVersion!==policy.policy.version) throw stale();
+   const current=await whileActive(()=>acceptance(owner,itemId,candidateId,signal),signal);
+   assertAcceptanceEvidence(packet,row,item,current);
+   return Object.assign(row,{manifest:current.manifest});
   }
   const initial=await admitted();
   const stored=await whileActive(()=>generation.get(owner,itemId,candidateId,signal),signal);
@@ -66,7 +67,7 @@ export function createPublication({database,intake,generation,github,fetcher,pol
   const access=await whileActive(()=>github.publicationAccess(item.snapshot.repository,item.snapshot.repositoryId,signal),signal);
   if (access.repositoryId!==item.snapshot.repositoryId || access.repository.toLowerCase()!==item.snapshot.repository.toLowerCase()) throw stale();
   const remote=publicationRemote(access.repository,access.token,fetcher);
-  const guard=async()=>{ const current=await admitted(); if (current.decision_id!==initial.decision_id || current.packet_digest!==initial.packet_digest || current.commit_sha!==initial.commit_sha) throw stale();
+  const guard=async()=>{ const current=await admitted(); if (current.decision_id!==initial.decision_id || current.packet_digest!==initial.packet_digest || current.commit_sha!==initial.commit_sha || current.tree_sha!==initial.tree_sha || canonical(current.objects)!==canonical(initial.objects)) throw stale();
     const currentAccess=await whileActive(()=>github.publicationAccess(item.snapshot.repository,item.snapshot.repositoryId,signal),signal);
     if (currentAccess.repositoryId!==item.snapshot.repositoryId || currentAccess.repository.toLowerCase()!==access.repository.toLowerCase() || currentAccess.branch!==access.branch) throw stale();
     if (await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale(); };
@@ -114,7 +115,8 @@ export function createPublication({database,intake,generation,github,fetcher,pol
   if (!claim.rows.length) { const found=await findPull(); if (found) return finish(found); throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.'); }
   await guard();
   if (await remote.ref(branch,signal)!==stage.commitSha || await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
-  const required = selectPolicy(item).policy.requirements.filter(row=>row.mandatory).map(row=>`${row.id}: ${row.applicability === 'not_applicable' ? 'not applicable' : 'passed exercised checks'}`).join('\n');
+  if (initial.manifest.status!=='operator_asserted') throw stale();
+  const required = initial.manifest.controls.map(row=>`${row.id}: ${row.applicability === 'not_applicable' ? 'not applicable' : 'passed exercised checks'}`).join('\n');
   try { await remote.createPull(branch,access.branch,`TripSit: issue #${item.snapshot.issueNumber}`,`${marker}\n\nCloses #${item.snapshot.issueNumber}\n\nRevision: ${stage.commitSha}\nPacket: ${initial.packet_digest}\n\nMandatory policy evidence:\n${required}\n\nEvidence and merge protection remain subject to human review.`,signal); } catch { /* A lost response is reconciled by reading GitHub. */ }
   const found=await findPull(); if (!found) throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.');
   return finish(found);
