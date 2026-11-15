@@ -85,8 +85,8 @@ try{
     if(!await evaluate("document.querySelector('.inspection').textContent.includes('<script>Review fixture') && !document.querySelector('.inspection script')"))throw new Error('Untrusted review text was not escaped');
    }
    await evaluate("(()=>{const nodes=document.querySelectorAll('.impact-map .node');(nodes[1]||nodes[0]).focus();})()");
-   await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
-   await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13});
+   await command('Input.dispatchKeyEvent',{type:'keyDown',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13,text:'\r',unmodifiedText:'\r'});
+   await command('Input.dispatchKeyEvent',{type:'keyUp',key:'Enter',code:'Enter',windowsVirtualKeyCode:13,nativeVirtualKeyCode:13});
    await waitFor("document.activeElement?.getAttribute('aria-pressed')==='true' && Boolean(document.querySelector('.impact-map code'))");
    if(verificationPosts!==beforeVerificationPosts)throw new Error('Presentation requested an execution');
   }
