@@ -7,7 +7,7 @@ export type GenerationSettings = Record<string, string | number | boolean | null
 export type GenerationContext = { path: string; originalBlob: string | null; content: string };
 export type GenerationPrompt = { instruction: string; data: string };
 export type GenerationObservations = { status: 'unavailable' | 'observed'; tokens: Array<{ token: string; bytes: number[] | null; logprob: number }> };
-export type ModelGeneration = { rawOutput: Uint8Array; model: string; settings: GenerationSettings; observations?: GenerationObservations };
+export type ModelGeneration = { rawOutput: Uint8Array; model: string; settings: GenerationSettings; observations?: GenerationObservations; finishReason?: 'stop' };
 export type GeneratedCandidate = Omit<CandidateOutput, 'files'> & {
   files: Array<CandidateOutput['files'][number] & { blobSha: string }>;
   baseSha: string;
