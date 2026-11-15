@@ -120,3 +120,23 @@ test('authorization revoked after admission sends no source to runner', async ()
  await assert.rejects(runner.run(context, new AbortController().signal, async () => { throw new Error('revoked'); }));
  assert.equal(posts, 0);
 });
+
+test('exact evidence requires runner revision echo and records expected case counts', async () => {
+ const { verificationDigest } = await import('../src/lib/server/verification.ts');
+ const admission = {status:'passed',configurationDigest:'1'.repeat(64),codeDigest:'2'.repeat(64),environmentDigest:'3'.repeat(64)};
+ const exactRevision={commitSha:'a'.repeat(40),treeSha:'b'.repeat(40),commitObject:'Y29tbWl0'};
+ const files=[{path:'caller.py',content:context.files[0].replacement,blobSha:'d'.repeat(40),mode:'100644' as const}];
+ let tamper=false;
+ const runner=createVerification({url:'https://runner.example',token:'secret',manifest,fetcher:async (_url,options)=>{
+  if(options?.method==='GET') return Response.json(admission);
+  const request=JSON.parse(options!.body as string), check=request.checks[0];
+  assert.deepEqual(request.revision,exactRevision); assert.deepEqual(request.files,files);
+  const {cases,...definition}=check;
+  const binding={id:check.id,definitionDigest:verificationDigest(definition),oracleDigest:verificationDigest(cases),dependencyDigest:verificationDigest(files.map(({path,blobSha})=>({path,blobSha}))),environmentDigest:admission.environmentDigest};
+  return Response.json({identity:request.identity,revision:tamper?{...exactRevision,treeSha:'c'.repeat(40)}:exactRevision,admission,checks:[binding],executions:[{...binding,id:'run',checkId:check.id,collector:'trusted_runner',runnerId:'runner',prId:null,status:'completed',result:'passed',exitCode:0,executedTests:1}]});
+ }});
+ const input={...context,exact:{revision:exactRevision,files}};
+ const evidence=await runner.run(input,new AbortController().signal,async()=>{});
+ assert.deepEqual(evidence.exactRevision,exactRevision); assert.deepEqual(evidence.expectedCases,{'caller-regression':1});
+ tamper=true; await assert.rejects(runner.run(input,new AbortController().signal,async()=>{}));
+});
