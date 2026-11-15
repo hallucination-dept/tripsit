@@ -227,5 +227,57 @@ class AggregationTests(unittest.TestCase):
         self.assertFalse(report['accepted'])
 
 
+class ReviewerGateTests(unittest.TestCase):
+    def test_reviewer_gate_missing_configuration_fails_without_starting_process(self):
+        from unittest.mock import patch
+        with patch.object(gates, 'execute_control') as execute:
+            report = gates.run_reviewer_gate({})
+        execute.assert_not_called()
+        self.assertFalse(report['accepted'])
+        self.assertEqual(report['reviewer']['status'], 'unavailable')
+        self.assertEqual(report['authenticated_owner_uat'], 'unverified')
+        self.assertEqual(report['private_admission']['status'], 'unverified')
+
+    def test_only_expected_bounded_source_free_result_can_pass(self):
+        from unittest.mock import patch
+        environment = {'REVIEWER_API_URL': 'https://example.invalid', 'REVIEWER_API_KEY': 'credential-secret',
+                       'REVIEWER_MODEL': 'configured-model', 'REVIEWER_RETENTION_DISCLOSURE': 'retention-secret'}
+        valid = {'status': 'passed_configured_reviewer', 'scope': 'public_synthetic_provider_contract',
+                 'authenticatedOwnerUat': 'unverified', 'privateAdmission': 'unverified', 'claimCount': 1, 'checkCount': 1,
+                 'fixtureDigest': 'a' * 64, 'promptDigest': 'b' * 64, 'responseDigest': 'c' * 64,
+                 'configurationDigest': 'd' * 64}
+        for result, accepted in [(valid, True), (None, False), ({}, False),
+                                 ({**valid, 'status': 'passed'}, False), ({**valid, 'claimCount': 0}, False),
+                                 ({**valid, 'checkCount': 0}, False), ({**valid, 'raw': 'source-secret'}, False),
+                                 ({**valid, 'promptDigest': 'x'}, False)]:
+            with self.subTest(result=result), patch.object(gates, 'execute_control', return_value=result):
+                report = gates.run_reviewer_gate(environment)
+            self.assertEqual(report['accepted'], accepted)
+            rendered = json.dumps(report)
+            for secret in ['credential-secret', 'retention-secret', 'source-secret', 'configured-model', 'example.invalid']:
+                self.assertNotIn(secret, rendered)
+            self.assertEqual(report['authenticated_owner_uat'], 'unverified')
+            self.assertEqual(report['private_admission']['status'], 'unverified')
+
+    def test_reviewer_configuration_or_source_changes_invalidate_evidence(self):
+        from unittest.mock import patch
+        environment = {key: 'configured' for key in gates.REVIEWER_REQUIRED}
+        valid = {'status': 'passed_configured_reviewer', 'scope': 'public_synthetic_provider_contract',
+                 'authenticatedOwnerUat': 'unverified', 'privateAdmission': 'unverified', 'claimCount': 1, 'checkCount': 1,
+                 'fixtureDigest': 'a' * 64, 'promptDigest': 'b' * 64, 'responseDigest': 'c' * 64,
+                 'configurationDigest': 'd' * 64}
+        def changed(*_):
+            environment['REVIEWER_MODEL'] = 'changed'
+            return valid
+        with patch.object(gates, 'execute_control', side_effect=changed):
+            report = gates.run_reviewer_gate(environment)
+        self.assertFalse(report['accepted'])
+        self.assertEqual(report['evidence_status'], 'stale')
+        with patch.object(gates, 'execute_control', return_value=valid), patch.object(gates, 'code_digest', side_effect=['before', 'after']):
+            report = gates.run_reviewer_gate(environment)
+        self.assertFalse(report['accepted'])
+        self.assertEqual(report['evidence_status'], 'stale')
+
+
 if __name__ == '__main__':
     unittest.main()

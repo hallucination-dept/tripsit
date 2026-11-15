@@ -1,12 +1,55 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { decodeCandidateOutput } from '../src/lib/server/candidate-output.ts';
+import { decodeCandidateOutput, mapCandidateTokenBytes } from '../src/lib/server/candidate-output.ts';
 
 const blob = 'a'.repeat(40);
 const expected = new Map<string, string | null>([['src/main.ts', blob], ['new.txt', null]]);
 const encode = (value: unknown) => new TextEncoder().encode(JSON.stringify(value));
 const file = (changes: Record<string, unknown> = {}) => ({ path: 'src/main.ts', originalBlob: blob, content: 'hello', ...changes });
 const decode = (files: unknown[]) => decodeCandidateOutput(encode({ files }), expected);
+
+test('maps escaped, Unicode and framed output against exact token bytes', () => {
+  const raw = new TextEncoder().encode(' ```json\r\n{"files":[{"path":"src/main.ts","content":"é\\r\\n\\ud83d\\ude00","originalBlob":"forged"}]}\r\n``` ');
+  const tokens = Array.from(raw, byte => ({ bytes: [byte], logprob: -1 }));
+  const result = mapCandidateTokenBytes(raw, expected, tokens, 'model', 'a'.repeat(64), 'agent');
+  assert.equal(result.status, 'exact'); if (result.status !== 'exact') return;
+  assert.equal(result.files[0].path, 'src/main.ts');
+  const segments = result.files[0].segments;
+  assert.deepEqual(segments.map(segment => segment.fileEnd - segment.fileStart), [2, 1, 1, 4]);
+  for (const segment of segments) {
+    assert.equal(segment.firstToken, segment.outputStart);
+    assert.equal(segment.lastToken, segment.outputEnd - 1);
+  }
+  assert.equal(new TextDecoder().decode(raw.slice(segments[3].outputStart, segments[3].outputEnd)), '\\ud83d\\ude00');
+});
+
+test('mapping remains unavailable on token mismatch, malformed identity, duplicate keys and segment limits', () => {
+  const raw = encode({ files: [file()] });
+  const token = { bytes: Array.from(raw), logprob: -0.1 };
+  const map = (bytes: Uint8Array, tokens: Array<{ bytes: number[] | null; logprob: number }>, settings = 'a'.repeat(64)) =>
+    mapCandidateTokenBytes(bytes, expected, tokens, 'model', settings);
+  assert.equal(map(raw, [token]).status, 'exact');
+  for (const tokens of [[], [{ ...token, bytes: null }], [{ ...token, bytes: [0] }], [{ ...token, logprob: 1 }], [{ ...token, bytes: Array.from(raw).slice(0, -1) }]])
+    assert.equal(map(raw, tokens).status, 'unavailable');
+  assert.equal(map(raw, [token], 'invalid').status, 'unavailable');
+  const duplicate = new TextEncoder().encode('{"files":[{"path":"src/main.ts","originalBlob":"' + blob + '","content":"a","content":"b"}]}');
+  assert.equal(map(duplicate, [{ bytes: Array.from(duplicate), logprob: 0 }]).status, 'unavailable');
+  const large = encode({ files: [file({ content: 'x'.repeat(65537) })] });
+  const chunks = Array.from({ length: Math.ceil(large.length / 16000) }, (_, i) => ({ bytes: Array.from(large.slice(i * 16000, (i + 1) * 16000)), logprob: -1 }));
+  assert.equal(map(large, chunks).status, 'unavailable');
+});
+
+test('maps multiple files when token boundaries cross UTF-8 and escape boundaries', () => {
+  const raw = encode({ files: [file({ content: '雪\n' }), file({ path: 'new.txt', originalBlob: null, content: 'é😀' })] });
+  const tokens = Array.from({ length: Math.ceil(raw.length / 3) }, (_, i) => ({ bytes: Array.from(raw.slice(i * 3, i * 3 + 3)), logprob: -0.5 }));
+  const result = mapCandidateTokenBytes(raw, expected, tokens, 'model', 'b'.repeat(64));
+  assert.equal(result.status, 'exact'); if (result.status !== 'exact') return;
+  assert.deepEqual(result.files.map(row => row.path), ['src/main.ts', 'new.txt']);
+  for (const file of result.files) for (const segment of file.segments) {
+    assert.equal(segment.firstToken, Math.floor(segment.outputStart / 3));
+    assert.equal(segment.lastToken, Math.floor((segment.outputEnd - 1) / 3));
+  }
+});
 
 test('decodes exact replacement bytes and explicit additions without inventing mapping', () => {
   const content = 'é😀\r\n"quoted"\\path\u0000';
@@ -21,6 +64,17 @@ test('decodes exact replacement bytes and explicit additions without inventing m
   assert.deepEqual(result.mapping, { status: 'unavailable', reason: 'Exact output-to-content span mapping is not implemented.' });
   raw.fill(0);
   assert.deepEqual(result.rawOutput, original);
+});
+
+test('autonomous decoding preserves original framed bytes while binding server-owned blob identity', () => {
+  const raw = new TextEncoder().encode('  ```json\r\n{"files":[{"content":"\\u00e9\\r\\n","path":"src/main.ts","originalBlob":"forged"}]}\r\n```  ');
+  const result = decodeCandidateOutput(raw, expected, 'agent');
+  assert.deepEqual(result.rawOutput, raw);
+  assert.deepEqual(result.files, [{ path: 'src/main.ts', originalBlob: blob, content: new TextEncoder().encode('é\r\n') }]);
+  assert.equal(result.mapping.status, 'unavailable');
+  for (const text of ['prefix\n```json\n{"files":[]}\n```', '```json\n{"files":[]}\n```\n```', '{"files":[{"path":"unknown.txt","content":"x"}]}']) {
+    assert.throws(() => decodeCandidateOutput(new TextEncoder().encode(text), expected, 'agent'), /Invalid candidate output/);
+  }
 });
 
 test('rejects unsafe paths, duplicates and untrusted or stale originals', () => {

@@ -2,6 +2,8 @@
 	import { untrack } from 'svelte';
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { createCandidateWorkspace } from '#lib/candidate-workspace.ts';
+	import CandidateInspection from '#lib/CandidateInspection.svelte';
+	import OutcomeFeedback from '#lib/OutcomeFeedback.svelte';
 	import { authClient } from '#lib/auth-client.js';
 	import { selectedAfterReload } from '#lib/issue-selection.ts';
 	import Logo from '#lib/components/Logo.svelte';
@@ -10,7 +12,7 @@
 
 	const session = authClient.useSession();
 	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
-		repositoryId: number; repository: string; issueNumber: number; baseSha: string;
+		repositoryId: number; repository: string; private: boolean; issueNumber: number; baseSha: string;
 		supplied: { title: string; body: string }; inferred: string[]; ownerConfirmed: string[];
 	} };
 	let issueItems = $state<IssueItem[]>([]);
@@ -34,20 +36,19 @@
 	let intakeAbort: AbortController | undefined;
 	const discoveryController = createIssueDiscovery({ onChange: next => {
 		discovery = next;
-		const accessible = (item: IssueItem) => !next.error && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
+		const accessible = (item: IssueItem) => Date.parse(item.expiresAt) > Date.now() && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
 		issueItems = issueItems.filter(accessible);
 		if (selectedIssue && !accessible(selectedIssue)) selectedIssue = null;
 	} });
 	let discovery = $state(discoveryController.state);
 	const candidateController = createCandidateWorkspace({ onChange: next => { candidateWorkspace = next; } });
 	let candidateWorkspace = $state(candidateController.state);
-	let candidatePaths = $state<string[]>([]);
 
 	$effect(() => {
 		const owner = $session.data?.user.id ?? '';
 		const itemId = selectedIssue?.id ?? '';
 		const baseSha = selectedIssue?.snapshot.baseSha ?? '';
-		untrack(() => { candidatePaths = []; void candidateController.select(owner, itemId, baseSha); });
+		untrack(() => { void candidateController.select(owner, itemId, baseSha); });
 		return () => untrack(() => candidateController.stop());
 	});
 
@@ -163,16 +164,16 @@
 					{#if discovery.owner === $session.data.user.id}
 						<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
 							<label for="repository">Repository</label>
-							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
+							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || !discovery.repositories.length}>
 								<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
 								{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
 							</select>
 							<label for="issue-number">Open issue</label>
-							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || discovery.loading || !discovery.issues.length}>
+							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || !discovery.issues.length}>
 								<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
 								{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
 							</select>
-							<button class="button-primary capture-button" type="submit" disabled={issueBusy || discovery.loading || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+							<button class="button-primary capture-button" type="submit" disabled={issueBusy || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
 						</form>
 						{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
 						{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p class="empty-note">No repositories found. Check the App installation and your repository access.</p>{/if}
@@ -180,7 +181,7 @@
 						{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p class="notice">This is a partial list. Automatic refresh will check again.</p>{/if}
 						<div class="panel-footer"><span>No work starts automatically.</span><button class="button-quiet" type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button></div>
 					{:else}<p class="empty-note" aria-live="polite">Discovering repositories and issues…</p>{/if}
-					<p class="privacy-note">Private issue snapshots are currently unavailable.</p>
+					<p class="privacy-note">Snapshots save issue text and its code revision for seven days.</p>
 				</div>
 				<div class="panel snapshot-panel">
 					<div class="panel-heading"><p class="panel-title">Snapshots</p><button class="button-quiet" type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button></div>
@@ -195,7 +196,7 @@
 							<div class="commit-reference"><span>Base commit</span><code>{selectedIssue.snapshot.baseSha}</code></div>
 							<h4>Supplied issue text (unconfirmed)</h4>
 							<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
-							<details class="snapshot-details"><summary>Provenance & retention</summary><p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p><p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Scheduled deletion is not yet verified.</p></details>
+							<details class="snapshot-details"><summary>Provenance & retention</summary><p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p><p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Expired source is unavailable.</p></details>
 						</div>
 					{:else}<div class="snapshot-empty"><p class="empty-title">No snapshot selected</p><p>Choose an issue and capture its current code revision, or reload your saved snapshots.</p></div>{/if}
 				</div>
@@ -204,7 +205,7 @@
 
 		{#if selectedIssue && intakeOwner === $session.data.user.id && candidateWorkspace.itemId === selectedIssue.id && candidateWorkspace.owner === $session.data.user.id}
 			<section class="review-section" aria-labelledby="implementation-heading">
-				<div class="section-heading"><div><h2 id="implementation-heading">Implementation candidate</h2><p>Review requirements and propose changes at the captured revision.</p></div><span class="section-label">Human led</span></div>
+				<div class="section-heading"><div><h2 id="implementation-heading">Issue implementation</h2><p>The agent investigates the issue, implements changes and builds the review evidence.</p></div><span class="section-label">Agent driven · human in the loop</span></div>
 				<div class="intake-grid">
 					<div class="panel ticket-panel">
 						<h3>Requirements to verify</h3>
@@ -220,26 +221,26 @@
 							<details class="snapshot-details"><summary>Open requirements gaps ({candidateWorkspace.policy.gaps.length})</summary><ul>{#each candidateWorkspace.policy.gaps as gap}<li>{gap.reason}</li>{/each}</ul></details>
 						{/if}
 					</div>
-					<form class="panel ticket-panel" onsubmit={(event) => { event.preventDefault(); candidateController.generate(candidatePaths); }}>
-						<h3>Propose file changes</h3>
-						<p class="empty-note">Select up to eight files. Nothing runs or publishes automatically.</p>
-						<label for="candidate-files">Files at the captured revision</label>
-						<select id="candidate-files" multiple size={6} bind:value={candidatePaths} disabled={candidateWorkspace.loading || candidateWorkspace.generating || !candidateWorkspace.files.length}>
-							{#each candidateWorkspace.files as file (file.path)}<option value={file.path}>{file.path}</option>{/each}
-						</select>
-						<p class="empty-note">{candidatePaths.length} of 8 selected. Use Ctrl or ⌘ to select multiple files.</p>
-						{#if candidateWorkspace.filesError}<p class="error" role="alert">{candidateWorkspace.filesError}</p>{/if}
+					<form id="implementation-form" class="panel ticket-panel" onsubmit={(event) => { event.preventDefault(); candidateController.generate(); }}>
+						<h3>Implement this issue</h3>
+						<p class="empty-note">Gemma chooses the files to inspect, requests more context when needed, and generates the implementation against the captured revision.</p>
 						{#if candidateWorkspace.generationError}<p class="error" role="alert">{candidateWorkspace.generationError}</p>{/if}
-						<button class="button-primary capture-button" type="submit" disabled={candidateWorkspace.loading || candidateWorkspace.generating || !candidatePaths.length || candidatePaths.length > 8}>{candidateWorkspace.generating ? 'Generating candidate…' : 'Generate candidate'}</button>
-						<p class="privacy-note">Generated changes need review. Exact token mapping and execution evidence are unavailable.</p>
+						<button id="implement-issue" class="button-primary capture-button" type="submit" disabled={candidateWorkspace.loading || candidateWorkspace.generating}>{candidateWorkspace.generating ? 'Agent investigating and implementing…' : 'Implement issue'}</button>
+						<p class="privacy-note">The resulting changes, impact graph and assessments guide your review. You can steer revisions before making a final decision.</p>
 					</form>
 				</div>
 				{#if candidateWorkspace.candidate}
 					<div class="panel candidate-preview" aria-live="polite">
-						<div class="section-heading"><div><h3>Proposed replacements</h3><p>{candidateWorkspace.candidate.candidate.model} · Not executed or published</p></div></div>
+						<div class="section-heading"><div><h3>Agent implementation</h3><p>{candidateWorkspace.candidate.candidate.model} · Not executed or published</p></div></div>
 						<p class="empty-note">Candidate {candidateWorkspace.candidate.id} · Expires {new Date(candidateWorkspace.candidate.candidate.expiresAt).toLocaleString()}</p>
 						{#each candidateWorkspace.candidate.candidate.files as file (file.path)}<details open class="candidate-file"><summary>{file.path}</summary><p class="empty-note">Blob {file.blobSha}</p><pre><code>{file.content}</code></pre></details>{/each}
 					</div>
+					<CandidateInspection owner={$session.data.user.id} itemId={selectedIssue.id}
+						candidateId={candidateWorkspace.candidate.id} baseSha={selectedIssue.snapshot.baseSha}
+						candidateDigest={candidateWorkspace.candidate.candidate.outputDigest} />
+					{#key `${$session.data.user.id}:${selectedIssue.id}:${candidateWorkspace.candidate.id}`}
+						<OutcomeFeedback itemId={selectedIssue.id} candidateId={candidateWorkspace.candidate.id} files={candidateWorkspace.candidate.candidate.files} repository={selectedIssue.snapshot.repository} />
+					{/key}
 				{/if}
 			</section>
 		{/if}
@@ -343,8 +344,8 @@
 	.requirements-list strong { display: block; font-weight: 600; line-height: 1.6; }
 	.requirement-state { display: block; color: var(--text-subtle); font: 400 11px/1.5 var(--font-mono); margin-top: 5px; }
 	.requirements-list p, .requirements-list summary { color: var(--text-muted); font: 400 11px/1.6 var(--font-mono); }
-	#candidate-files { min-height: 150px; }
 	.candidate-preview { margin-top: 18px; padding: 20px; }
+	.candidate-preview p { overflow-wrap: anywhere; }
 	.candidate-file { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 14px; }
 	.candidate-file summary { overflow-wrap: anywhere; font: 500 12px/1.5 var(--font-mono); }
 	.candidate-file pre { overflow: auto; max-height: 420px; padding: 14px; background: var(--surface-raised); border: 1px solid var(--border); font-size: 12px; line-height: 1.7; }

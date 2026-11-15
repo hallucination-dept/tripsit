@@ -9,21 +9,22 @@ depends_on:
 - e03s02
 tasks:
 - id: 1
-  description: Define regression fixtures and assert the happy path, edge cases and
-    security denials below before implementation.
-  verify: cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts
+  description: Define regression fixtures and assert the happy path, edge cases and security denials
+    below before implementation.
+  verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types
+    tests/candidate-inspection.test.ts && node --experimental-strip-types tests/assessment-view.test.ts
   risk: P1
   security: medium
-  status: failing
+  status: passing
   allure:
     severity: high
     categories:
     - Security Review
     - e04s01
 - id: 2
-  description: 'Implement packet read model and accessible UI with explicit evidence
-    reuse assessment within a PR; never reuse across new PRs. Connect the owner UI/API
-    path and fail-closed errors; retain revision provenance. Ref: ADR 0003.'
+  description: 'Implement packet read model and accessible UI with explicit evidence reuse assessment
+    within a PR; never reuse across new PRs. Connect the owner UI/API path and fail-closed errors;
+    retain revision provenance. Ref: ADR 0003.'
   verify: cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts
   risk: P1
   security: medium
@@ -34,22 +35,22 @@ tasks:
     - Security Review
     - e04s01
 - id: 3
-  description: "Integrate all affected contracts and run frontend diagnostics/build;\
-    \ include no new security findings in affected paths in focused assertions. Ref:\
-    \ ADRs 0001\u20130003."
-  verify: (cd frontend && node --experimental-strip-types --test tests/e04s01.test.ts)
-    && (cd frontend && npm run check && npm run build)
+  description: "Integrate all affected contracts and run frontend diagnostics/build; include no new\
+    \ security findings in affected paths in focused assertions. Ref: ADRs 0001\u20130003."
+  verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types
+    tests/candidate-inspection.test.ts && node --experimental-strip-types tests/assessment-view.test.ts
+    && npm run check && npm run build
   risk: P1
   security: medium
-  status: failing
+  status: passing
   allure:
     severity: high
     categories:
     - Security Review
     - e04s01
 - id: 4
-  description: Save revision-bound UAT evidence with fixture identifiers, actual commands,
-    statuses and limitations; reject an empty evidence record.
+  description: Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses
+    and limitations; reject an empty evidence record.
   verify: test -s specs/verifications/e04s01.md
   risk: P1
   security: medium
@@ -59,3 +60,21 @@ tasks:
     categories:
     - Security Review
     - e04s01
+preparatory_subtasks:
+- id: revision-bound-packet
+  status: passing
+  scope: Pure packet builder and reviewed priority planner; API/UI/runtime/persistence remain parent-owned.
+  plan: Validate owner and frozen artifact identities; separate requirements, impact gaps, reviewer
+    claims/conflicts, optional/mandatory plans and trusted executions. Missing/stale controls require
+    inspection. Reuse requires explicit same-PR revision-bound assessment and exact check/oracle/environment/dependency
+    matches; unknown impact forbids mandatory reuse and new PRs never reuse. Candidate commit remains
+    null before staging.
+  verify: cd frontend && node --experimental-strip-types tests/packet.test.ts && node --experimental-strip-types
+    tests/priorities.test.ts && npm run check && npm run build
+  verification_results: Eleven packet and seven priority native tests passed; npm run check and npm
+    run build exited zero with zero Svelte diagnostics. This validates the pure read model only;
+    no runner, API/UI, provider or full-story acceptance is claimed.
+implementation_progress:
+  source: 6a21f65
+  delivery: PR9, not merged; local implementation and tests verified.
+  acceptance: Incomplete; remaining tasks retain failing status.

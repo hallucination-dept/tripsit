@@ -13,7 +13,7 @@ function fixture() {
   let stored: StoredCandidate | null = null;
   const dependencies = {
     intake: { async get(owner: string) { calls.intake++; if (owner !== 'owner') throw new IntakeError(404, 'secret upstream text'); return structuredClone(item); } },
-    github: { async context() { calls.github++; return [{ path: 'a.ts', originalBlob: blob('original'), content: 'original' }]; } },
+    github: { async reviewerVisibility() { return false; }, async context() { calls.github++; return [{ path: 'a.ts', originalBlob: blob('original'), content: 'original' }]; } },
     model: { async generate(prompt: { instruction: string; data: string }) { calls.model++; assert.ok(prompt.instruction.includes('untrusted')); assert.equal(JSON.parse(prompt.data).issue.body, item.snapshot.supplied.body); return { rawOutput: bytes(JSON.stringify({ files: [{ path: 'a.ts', originalBlob: blob('original'), content: 'é😀\r\n' }] })), model: 'gemma-test', settings: { temperature: 0 } }; } },
     store: { async create(_owner: string, _id: string, candidate: GeneratedCandidate) { calls.store++; stored = { id: 'candidate', candidate }; return stored; }, async get() { return stored; } }
   };
@@ -34,10 +34,23 @@ test('generates inert exact bytes, blob identity and unavailable mapping, then r
   assert.deepEqual(f.calls, { intake: 5, github: 1, model: 1, store: 1 });
 });
 
-test('denies unauthorized, private, expired and invalid selection before any model or storage', async () => {
-  for (const mode of ['owner', 'private', 'expired', 'empty', 'too-many', 'unsafe', 'duplicate']) {
+test('records exact token byte mapping only when provider bytes reconstruct output', async () => {
+  for (const exact of [true, false]) {
+    const f = fixture(); const generate = f.dependencies.model.generate;
+    f.dependencies.model.generate = async prompt => {
+      const result = await generate(prompt);
+      return { ...result, observations: { status: 'observed', tokens: [{ token: 'provider', bytes: exact ? Array.from(result.rawOutput) : null, logprob: -1 }] } };
+    };
+    const candidate = (await f.service.create('owner', 'item', ['a.ts'], f.signal)).candidate;
+    assert.equal(candidate.tokenByteMapping?.status, exact ? 'exact' : undefined);
+    assert.equal(candidate.mapping.status, 'unavailable');
+  }
+});
+
+test('denies unauthorized, malformed, expired and invalid selection before any model or storage', async () => {
+  for (const mode of ['owner', 'malformed', 'expired', 'empty', 'too-many', 'unsafe', 'duplicate']) {
     const f = fixture();
-    if (mode === 'private') f.item.snapshot.private = true;
+    if (mode === 'malformed') f.item.snapshot.private = undefined as unknown as boolean;
     if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();
     const paths = mode === 'empty' ? [] : mode === 'too-many' ? Array.from({ length: 9 }, (_, i) => `f${i}`) : mode === 'unsafe' ? ['../a'] : mode === 'duplicate' ? ['a.ts', 'a.ts'] : ['a.ts'];
     await assert.rejects(() => f.service.create(mode === 'owner' ? 'other' : 'owner', 'item', paths, f.signal), (error: Error) => !error.message.includes('secret'));
@@ -140,4 +153,282 @@ test('keeps actionable dependency status while sanitizing its error message', as
     await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal), (error: IntakeError) => error.status === status && !error.message.includes('secret'));
     assert.equal(f.calls.store, 0);
   }
+});
+
+test('private and newly private repositories dispatch only with current access', async () => {
+  for (const autonomous of [false, true]) for (const mode of ['private', 'changed', 'denied', 'invalid']) {
+    const f = autonomous ? agentFixture() : fixture();
+    if (mode === 'private') f.item.snapshot.private = true;
+    f.dependencies.github.reviewerVisibility = async () => {
+      if (mode === 'denied') throw new IntakeError(403, 'revoked');
+      return mode === 'changed' ? true : mode === 'invalid' ? undefined as unknown as boolean : false;
+    };
+    if (['denied', 'invalid'].includes(mode)) {
+      await assert.rejects(() => f.service.create('owner', 'item', autonomous ? undefined : ['a.ts'], f.signal));
+      assert.equal(f.calls.model, 0); assert.equal(f.calls.store, 0);
+    } else {
+      await f.service.create('owner', 'item', autonomous ? undefined : ['a.ts'], f.signal);
+      assert(f.calls.model > 0); assert.equal(f.calls.store, 1);
+    }
+  }
+});
+
+function agentFixture(privateRepository = false) {
+  const f = fixture();
+  f.item.snapshot.private = privateRepository;
+  const originals = new Map([['a.ts', 'export const value = 1;'], ['caller.ts', "import { value } from './a.ts';\nexport const call = () => value;"]]);
+  const reads: string[][] = [];
+  const prompts: Array<Record<string, unknown>> = [];
+  let turn = 0;
+  const dependencies = {
+    ...f.dependencies,
+    github: {
+      async reviewerVisibility() { return false; },
+      async files() { return [...originals].map(([path, content]) => ({ path, blobSha: blob(content) })); },
+      async context(_snapshot: unknown, paths: string[]) { reads.push([...paths]); return paths.map(path => ({ path, originalBlob: blob(originals.get(path)!), content: originals.get(path)! })); }
+    },
+    model: {
+      async generate(prompt: { instruction: string; data: string }) {
+        f.calls.model++;
+        assert.match(prompt.instruction, /read/u);
+        prompts.push(JSON.parse(prompt.data));
+        const actions = [{ read: ['a.ts'] }, { read: ['caller.ts'] }, { files: [{ path: 'a.ts', originalBlob: blob(originals.get('a.ts')!), content: 'export const value = 2;' }] }];
+        return { rawOutput: bytes(JSON.stringify(actions[turn++])), model: 'gemma', settings: {} };
+      }
+    }
+  };
+  return { ...f, originals, reads, prompts, dependencies, service: createGeneration(dependencies) };
+}
+
+test('autonomous mapping binds the original framed response to server-owned file identities', async () => {
+  const f = agentFixture();
+  f.dependencies.github.files = async () => [];
+  const rawOutput = bytes(' ```json\n{"files":[{"path":"new.ts","content":"é\\n"}]}\n``` ');
+  f.dependencies.model.generate = async () => ({ rawOutput, model: 'gemma', settings: {},
+    observations: { status: 'observed', tokens: [{ token: 'original', bytes: Array.from(rawOutput), logprob: -1 }] } });
+  const candidate = (await f.service.create('owner', 'item', undefined, f.signal)).candidate;
+  assert.deepEqual(candidate.rawOutput, rawOutput);
+  assert.equal(candidate.tokenByteMapping?.mode, 'agent');
+  assert.equal(candidate.tokenByteMapping?.files[0].blobSha, blob('é\n'));
+});
+
+test('autonomously reads additional frozen source then implements a change without human file selection', async () => {
+  for (const privateRepository of [false]) {
+    const f = agentFixture(privateRepository);
+    const candidate = await f.service.create('owner', 'item', undefined, f.signal);
+    assert.deepEqual(f.reads, [['a.ts'], ['caller.ts']]);
+    assert.equal(f.prompts.length, 3);
+    assert.deepEqual((f.prompts[0].repositoryFiles as Array<{ path: string }>).map(row => row.path), ['a.ts', 'caller.ts']);
+    assert.equal((f.prompts[0].files as unknown[]).length, 0);
+    assert.equal((f.prompts[1].files as unknown[]).length, 1);
+    assert.equal((f.prompts[2].files as unknown[]).length, 2);
+    assert.equal(candidate.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+    assert.equal(new TextDecoder().decode(candidate.candidate.files[0].content), 'export const value = 2;');
+    assert.equal(f.calls.store, 1);
+  }
+});
+
+test('autonomous generation can create a new file in an empty frozen repository', async () => {
+  const f = agentFixture();
+  f.dependencies.github.files = async () => [];
+  f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify({ files: [{ path: 'new.ts', originalBlob: null, content: 'export const value = 1;' }] })), model: 'gemma', settings: {} });
+  const stored = await f.service.create('owner', 'item', undefined, f.signal);
+  assert.equal(stored.candidate.files[0].originalBlob, null);
+  assert.equal(f.reads.length, 0);
+  assert.equal(f.calls.store, 1);
+});
+
+test('autonomous tools reject unsafe or mixed actions and uninspected edits while repeated reads stay bounded', async () => {
+  for (const action of [{ read: ['../secret'] }, { read: ['missing.ts'] }, { read: [] }, { execute: 'bash' }, { read: ['a.ts'], files: [] }, { files: [{ path: 'a.ts', originalBlob: blob('export const value = 1;'), content: 'replace without reading' }] }]) {
+    const f = agentFixture();
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify(action)), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+    assert.equal(f.reads.length, 0);
+  }
+  const repeated = agentFixture();
+  repeated.dependencies.model.generate = async () => ({ rawOutput: bytes('{"read":["a.ts"]}'), model: 'gemma', settings: {} });
+  await assert.rejects(() => repeated.service.create('owner', 'item', undefined, repeated.signal));
+  assert.equal(repeated.calls.store, 0);
+  assert.deepEqual(repeated.reads, [['a.ts']]);
+});
+
+test('autonomous generation has six model turns, bounded source and cancellation for noncooperative tools', async () => {
+  const f = agentFixture();
+  const listing = Array.from({ length: 7 }, (_, index) => ({ path: `file${index}.ts`, blobSha: blob('source') }));
+  f.dependencies.github.files = async () => listing;
+  f.dependencies.github.context = async (_snapshot, paths) => { f.reads.push(paths); return paths.map(path => ({ path, originalBlob: blob('source'), content: 'source' })); };
+  f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify({ read: [listing[f.calls.model++].path] })), model: 'gemma', settings: {} });
+  await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+  assert.equal(f.calls.model, 6);
+  assert.equal(f.calls.store, 0);
+  const cancelled = agentFixture(); const controller = new AbortController();
+  cancelled.dependencies.github.files = async () => { controller.abort(); return new Promise(() => {}); };
+  await assert.rejects(() => cancelled.service.create('owner', 'item', undefined, controller.signal));
+  assert.equal(cancelled.calls.model, 0); assert.equal(cancelled.calls.store, 0);
+});
+
+test('autonomous generation rechecks access and the frozen revision around each tool and model call', async () => {
+  for (const stage of ['listing', 'context', 'model']) {
+    const f = agentFixture();
+    if (stage === 'listing') { const files = f.dependencies.github.files; f.dependencies.github.files = async () => { const value = await files(); f.item.snapshot.baseSha = 'b'.repeat(40); return value; }; }
+    if (stage === 'context') { const context = f.dependencies.github.context; f.dependencies.github.context = async (snapshot, paths) => { const value = await context(snapshot, paths); f.dependencies.intake.get = async () => { throw new IntakeError(403, 'revoked'); }; return value; }; }
+    if (stage === 'model') { const generate = f.dependencies.model.generate; f.dependencies.model.generate = async prompt => { const value = await generate(prompt); f.item.snapshot.supplied.body = 'changed'; return value; }; }
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+    assert.equal(f.calls.model, stage === 'listing' ? 0 : 1);
+  }
+});
+
+test('autonomous generation validates listing and source budgets before further model cost', async () => {
+  for (const mode of ['unconfigured', 'invalid-listing', 'duplicate-listing', 'oversized-listing', 'wrong-blob', 'oversized-batch', 'source-total', 'file-total']) {
+    const f = agentFixture();
+    if (mode === 'unconfigured') delete (f.dependencies.github as { files?: unknown }).files;
+    if (mode === 'invalid-listing') f.dependencies.github.files = async () => [{ path: '../secret', blobSha: blob('source') }];
+    if (mode === 'duplicate-listing') f.dependencies.github.files = async () => [{ path: 'a.ts', blobSha: blob('source') }, { path: 'a.ts', blobSha: blob('source') }];
+    if (mode === 'oversized-listing') f.dependencies.github.files = async () => Array.from({ length: 4097 }, (_, index) => ({ path: `f${index}.ts`, blobSha: blob('source') }));
+    if (mode === 'wrong-blob') f.dependencies.github.context = async (_snapshot, paths) => paths.map(path => ({ path, originalBlob: blob('incorrect'), content: 'incorrect' }));
+    if (mode === 'oversized-batch') {
+      const content = 'x'.repeat(131073);
+      f.dependencies.github.files = async () => [{ path: 'a.ts', blobSha: blob(content) }];
+      f.dependencies.github.context = async () => [{ path: 'a.ts', originalBlob: blob(content), content }];
+    }
+    if (mode === 'source-total' || mode === 'file-total') {
+      const content = mode === 'source-total' ? 'x'.repeat(100000) : 'source';
+      const count = mode === 'source-total' ? 3 : 25;
+      const files = Array.from({ length: count }, (_, index) => ({ path: `f${index}.ts`, blobSha: blob(content) }));
+      f.dependencies.github.files = async () => files;
+      f.dependencies.github.context = async (_snapshot, paths) => paths.map(path => ({ path, originalBlob: blob(content), content }));
+      let turn = 0;
+      f.dependencies.model.generate = async () => { f.calls.model++; return { rawOutput: bytes(JSON.stringify({ read: mode === 'source-total' ? [files[turn++].path] : files.slice(turn * 8, ++turn * 8).map(file => file.path) })), model: 'gemma', settings: {} }; };
+    }
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+    if (['unconfigured', 'invalid-listing', 'duplicate-listing', 'oversized-listing'].includes(mode)) assert.equal(f.calls.model, 0);
+    if (mode === 'wrong-blob' || mode === 'oversized-batch') assert.equal(f.calls.model, 1);
+    if (mode === 'source-total') assert.equal(f.calls.model, 3);
+    if (mode === 'file-total') assert.equal(f.calls.model, 4);
+  }
+});
+
+test('autonomous final edits reject portable collisions with untouched files', async () => {
+  for (const file of [{ path: 'A.ts', originalBlob: null, content: 'collision' }, { path: 'caller.ts/child.ts', originalBlob: null, content: 'file-directory collision' }]) {
+    const f = agentFixture(); let turn = 0;
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify(turn++ === 0 ? { read: ['a.ts'] } : { files: [file] })), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+  }
+});
+
+test('agent read tools return cached and not-found feedback so the model can recover and finish', async () => {
+  const f = agentFixture();
+  let turn = 0;
+  f.dependencies.model.generate = async prompt => {
+    f.calls.model++;
+    const data = JSON.parse(prompt.data);
+    if (turn === 0) { turn++; return { rawOutput: bytes('{"read":["a.ts"]}'), model: 'gemma', settings: {} }; }
+    if (turn === 1) { turn++; return { rawOutput: bytes('{"read":["a.ts","new.ts"]}'), model: 'gemma', settings: {} }; }
+    assert.deepEqual(data.loadedPaths, ['a.ts']);
+    assert.deepEqual(data.toolHistory.map((row: { results: unknown }) => row.results), [
+      [{ path: 'a.ts', status: 'loaded' }],
+      [{ path: 'a.ts', status: 'cached' }, { path: 'new.ts', status: 'not_found' }]
+    ]);
+    assert.equal(data.turnsRemaining, 4);
+    return { rawOutput: bytes(JSON.stringify({ files: [
+      { path: 'a.ts', originalBlob: blob(f.originals.get('a.ts')!), content: 'export const value = 2;' },
+      { path: 'new.ts', originalBlob: null, content: 'export const added = true;' }
+    ] })), model: 'gemma', settings: {} };
+  };
+  const stored = await f.service.create('owner', 'item', undefined, f.signal);
+  assert.deepEqual(f.reads, [['a.ts']]);
+  assert.equal(f.calls.model, 3);
+  assert.equal(stored.candidate.files.length, 2);
+  assert.equal(f.calls.store, 1);
+});
+
+test('autonomous model prompts contain filenames and source without server revision/hash metadata', async () => {
+  const f = agentFixture();
+  const generate = f.dependencies.model.generate;
+  f.dependencies.model.generate = async prompt => {
+    const data = JSON.parse(prompt.data);
+    assert(data.repositoryFiles.length > 0);
+    for (const file of data.repositoryFiles) assert.deepEqual(Object.keys(file), ['path']);
+    assert.equal(data.baseSha, undefined);
+    assert(!/[a-f0-9]{40}/u.test(prompt.data));
+    for (const file of data.files) assert.deepEqual(Object.keys(file).sort(), ['content', 'path']);
+    return generate(prompt);
+  };
+  const stored = await f.service.create('owner', 'item', undefined, f.signal);
+  assert.equal(stored.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+});
+
+
+test('autonomous text actions omit or forge hashes without changing server original bindings and keep exact raw model bytes', async () => {
+  for (const metadata of [undefined, 'c'.repeat(40)]) {
+    const f = agentFixture(); let turn = 0;
+    const content = 'é😀\r\n';
+    let raw = bytes('');
+    f.dependencies.model.generate = async () => {
+      if (turn++ === 0) return { rawOutput: bytes('{"read":["a.ts"]}'), model: 'gemma', settings: {} };
+      const file = { path: 'a.ts', content, ...(metadata === undefined ? {} : { originalBlob: metadata }) };
+      raw = bytes('```json\r\n' + JSON.stringify({ files: [file] }) + '\r\n```');
+      return { rawOutput: raw, model: 'gemma', settings: {} };
+    };
+    const stored = await f.service.create('owner', 'item', undefined, f.signal);
+    assert.equal(stored.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+    assert.deepEqual(stored.candidate.files[0].content, bytes(content));
+    assert.deepEqual(stored.candidate.rawOutput, raw);
+    assert.equal(stored.candidate.outputDigest, createHash('sha256').update(raw).digest('hex'));
+    assert.equal(stored.candidate.mapping.status, 'unavailable');
+  }
+});
+
+test('autonomous JSON frames accept one conventional code fence and reject surrounding prose or multiple frames', async () => {
+  for (const wrap of [(json: string) => 'explanation\n'+json, (json: string) => '```json\n'+json+'\n```\n```json\n'+json+'\n```']) {
+    const f = agentFixture();
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(wrap('{"files":[{"path":"new.ts","content":"valid"}]}')), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+  }
+});
+
+test('server-bound autonomous replacements still reject malformed code values and unexpected authority fields', async () => {
+  for (const file of [{ path: 'new.ts', content: 17 }, { path: 'new.ts', content: '\ud800' }, { path: '../secret', content: 'text' }, { path: 'new.ts', content: 'text', ownerId: 'other' }]) {
+    const f = agentFixture();
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify({ files: [file] })), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+  }
+});
+
+test('autonomous rechecks access before each model turn', async () => {
+  const f = agentFixture(); let checks = 0;
+  f.dependencies.github.reviewerVisibility = async () => { if (++checks > 1) throw new IntakeError(403, 'revoked'); return true; };
+  await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+  assert.equal(f.calls.model, 1); assert.equal(f.calls.store, 0);
+});
+
+test('candidate model timeout retains a safe stage-specific message', async () => {
+ const f = fixture();
+ f.dependencies.model.generate = async () => { throw new IntakeError(504, 'secret upstream detail'); };
+ await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal), (error: IntakeError) =>
+  error.status === 504 && error.message === 'Candidate model exceeded its response deadline.');
+ assert.equal(f.calls.store, 0);
+});
+
+test('overall candidate deadline is reported separately from the model deadline', async () => {
+ const original = AbortSignal.timeout;
+ let timer: ReturnType<typeof setTimeout> | undefined;
+ AbortSignal.timeout = delay => {
+  if (delay !== 300_000) return original(delay);
+  const controller = new AbortController();
+  timer = setTimeout(() => controller.abort(new DOMException('Expired', 'TimeoutError')), 20);
+  return controller.signal;
+ };
+ try {
+  const f = agentFixture(); f.dependencies.model.generate = async () => new Promise(() => {});
+  await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal), (error: IntakeError) =>
+   error.status === 504 && error.message === 'Candidate generation exceeded its overall time limit.');
+  assert.equal(f.calls.store, 0);
+ } finally { AbortSignal.timeout = original; if (timer) clearTimeout(timer); }
 });
