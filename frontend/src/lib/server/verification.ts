@@ -112,6 +112,23 @@ function endpoint(configuration: Configuration) {
 export function verificationConfigured(configuration: Configuration, context: VerificationContext) {
   try { endpoint(configuration); return configuredChecks(configuration.manifest, context).length > 0; } catch { return false; }
 }
+
+/** Server-configured checks are an inventory, not evidence or a completeness guarantee. */
+export function mandatoryInventory(configuration: Configuration, context: VerificationContext,
+  requirements: Array<{ id: string; mandatory: boolean; applicability: 'applicable' | 'not_applicable' | 'unresolved' }>) {
+  let checks: OracleCheck[] = [];
+  let configurationStatus: 'available' | 'unavailable' = 'unavailable';
+  try {
+    checks = configuredChecks(configuration.manifest, context);
+    if (checks.length) configurationStatus = 'available';
+  } catch { /* Invalid configuration is reported as unavailable. */ }
+  const mandatory = checks.filter(check => check.mandatory).map(check => ({ id: check.id, requirementIds: check.requirementIds }));
+  const required = requirements.filter(requirement => requirement.mandatory);
+  return { configurationStatus, runnerAvailable: verificationConfigured(configuration, context), checks: mandatory,
+    missingRequirements: required.filter(requirement => requirement.applicability !== 'not_applicable'
+      && !mandatory.some(check => check.requirementIds.includes(requirement.id))).map(requirement => requirement.id),
+    unresolvedRequirements: required.filter(requirement => requirement.applicability === 'unresolved').map(requirement => requirement.id) };
+}
 export function createVerification(configuration: Configuration) {
   return {
     async run(context: VerificationContext, signal: AbortSignal, authorize: () => Promise<void>): Promise<VerificationEvidence> {
