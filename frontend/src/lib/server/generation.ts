@@ -176,10 +176,9 @@ export function createGeneration(dependencies: GenerationDependencies) {
           expected.set(file.path, null);
         }
       }
-      const normalized = encoder.encode(JSON.stringify({ files: files.map(file => ({ path: file.path, originalBlob: expected.get(file.path), content: file.content })) }));
-      const decoded = decodeCandidateOutput(normalized, expected);
+      const decoded = decodeCandidateOutput(observation.rawOutput, expected, 'agent');
       if (decoded.files.reduce((size, file) => size + file.content.byteLength, 0) > 262_144) deny(413);
-      const candidate: GeneratedCandidate = { ...decoded, rawOutput: Uint8Array.from(observation.rawOutput), files: decoded.files.map(file => ({ ...file, blobSha: gitBlob(file.content) })),
+      const candidate: GeneratedCandidate = { ...decoded, files: decoded.files.map(file => ({ ...file, blobSha: gitBlob(file.content) })),
         baseSha: item.snapshot.baseSha, expiresAt: item.expiresAt,
         outputDigest: createHash('sha256').update(observation.rawOutput).digest('hex'), model: observation.model,
         settings: { ...observation.settings }, observations: generationObservations(observation.observations) };
