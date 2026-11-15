@@ -22,6 +22,8 @@ function connectionStringForNodePostgres(connectionString: string | undefined) {
 }
 
 export const database = new Pool({ connectionString: connectionStringForNodePostgres(DATABASE_URL), connectionTimeoutMillis: 5_000, query_timeout: 5_000, statement_timeout: 5_000 });
+// Without a listener, an idle client dropped by the network emits an unhandled 'error' and crashes the server.
+database.on('error', (error) => console.error(`PostgreSQL idle client error: ${error.message}`));
 
 export const missingAuthEnvironment = [
 	'DATABASE_URL',
