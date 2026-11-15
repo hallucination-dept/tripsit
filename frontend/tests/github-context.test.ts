@@ -169,5 +169,7 @@ test('staging reads a reauthorized base commit and requires its exact tree ident
   assert(calls.some(call => call.path === commitPath && call.token === 'Bearer installation-token'));
   for (const altered of [{ ...response, sha: 'f'.repeat(40) }, { ...response, tree: { sha: 'f'.repeat(40) } }])
     await assert.rejects(() => fixture({ [commitPath]: altered }).github.stagingTree(snapshot, signal()), IntakeError);
-  await assert.rejects(() => fixture({ '/repos/team/repo': { ...repository, private: true }, [commitPath]: response }).github.stagingTree(snapshot, signal()), IntakeError);
+  assert.equal((await fixture({ '/repos/team/repo': { ...repository, private: true }, [commitPath]: response }).github.stagingTree({ ...snapshot, private: true }, signal())).treeSha, tree.sha);
+  await assert.rejects(() => fixture({ '/user': { id: 99 }, '/repos/team/repo': { ...repository, private: true }, [commitPath]: response }).github.stagingTree({ ...snapshot, private: true }, signal()), IntakeError);
+  await assert.rejects(() => fixture({ '/repos/team/repo': { ...repository, id: 6, private: true }, [commitPath]: response }).github.stagingTree({ ...snapshot, private: true }, signal()), IntakeError);
 });

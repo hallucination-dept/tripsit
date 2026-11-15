@@ -58,7 +58,7 @@ export function createRevisionPacket({ database, assessment, github, intake, gen
       const row = baseline.rows[0];
       if (!row || !sha(row.commit_sha) || !row.snapshot || typeof row.snapshot !== 'object' || Array.isArray(row.snapshot)) throw unavailable();
       const snapshot = row.snapshot as Record<string, unknown>;
-      if (snapshot.private !== false || typeof snapshot.repository !== 'string' || !Number.isSafeInteger(snapshot.repositoryId)) throw unavailable();
+      if (typeof snapshot.private !== 'boolean' || typeof snapshot.repository !== 'string' || !Number.isSafeInteger(snapshot.repositoryId)) throw unavailable();
       const currentItem = await whileActive(() => intake.get(owner, item, signal), signal);
       const stored = await whileActive(() => generation.get(owner, item, candidate, signal), signal);
       const tree = await whileActive(() => github.stagingTree(currentItem.snapshot, signal), signal);
@@ -68,7 +68,7 @@ export function createRevisionPacket({ database, assessment, github, intake, gen
       const view = await whileActive(() => assessment.load(owner, item, candidate, signal), signal);
       if (view.identity.ownerId !== owner || view.identity.itemId !== item || view.identity.candidateId !== candidate
         || view.identity.baseSha !== row.base_sha || view.identity.candidateDigest !== row.output_digest) throw unavailable();
-      if (await whileActive(() => github.reviewerVisibility(snapshot.repository as string, snapshot.repositoryId as number, signal), signal) !== false) throw unavailable();
+      if (typeof await whileActive(() => github.reviewerVisibility(snapshot.repository as string, snapshot.repositoryId as number, signal), signal) !== 'boolean') throw unavailable();
       const original = assessmentView(owner, view, false).packet;
       const { packetDigest: _oldDigest, ...parts } = original;
       const packet = { ...parts, candidateCommit: row.commit_sha, acceptanceReady: false as const };

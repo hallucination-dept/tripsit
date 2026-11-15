@@ -113,7 +113,6 @@ export function createReviewer(configuration: ReviewerConfiguration) {
   const { url, token, model, retentionDisclosure, fetcher } = configuration;
   return {
     async review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> {
-      if (input?.private !== false) return { status: 'unavailable', reason: 'Private-source review requires owner authorization and is unavailable.' };
       const endpoint = reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher });
       if (!endpoint) return { status: 'unavailable', reason: 'Reviewer URL, key, model and retention disclosure are required.' };
       let frozen: ReviewerInput;

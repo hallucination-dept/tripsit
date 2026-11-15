@@ -160,9 +160,8 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         const authorize = async () => {
           const current = await admit(owner, itemId, candidateId, active);
           if (current.stamp !== stamp) fail(409);
-          if (assessment.repositoryPrivate !== false || current.item.snapshot.private !== false ||
-            await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== false)
-            throw new AssessmentError(403, 'Private-source verification requires owner authorization and is unavailable.');
+          if (typeof await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== 'boolean')
+            throw new AssessmentError(403, 'Repository access is unavailable or invalid.');
         };
         await authorize();
         const result = await whileActive(() => dependencies.verification!.run(verificationContext(assessment), active, authorize), active);
@@ -178,10 +177,9 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         if (assessment.reviews.length >= 8) fail(429);
         const current = await admit(owner, itemId, candidateId, active);
         if (current.stamp !== stamp) fail(409);
-        if (assessment.repositoryPrivate !== false || current.item.snapshot.private !== false) throw new AssessmentError(403, 'Private-source review requires owner authorization and is unavailable.');
-        if (await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== false)
-          throw new AssessmentError(403, 'Private-source review requires owner authorization and is unavailable.');
-        const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: assessment.repositoryPrivate ?? false,
+        const visibility = await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active);
+        if (typeof visibility !== 'boolean') throw new AssessmentError(403, 'Repository access is unavailable or invalid.');
+        const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: current.item.snapshot.private || visibility,
           requirements: assessment.policy.requirements.map(row => ({ id: row.id, criterion: row.criterion, provenance: row.provenance, mandatory: row.mandatory })),
           nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })), files: assessment.files,
           issue };

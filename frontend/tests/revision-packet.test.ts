@@ -34,12 +34,19 @@ test('freezes an owner packet against the exact reconstructed commit without gra
  assert.equal(value.packetDigest, createHash('sha256').update(JSON.stringify(value.packet)).digest('hex'));
  assert.equal(f.inserts(), 1);
 });
-test('refuses mismatched staged objects, owner, and private repository before persistence', async () => {
- for (const mode of ['object', 'owner', 'private']) {
+test('refuses mismatched staged objects, owner and revoked access before persistence', async () => {
+ for (const mode of ['object', 'owner', 'revoked', 'invalid']) {
   const f = fixture();
   if (mode === 'object') f.row.commit_sha = 'f'.repeat(40);
-  if (mode === 'private') f.deps.github.reviewerVisibility = async () => true;
+  if (mode === 'revoked') f.deps.github.reviewerVisibility = async () => { throw Error('revoked'); };
+  if (mode === 'invalid') f.deps.github.reviewerVisibility = async () => undefined as unknown as boolean;
   await assert.rejects(f.service.freeze(mode === 'owner' ? 'other' : 'owner', itemId, candidateId, new AbortController().signal));
   assert.equal(f.inserts(), 0);
  }
+});
+test('freezes a private repository packet after authorization', async () => {
+ const f = fixture(); f.row.snapshot = { ...snapshot, private: true };
+ f.deps.github.reviewerVisibility = async () => true;
+ const value = await f.service.freeze('owner', itemId, candidateId, new AbortController().signal);
+ assert.equal(value.packet.candidateCommit, staged.commitSha); assert.equal(f.inserts(), 1);
 });

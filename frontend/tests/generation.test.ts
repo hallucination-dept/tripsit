@@ -155,7 +155,7 @@ test('keeps actionable dependency status while sanitizing its error message', as
   }
 });
 
-test('private and newly private repositories never reach the model', async () => {
+test('private and newly private repositories dispatch only with current access', async () => {
   for (const autonomous of [false, true]) for (const mode of ['private', 'changed', 'denied', 'invalid']) {
     const f = autonomous ? agentFixture() : fixture();
     if (mode === 'private') f.item.snapshot.private = true;
@@ -163,8 +163,13 @@ test('private and newly private repositories never reach the model', async () =>
       if (mode === 'denied') throw new IntakeError(403, 'revoked');
       return mode === 'changed' ? true : mode === 'invalid' ? undefined as unknown as boolean : false;
     };
-    await assert.rejects(() => f.service.create('owner', 'item', autonomous ? undefined : ['a.ts'], f.signal));
-    assert.equal(f.calls.model, 0); assert.equal(f.calls.store, 0);
+    if (['denied', 'invalid'].includes(mode)) {
+      await assert.rejects(() => f.service.create('owner', 'item', autonomous ? undefined : ['a.ts'], f.signal));
+      assert.equal(f.calls.model, 0); assert.equal(f.calls.store, 0);
+    } else {
+      await f.service.create('owner', 'item', autonomous ? undefined : ['a.ts'], f.signal);
+      assert(f.calls.model > 0); assert.equal(f.calls.store, 1);
+    }
   }
 });
 
@@ -396,9 +401,9 @@ test('server-bound autonomous replacements still reject malformed code values an
   }
 });
 
-test('autonomous rechecks visibility before each model turn', async () => {
+test('autonomous rechecks access before each model turn', async () => {
   const f = agentFixture(); let checks = 0;
-  f.dependencies.github.reviewerVisibility = async () => ++checks === 1 ? false : true;
+  f.dependencies.github.reviewerVisibility = async () => { if (++checks > 1) throw new IntakeError(403, 'revoked'); return true; };
   await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
   assert.equal(f.calls.model, 1); assert.equal(f.calls.store, 0);
 });
