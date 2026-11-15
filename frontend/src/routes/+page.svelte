@@ -34,7 +34,7 @@
 	let intakeAbort: AbortController | undefined;
 	const discoveryController = createIssueDiscovery({ onChange: next => {
 		discovery = next;
-		const accessible = (item: IssueItem) => !next.error && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
+		const accessible = (item: IssueItem) => Date.parse(item.expiresAt) > Date.now() && next.repositories.some(repo => repo.id === item.snapshot.repositoryId && repo.fullName === item.snapshot.repository);
 		issueItems = issueItems.filter(accessible);
 		if (selectedIssue && !accessible(selectedIssue)) selectedIssue = null;
 	} });
@@ -162,16 +162,16 @@
 					{#if discovery.owner === $session.data.user.id}
 						<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
 							<label for="repository">Repository</label>
-							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || discovery.loading || !discovery.repositories.length}>
+							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || !discovery.repositories.length}>
 								<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
 								{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
 							</select>
 							<label for="issue-number">Open issue</label>
-							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || discovery.loading || !discovery.issues.length}>
+							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || !discovery.issues.length}>
 								<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
 								{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
 							</select>
-							<button class="button-primary capture-button" type="submit" disabled={issueBusy || discovery.loading || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+							<button class="button-primary capture-button" type="submit" disabled={issueBusy || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
 						</form>
 						{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
 						{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p class="empty-note">No repositories found. Check the App installation and your repository access.</p>{/if}

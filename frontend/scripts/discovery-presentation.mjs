@@ -57,10 +57,10 @@ try{
   assert(await evaluate("!document.querySelector('#repository').disabled && !document.querySelector('#issue-number').disabled"),'Cached choices were blocked by background refresh');
  }
  phase='hold';
- await evaluate("const repo=document.querySelector('#repository');repo.value='team/two';repo.dispatchEvent(new Event('change',{bubbles:true}));");
+ await evaluate("(()=>{const repo=document.querySelector('#repository');repo.value='team/two';repo.dispatchEvent(new Event('change',{bubbles:true}));})()");
  await waitFor("document.querySelector('#repository').value==='team/two' && document.querySelector('.sync-state').textContent.includes('Refreshing')");
  assert(await evaluate("!document.querySelector('#repository').disabled"),'Pending issue loading blocked repository switching');
- await evaluate("const repo=document.querySelector('#repository');repo.value='team/one';repo.dispatchEvent(new Event('change',{bubbles:true}));");
+ await evaluate("(()=>{const repo=document.querySelector('#repository');repo.value='team/one';repo.dispatchEvent(new Event('change',{bubbles:true}));})()");
  await waitFor("document.querySelector('#repository').value==='team/one' && document.querySelector('#issue-number').value==='1'");
  held.splice(0).forEach(release=>release());
  assert(await evaluate(retained),'Repository selection reset existing implementation');
