@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { IntakeError } from './intake.ts';
 import type { ChangeGraph } from './change-graph.ts';
+import type { AgentFlag } from './flags.ts';
 import type { PullRequest, RepositoryArchive } from './github.ts';
 
 export type RunStatus = 'preparing' | 'running' | 'analyzing' | 'publishing' | 'done' | 'failed' | 'cancelled';
@@ -9,7 +10,10 @@ export type RunFile = { path: string; change: 'added' | 'modified' | 'deleted'; 
 export type RunResult = {
   summary: string; graph: ChangeGraph; files: RunFile[]; truncated: boolean;
   pullRequest: PullRequest | null; publishNote: string | null;
+  // Review flags the agent attached to its edits; runs saved before flags existed have none.
+  flags?: AgentFlag[];
 };
+export type RunPicture = { graph: ChangeGraph; flags: AgentFlag[] };
 export type RunSummary = {
   id: string; repository: string; branch: string; sha: string; instruction: string; status: RunStatus;
   createdAt: string; finishedAt: string | null; error: string | null; changedFiles: number | null; pullRequest: PullRequest | null;
@@ -28,8 +32,8 @@ export type RunStore = {
   save(owner: string, run: RunDetail): Promise<void>;
   list(owner: string): Promise<RunSummary[]>;
   get(owner: string, id: string): Promise<RunDetail | null>;
-  // The graph of a finished, unexpired run regardless of owner; callers must authorize the request themselves.
-  graph(id: string): Promise<ChangeGraph | null>;
+  // The graph and flags of a finished, unexpired run regardless of owner; callers must authorize the request themselves.
+  picture(id: string): Promise<RunPicture | null>;
 };
 // Runs after a successful run is saved, e.g. to comment on its pull request. A returned text is added to the run log.
 export type RunFinisher = (run: { id: string; archive: RepositoryArchive; result: RunResult }) => Promise<string | null>;
@@ -175,9 +179,10 @@ export function createAgentRuns(options: Options) {
       if (current !== stored) await options.store.save(owner, current).catch(() => {});
       return current;
     },
-    async graph(id: string): Promise<ChangeGraph | null> {
+    async picture(id: string): Promise<RunPicture | null> {
       const run = active.get(id);
-      return run ? run.result?.graph ?? null : options.store.graph(id);
+      if (!run) return options.store.picture(id);
+      return run.result ? { graph: run.result.graph, flags: run.result.flags ?? [] } : null;
     },
     async list(owner: string): Promise<RunSummary[]> {
       const live = new Map([...active.values()].filter(run => run.owner === owner).map(run => [run.id, summary(run)]));

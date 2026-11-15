@@ -22,6 +22,8 @@ function connectionStringForNodePostgres(connectionString: string | undefined) {
 }
 
 export const database = new Pool({ connectionString: connectionStringForNodePostgres(DATABASE_URL), connectionTimeoutMillis: 5_000, query_timeout: 5_000, statement_timeout: 5_000 });
+// Without a listener, an idle client dropped by the network emits an unhandled 'error' and crashes the server.
+database.on('error', (error) => console.error(`PostgreSQL idle client error: ${error.message}`));
 
 export const missingAuthEnvironment = [
 	'DATABASE_URL',
@@ -35,8 +37,9 @@ export const auth = betterAuth({
 	baseURL: BETTER_AUTH_URL,
 	secret: BETTER_AUTH_SECRET || 'replace-this-before-running-in-production',
 	database,
+	// GitHub is the only way in: Tripsit works on GitHub repositories, so every account needs it linked.
 	emailAndPassword: {
-		enabled: true
+		enabled: false
 	},
 	socialProviders:
 		GITHUB_APP_CLIENT_ID && GITHUB_APP_CLIENT_SECRET

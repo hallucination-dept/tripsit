@@ -42,16 +42,20 @@ test('pi edits the workspace through confined tools with a secret-free shell and
     toolCall('call_1', 'write', { path: 'hello.txt', content: 'hi\n' }),
     toolCall('call_2', 'bash', { command: 'echo "secret=[$TRIPSIT_PI_SECRET]"; pwd' }),
     toolCall('call_3', 'read', { path: '/etc/hosts' }),
-    reply('Done: created hello.txt')
+    reply('Done: created hello.txt'),
+    toolCall('call_4', 'flag', { path: 'hello.txt', kind: 'assumption', confidence: 'low', reason: 'Assumed a trailing newline.' }),
+    reply('Flagged.')
   ]);
   const events: AgentEvent[] = [];
   try {
     const outcome = await runPiAgent({ workspace, agentDir, home, repository: 'team/app', instruction: 'Create hello.txt',
       model: { baseUrl: model.url, apiKey: 'test-key', model: 'fake-model', contextWindow: 32_000, maxTokens: 2_000 },
       signal: AbortSignal.timeout(20_000), onEvent: event => events.push(event) });
-    assert.equal(outcome.summary, 'Done: created hello.txt');
+    assert.equal(outcome.summary, 'Done: created hello.txt', 'the flag review turn does not replace the summary');
+    assert.deepEqual(outcome.flags.map(flag => flag.reason), ['Assumed a trailing newline.']);
     assert.equal(await readFile(join(workspace, 'hello.txt'), 'utf8'), 'hi\n');
-    assert.equal(model.requests.length, 4);
+    assert.equal(model.requests.length, 6, 'after editing, the agent gets one flag review turn');
+    assert.match(JSON.stringify(model.requests[4].body.messages.at(-1)), /review your change as the human reviewer/);
     const first = model.requests[0];
     assert.equal(first.headers.authorization, 'Bearer test-key');
     assert.equal(first.body.model, 'fake-model');
@@ -60,15 +64,17 @@ test('pi edits the workspace through confined tools with a secret-free shell and
     assert.equal('store' in first.body, false);
     assert.equal(first.body.messages[0].role, 'system');
     assert.match(first.body.messages[0].content, /team\/app/);
-    assert.deepEqual(first.body.tools.map((tool: { function: { name: string } }) => tool.function.name).sort(), ['bash', 'edit', 'read', 'write']);
+    assert.deepEqual(first.body.tools.map((tool: { function: { name: string } }) => tool.function.name).sort(), ['bash', 'edit', 'flag', 'read', 'write']);
+    assert.match(first.body.messages[0].content, /judgement_call/, 'the system prompt explains review flags');
     const afterBash = JSON.stringify(model.requests[2].body.messages);
     assert.match(afterBash, /secret=\[\]/);
     assert.ok(afterBash.includes(await realpath(workspace)), 'bash runs inside the workspace');
     assert.equal(afterBash.includes('do-not-leak'), false);
     assert.match(JSON.stringify(model.requests[3].body.messages), /outside the repository/);
-    assert.deepEqual(events.filter(event => event.kind === 'tool').map(event => event.text.split(':')[0]), ['write', 'bash', 'read']);
+    assert.deepEqual(events.filter(event => event.kind === 'tool').map(event => event.text.split(':')[0]),
+      ['write', 'bash', 'read', 'flag (assumption, low confidence)']);
     assert.ok(events.some(event => event.kind === 'error' && /read failed: .*outside the repository/.test(event.text)));
-    assert.deepEqual(events.at(-1), { kind: 'assistant', text: 'Done: created hello.txt' });
+    assert.deepEqual(events.at(-1), { kind: 'assistant', text: 'Flagged.' });
   } finally {
     delete process.env.TRIPSIT_PI_SECRET;
     model.close();
@@ -87,6 +93,36 @@ test('cancellation stops the session and reports a run failure', async () => {
       model: { baseUrl: model.url, apiKey: 'test-key', model: 'fake-model', contextWindow: 32_000, maxTokens: 2_000 },
       signal: controller.signal, onEvent: event => { if (event.kind === 'tool') controller.abort(); } });
     await assert.rejects(run, /cancelled or timed out/);
+  } finally {
+    model.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+test('the flag tool records valid review flags and tells the model about invalid ones', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tripsit-pi-test-'));
+  const workspace = join(root, 'repo'), home = join(root, 'home'), agentDir = join(root, 'agent');
+  await Promise.all([mkdir(workspace), mkdir(home), mkdir(agentDir)]);
+  const model = await fakeModel([
+    toolCall('call_1', 'flag', { path: './src/pay.ts', symbol: 'charge', kind: 'high_impact', confidence: 'medium',
+      reason: 'Rounds cents   half-up.', alternatives: null }),
+    toolCall('call_2', 'flag', { path: '../outside.ts', kind: 'assumption', confidence: 'low', reason: 'x' }),
+    toolCall('call_3', 'flag', { path: 'a.ts', kind: 'guess', confidence: 'low', reason: 'x' }),
+    reply('Done')
+  ]);
+  const events: AgentEvent[] = [];
+  try {
+    const outcome = await runPiAgent({ workspace, agentDir, home, repository: 'team/app', instruction: 'Change billing',
+      model: { baseUrl: model.url, apiKey: 'test-key', model: 'fake-model', contextWindow: 32_000, maxTokens: 2_000 },
+      signal: AbortSignal.timeout(20_000), onEvent: event => events.push(event) });
+    assert.deepEqual(outcome.flags, [{ path: 'src/pay.ts', symbol: 'charge', kind: 'high_impact', confidence: 'medium',
+      reason: 'Rounds cents half-up.', alternatives: null }]);
+    const replies = JSON.stringify(model.requests[3].body.messages);
+    assert.match(replies, /Flag recorded \(1\)/);
+    assert.equal(model.requests.length, 4, 'no review turn when nothing was edited');
+    assert.match(replies, /path must be a file path inside the repository/);
+    assert.ok(events.some(event => event.kind === 'tool' && event.text.startsWith('flag (high_impact, medium confidence): ./src/pay.ts › charge')));
+    assert.equal(events.filter(event => event.kind === 'error').length, 2, 'both invalid flags are reported');
   } finally {
     model.close();
     await rm(root, { recursive: true, force: true });

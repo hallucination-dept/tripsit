@@ -1,6 +1,5 @@
 import { IntakeError } from './intake.ts';
-import type { RunDetail, RunStore, RunSummary } from './agent-runs.ts';
-import type { ChangeGraph } from './change-graph.ts';
+import type { RunDetail, RunPicture, RunStore, RunSummary } from './agent-runs.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[]; rowCount?: number | null; affectedRows?: number }> };
 type Summary = Pick<RunSummary, 'repository' | 'branch' | 'sha' | 'instruction' | 'error' | 'pullRequest'>;
@@ -61,12 +60,14 @@ export function createAgentRunRecords(database: Database, clock = () => new Date
       const detail = row.detail as Pick<RunDetail, 'events' | 'result'>;
       return { ...fromRow(row), events: detail.events ?? [], result: detail.result ?? null };
     },
-    async graph(id) {
+    async picture(id) {
       if (!uuid.test(id)) return null;
-      const result = await query(`SELECT p.detail->'result'->'graph' AS graph FROM tripsit_agent_runs r JOIN tripsit_agent_run_payloads p ON p.run_id = r.id
+      const result = await query(`SELECT p.detail->'result'->'graph' AS graph, p.detail->'result'->'flags' AS flags
+        FROM tripsit_agent_runs r JOIN tripsit_agent_run_payloads p ON p.run_id = r.id
         WHERE r.id = $1 AND r.status = 'done' AND r.expires_at > $2`, [id, clock().toISOString()]);
-      const graph = result.rows[0]?.graph;
-      return graph && typeof graph === 'object' ? graph as ChangeGraph : null;
+      const row = result.rows[0];
+      if (!row?.graph || typeof row.graph !== 'object') return null;
+      return { graph: row.graph, flags: Array.isArray(row.flags) ? row.flags : [] } as RunPicture;
     },
     async purge(): Promise<number> {
       const result = await query('DELETE FROM tripsit_agent_run_payloads WHERE run_id IN (SELECT id FROM tripsit_agent_runs WHERE expires_at <= $1)',

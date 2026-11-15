@@ -35,6 +35,7 @@ test('runs round-trip per owner, list without their details, expire, and purge o
     events: [{ at: '2026-11-15T10:05:00.000Z', kind: 'tool', text: 'bash: printf "\u0000"' }],
     result: { summary: 'Done', truncated: false, pullRequest: { number: 12, url: 'https://github.com/team/app/pull/12', branch: 'tripsit/00000000' },
       publishNote: null, files: [{ path: 'a.ts', change: 'modified', binary: false, diff: '@@ -1 +1 @@' }],
+      flags: [{ id: 'flag-1', path: 'a.ts', symbol: null, kind: 'assumption', confidence: 'low', reason: 'Guessed the unit.', alternatives: null, nodeId: 'f:a.ts' }],
       graph: { nodes: [], edges: [], symbolDiffs: {}, stats: { files: 3, changedFiles: 1, focusFiles: 1, hiddenNeighbors: 0, symbols: 0 } } }
   });
   await records.save('owner', finished);
@@ -47,9 +48,9 @@ test('runs round-trip per owner, list without their details, expire, and purge o
   assert.equal(stored?.finishedAt, '2026-11-15T10:05:00.000Z');
   assert.equal(await records.get('other', runId(1)), null);
   assert.equal(await records.get('owner', 'not-a-uuid'), null);
-  assert.deepEqual(await records.graph(runId(1)), finished.result?.graph, 'the graph of a finished run is readable by id');
-  assert.equal(await records.graph(runId(2)), null, 'unfinished runs have no graph picture');
-  assert.equal(await records.graph('not-a-uuid'), null);
+  assert.deepEqual(await records.picture(runId(1)), { graph: finished.result?.graph, flags: finished.result?.flags }, 'a finished run is readable by id');
+  assert.equal(await records.picture(runId(2)), null, 'unfinished runs have no graph picture');
+  assert.equal(await records.picture('not-a-uuid'), null);
 
   const listed = await records.list('owner');
   assert.deepEqual(listed.map(row => row.id), [runId(2), runId(1)], 'newest first');

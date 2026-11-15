@@ -21,9 +21,9 @@ test('comments need a public https origin and link the image to the interactive 
   for (const value of ['http://tripsit.example.com', 'https://localhost:5173', 'https://127.0.0.1', 'not a url', undefined]) assert.equal(publicOrigin(value), null, String(value));
   const body = graphComment('https://tripsit.example.com', runId, 'k-1');
   const image = `https://tripsit.example.com/api/agent-runs/${runId}/graph.svg?key=k-1&amp;theme=`;
-  assert.ok(body.includes(`<a href="https://tripsit.example.com/agent?run=${runId}"><picture><source media="(prefers-color-scheme: dark)" srcset="${image}dark">` +
+  assert.ok(body.includes(`<a href="https://tripsit.example.com/?run=${runId}"><picture><source media="(prefers-color-scheme: dark)" srcset="${image}dark">` +
     `<img alt="Dependency graph of this change" src="${image}light"></picture></a>`), body);
-  assert.match(body, /\[Open the interactive graph\]\(https:\/\/tripsit\.example\.com\/agent\?run=/);
+  assert.match(body, /\[Open the interactive graph\]\(https:\/\/tripsit\.example\.com\/\?run=/);
 });
 
 test('the graph picture is a transparent SVG with change badges and escaped names', async () => {
@@ -45,4 +45,9 @@ test('the graph picture is a transparent SVG with change badges and escaped name
   assert.ok(svg.includes('use&#60;&#38;&#62;.ts') && !svg.includes('use<&>.ts'), 'names are escaped');
   assert.match(svg, /fill="#4ade80" fill-opacity="0.12" stroke="#4ade80"/, 'badges carry the change colour');
   assert.doesNotMatch(svg, /class="card[^"]*"[^>]*stroke="#/, 'cards themselves are not colour coded');
+  const flagged = await renderGraphSvg(graph, 'light', [{ id: 'flag-1', path: 'src/math.ts', symbol: 'fresh', kind: 'assumption', confidence: 'low',
+    reason: 'Guessed', alternatives: null, nodeId: 's:src/math.ts#fresh' }]);
+  assert.match(flagged, /fill="rgb\(232, 121, 249\)" fill-opacity="0.2"/, 'a low-confidence flag tints its row at high attention');
+  assert.equal((flagged.match(/fill-opacity="0.2"/g) ?? []).length, 1, 'only the flagged row is tinted');
+  assert.match(flagged, /font-weight="600">1<\/text>/, 'the card shows its flag count');
 });
