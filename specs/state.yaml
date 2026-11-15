@@ -517,4 +517,11 @@ product_flow_correction:
   - Reviewer returns readable advice from message text with no required structured claim schema or probability interpretation.
   - Keep static impact and honest optional evidence gaps; no claim of executed checks or completed original runner-dependent acceptance.
   verification: Native issue/private generation/review regressions, actual Gemma text-only provider probe, frontend check/build and browser issue-to-candidate-to-advice flow.
+agentic_implementation_plan:
+  user_instruction: Implementation must be agentic; humans review in the loop. Keep visual graph and assessments.
+  code_scope: generation.ts/model-generation.ts automated bounded repository read/edit loop; candidates POST empty JSON; client/page Implement issue action without file picker; interactive graph and text advice.
+  agent_protocol: Frozen file listing, model chooses read batches, receives exact pinned context, can request more files, then returns bounded file replacements. At most six turns and24 context files with explicit request/cancellation bounds.
+  orchestration: Existing typed coordinator for issue/revision, candidate, graph and review artifacts; exact artifact identities invalidate stale assessments. Model advice and graph inform optional revision requests; human remains decision owner.
+  harness_decision: Evaluate Pi/OpenCode SDK support but avoid a new general execution/runtime dependency for the current read/edit-only tools. LangGraph becomes useful for durable resumed multi-worker runs, not required for this bounded SvelteKit flow.
+  verify: Native multi-round agent fixtures including stale/private/owner/cancellation, actual Gemma synthetic text probe, graphical desktop/mobile review flow and frontend check/build.
 
