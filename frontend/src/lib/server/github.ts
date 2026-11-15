@@ -113,12 +113,11 @@ export function createGitHub(options: Options) {
 
   async function frozenTree(snapshot: IssueSnapshot, signal: AbortSignal) {
     githubRepository(snapshot.repository);
-    if (snapshot.private !== false || !Number.isSafeInteger(snapshot.repositoryId) || snapshot.repositoryId < 1 ||
+    if (typeof snapshot.private !== 'boolean' || !Number.isSafeInteger(snapshot.repositoryId) || snapshot.repositoryId < 1 ||
         !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(snapshot.baseSha)) {
-      throw new IntakeError(400, 'Select a frozen public repository snapshot.');
+      throw new IntakeError(400, 'Select a frozen repository snapshot.');
     }
     const repo = await authorize(snapshot.repository, signal, snapshot.repositoryId);
-    if (repo.private) throw new IntakeError(403, 'Source context is available only for public repositories.');
     const result = await request(`/repos/${repo.repository}/git/trees/${snapshot.baseSha}?recursive=1`, repo.token, signal);
     if (result.truncated !== false || !Array.isArray(result.tree) || result.tree.length > 4096) {
       throw new IntakeError(502, 'GitHub did not return a complete bounded repository tree.');
@@ -236,8 +235,7 @@ export function createGitHub(options: Options) {
       return { issues: [...issues.values()], complete: result.complete };
     },
     authorize: async (repository: string, repositoryId: number, signal: AbortSignal) => {
-      const current = await authorize(repository, signal, repositoryId);
-      if (current.private) throw new IntakeError(503, 'Private issue storage awaits verified isolation and retention controls.');
+      await authorize(repository, signal, repositoryId);
     },
     snapshot: async (repository: string, number: number, signal: AbortSignal): Promise<IssueSnapshot> => {
       const repo = await authorize(repository, signal);
