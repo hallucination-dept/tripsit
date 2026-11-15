@@ -9,6 +9,7 @@ export const variables = defineEnvVars({
 	MODEL_ID: { schema: (value) => value },
 	RUNNER_API_URL: { schema: (value) => value },
 	RUNNER_API_KEY: { schema: (value) => value },
+	REQUIRED_CHECK_MANIFEST_JSON: { schema: (value) => value },
 	TRUSTED_CHECKS_JSON: { schema: (value) => value },
 	REVIEWER_API_URL: { schema: (value) => value },
 	REVIEWER_API_KEY: { schema: (value) => value },
