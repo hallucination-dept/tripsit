@@ -1,0 +1,65 @@
+story_id: e01s05
+title: Publish a draft PR with linked review evidence
+type: feat
+context: domain
+spec: e01s05-draft-review-pr.md
+status: failing
+bcps: 3
+depends_on:
+- e04s01
+tasks:
+- id: 1
+  description: Define RED fixtures for draft publication before acceptance, exact candidate blobs, immutable
+    packet links, duplicate/lost-response reconciliation, changed-head denial, safe summary rendering
+    and private disclosure refusal; no new security findings in affected paths.
+  verify: cd frontend && node --experimental-strip-types tests/draft-publication.test.ts && node --experimental-strip-types
+    tests/github-packet.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s05
+- id: 2
+  description: Split explicit draft creation from readiness; render and reconcile one App-owned evidence
+    summary with immutable dashboard links and safe disclosures. Preserve human PR text, expected head,
+    retry identity and no new security findings in affected paths.
+  verify: cd frontend && node --experimental-strip-types tests/github-packet.test.ts && node --experimental-strip-types
+    tests/draft-publication.test.ts
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s05
+- id: 3
+  description: Connect explicit owner draft action to repository-scoped publication and authenticated
+    packet links without acceptance/readiness or merge operations. Include no new security findings in
+    affected paths and full frontend checks.
+  verify: cd frontend && node --experimental-strip-types tests/draft-publication.test.ts && node --experimental-strip-types
+    tests/github-packet.test.ts && npm run check && npm run build
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s05
+- id: 4
+  description: Verify real authorized issue-to-one-draft publication, App summary retry reconciliation
+    and authenticated historical packet links; missing configured controls fail, and no new security findings
+    in affected paths. Save actual live evidence without claiming final readiness.
+  verify: python3 specs/experiments/live_gates.py e01s05 --require-configured
+  risk: P0
+  security: high
+  status: failing
+  allure:
+    severity: critical
+    categories:
+    - Security Review
+    - e01s05
