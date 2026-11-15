@@ -6,7 +6,7 @@ test('decision route enforces sign-in, origin, packet identity, no query overrid
  let calls=0; const global=globalThis as typeof globalThis & { decisionFixture?:()=>unknown };
  global.decisionFixture=()=>{calls++;return {decision:'revise'};};
  const hooks=registerHooks({resolve(specifier,context,next){
-  const mocks:Record<string,string>={'#lib/auth.js':'export const database={};','#lib/server/assessment-runtime.ts':'export const assessmentRuntime=async()=>({intake:{}});','#lib/server/human-decision.ts':'export const createHumanDecision=()=>({record:()=>globalThis.decisionFixture(),list:()=>[]});'};
+  const mocks:Record<string,string>={'$app/env/private':'export const TRUSTED_CHECKS_JSON=undefined;','#lib/auth.js':'export const database={};','#lib/server/assessment.ts':'export const verificationContext=x=>x;','#lib/server/verification.ts':'export const configuredChecks=()=>[];','#lib/server/assessment-runtime.ts':'export const assessmentRuntime=async()=>({intake:{}});','#lib/server/human-decision.ts':'export const createHumanDecision=()=>({record:()=>globalThis.decisionFixture(),list:()=>[]});'};
   return mocks[specifier]?{url:`data:text/javascript,${encodeURIComponent(mocks[specifier])}`,shortCircuit:true}:next(specifier,context);
  }});
  try {

@@ -17,7 +17,7 @@ test('real PostgreSQL scopes execution evidence, atomically caps count and bytes
     const client = await pool.connect();
     try {
       await client.query(`SET search_path TO ${schema}`);
-      for (const file of ['001_work_items.sql', '002_candidates.sql']) await client.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
+      for (const file of ['001_work_items.sql', '002_candidates.sql', '003_candidate_staging.sql']) await client.query(await readFile(new URL(`../migrations/${file}`, import.meta.url), 'utf8'));
       let now = new Date('2026-01-01T00:00:00Z');
       const records = createRecords(client, () => now);
       const candidates = createCandidateRecords(client, () => now);
@@ -37,6 +37,17 @@ test('real PostgreSQL scopes execution evidence, atomically caps count and bytes
       const result = { checks: [{ id: 'check-1', mandatory: true, impact: 'unknown' as const, timeoutMs: 1000, provenance: 'trusted_repository' as const, requirementIds: ['R1'], nodeIds: ['N1'], ...hashes }],
         executions: [{ id: 'execution-1', checkId: 'check-1', collector: 'trusted_runner' as const, runnerId: 'runner-1', prId: null, status: 'completed' as const, result: 'failed' as const, exitCode: 1, executedTests: 1, ...hashes }],
         admission: { status: 'passed' as const, configurationDigest: '2'.repeat(64), codeDigest: '3'.repeat(64), environmentDigest: hashes.environmentDigest } };
+      const exactRevision = { commitSha: '1'.repeat(40), treeSha: '2'.repeat(40), commitObject: 'YQ==' };
+      const exact = { ...result, exactRevision, expectedCases: { 'check-1': 1 } };
+      await assert.rejects(() => verifications.append('owner', identity, exact), { status: 404 });
+      await client.query(`INSERT INTO tripsit_candidate_stages(candidate_id,owner_id,base_sha,output_digest,commit_sha,tree_sha,objects,expires_at)
+        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8)`, [candidate.id,'owner',identity.baseSha,identity.candidateDigest,exactRevision.commitSha,
+        exactRevision.treeSha,JSON.stringify([{type:'commit',sha:exactRevision.commitSha,content:exactRevision.commitObject}]),item.expiresAt]);
+      const matching = await verifications.append('owner', identity, exact);
+      assert.deepEqual(matching.result.exactRevision, exactRevision);
+      await client.query('UPDATE tripsit_candidate_stages SET tree_sha=$2 WHERE candidate_id=$1', [candidate.id,'3'.repeat(40)]);
+      await assert.rejects(() => verifications.append('owner', identity, exact), { status: 404 });
+      await client.query("UPDATE tripsit_candidate_payloads SET payload=payload-'verifications' WHERE candidate_id=$1", [candidate.id]);
       const first = await verifications.append('owner', identity, result);
       assert.deepEqual(await verifications.list('owner', identity), [first]);
       assert.deepEqual((await verifications.list('owner', { ...identity, policyVersion: 'baseline-next' }))[0].identity, identity);

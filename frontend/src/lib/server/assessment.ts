@@ -9,6 +9,7 @@ import { snapshotPolicy } from './snapshot-policy.ts';
 import type { ReviewIdentity, StoredReview } from './review-records.ts';
 import type { ReviewerInput, ReviewerResult } from './reviewer.ts';
 import type { VerificationContext, VerificationEvidence } from './verification.ts';
+import type { ExactFile, ExactRevision } from './exact-revision.ts';
 import type { StoredVerification } from './verification-records.ts';
 
 export type Assessment = {
@@ -36,6 +37,7 @@ export type AssessmentDependencies = {
     append(owner: string, identity: ReviewIdentity, result: ReviewerResult): Promise<StoredReview>;
   };
   reviewer: { review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> };
+  exactRevision?: (owner:string, item:string, candidate:string, signal:AbortSignal) => Promise<{revision:ExactRevision; files:ExactFile[]; recheck:()=>Promise<void>}>;
   verification?: { run(input: VerificationContext, signal: AbortSignal, authorize: () => Promise<void>): Promise<VerificationEvidence> };
   verificationRecords?: { list(owner: string, identity: ReviewIdentity): Promise<StoredVerification[]>; append(owner: string, identity: ReviewIdentity, result: VerificationEvidence): Promise<StoredVerification> };
 };
@@ -159,14 +161,17 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         if (!dependencies.verification || !dependencies.verificationRecords) fail(503);
         const { assessment, stamp } = await load(owner, itemId, candidateId, active);
         if ((assessment.verifications?.length ?? 0) >= 4) fail(429);
+        if (!dependencies.exactRevision) fail(503);
+        const exact = await dependencies.exactRevision(owner, itemId, candidateId, active);
         const authorize = async () => {
+          await exact.recheck();
           const current = await admit(owner, itemId, candidateId, active);
           if (current.stamp !== stamp) fail(409);
           if (typeof await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== 'boolean')
             throw new AssessmentError(403, 'Repository access is unavailable or invalid.');
         };
         await authorize();
-        const result = await whileActive(() => dependencies.verification!.run(verificationContext(assessment), active, authorize), active);
+        const result = await whileActive(() => dependencies.verification!.run({ ...verificationContext(assessment), exact: { revision: exact.revision, files: exact.files } }, active, authorize), active);
         await fresh(owner, itemId, candidateId, stamp, active);
         const stored = await whileActive(() => dependencies.verificationRecords!.append(owner, assessment.identity, result), active);
         await fresh(owner, itemId, candidateId, stamp, active);
