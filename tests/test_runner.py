@@ -1,9 +1,11 @@
 """Offline runner boundaries; these never certify Modal admission or execute candidate code."""
 import asyncio
+import base64
 import copy
 import hashlib
 import importlib.util
 import json
+import subprocess
 from pathlib import Path
 import sys
 import unittest
@@ -21,6 +23,18 @@ def fixture():
             'checks':[{'id':'value-check','language':'javascript','path':'value.mjs','export':'value',
                        'cases':[{'args':[1],'expected':2}], 'requirementIds':['R1'],'nodeIds':['n1'],
                        'mandatory':True,'impact':'high','timeoutMs':1000}], 'prId':None}
+
+
+def exact_fixture():
+    value=fixture()
+    value['files'][0]['mode']='100755'
+    file=value['files'][0]
+    tree=b'100755 value.mjs\0'+bytes.fromhex(file['blobSha'])
+    tree_sha=hashlib.sha1(f'tree {len(tree)}\0'.encode()+tree).hexdigest()
+    commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor TripSit <tripsit@localhost> 0 +0000\ncommitter TripSit <tripsit@localhost> 0 +0000\n\nStage candidate\n'.encode()
+    value['revision']={'treeSha':tree_sha,'commitSha':hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest(),
+                       'commitObject':base64.b64encode(commit).decode()}
+    return value
 
 
 class FakeSandbox:
@@ -41,6 +55,69 @@ class FakeSandbox:
 
 
 class RunnerTests(unittest.IsolatedAsyncioTestCase):
+    def test_complete_revision_validates_commit_parent_tree_modes_and_files(self):
+        value=exact_fixture()
+        self.assertEqual(subprocess.run(['git','hash-object','-t','commit','--stdin'],input=base64.b64decode(value['revision']['commitObject']),capture_output=True,check=True).stdout.decode().strip(),value['revision']['commitSha'])
+        self.assertEqual(runner.validate_request(value),value)
+        for change in [lambda v:v['revision'].update(commitSha='a'*40),
+                       lambda v:v['revision'].update(treeSha='a'*40),
+                       lambda v:v['identity'].update(baseSha='a'*40),
+                       lambda v:v['files'][0].update(mode='120000'),
+                       lambda v:v['files'][0].update(mode='100644'),
+                       lambda v:v['files'][0].update(content='\0'),
+                       lambda v:v['files'].append({**v['files'][0], 'path':'additional.mjs'}),
+                       lambda v:v['revision'].update(commitObject='!')]:
+            altered=copy.deepcopy(value); change(altered)
+            with self.assertRaises(runner.RunnerError): runner.validate_request(altered)
+
+    def test_nested_complete_tree_cannot_omit_unchanged_file(self):
+        value=exact_fixture()
+        first=value['files'][0]; first['path']='src/value.mjs'
+        other={**first,'path':'src/other.mjs','mode':'100644'}
+        value['files'].append(other)
+        subtree=b'100644 other.mjs\0'+bytes.fromhex(other['blobSha'])+b'100755 value.mjs\0'+bytes.fromhex(first['blobSha'])
+        subhash=hashlib.sha1(f'tree {len(subtree)}\0'.encode()+subtree).digest()
+        root=b'40000 src\0'+subhash
+        tree_sha=hashlib.sha1(f'tree {len(root)}\0'.encode()+root).hexdigest()
+        commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor TripSit <tripsit@localhost> 0 +0000\ncommitter TripSit <tripsit@localhost> 0 +0000\n\nStage candidate\n'.encode()
+        value['revision']={'treeSha':tree_sha,'commitSha':hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest(),
+                           'commitObject':base64.b64encode(commit).decode()}
+        value['checks'][0]['path']=first['path']
+        self.assertEqual(runner.validate_request(value),value)
+        value['files'].pop()
+        with self.assertRaises(runner.RunnerError): runner.validate_request(value)
+
+    def test_exact_revision_rejects_sha256_parent_even_with_matching_commit(self):
+        value=exact_fixture()
+        value['identity']['baseSha']='f'*64
+        tree_sha=value['revision']['treeSha']
+        commit=f'tree {tree_sha}\nparent {value["identity"]["baseSha"]}\nauthor TripSit <tripsit@localhost> 0 +0000\ncommitter TripSit <tripsit@localhost> 0 +0000\n\nStage candidate\n'.encode()
+        value['revision']['commitSha']=hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest()
+        value['revision']['commitObject']=base64.b64encode(commit).decode()
+        with self.assertRaises(runner.RunnerError): runner.validate_request(value)
+
+    def test_exact_revision_rejects_malformed_commit_even_when_hash_matches(self):
+        original=exact_fixture()
+        raw=base64.b64decode(original['revision']['commitObject'])
+        author=b'author TripSit <tripsit@localhost> 0 +0000\n'
+        committer=b'committer TripSit <tripsit@localhost> 0 +0000\n'
+        for commit in (raw.replace(author,b''),raw.replace(committer,b''),raw.replace(author,author+author),
+                       raw.replace(committer,b'committer invalid\n')):
+            value=copy.deepcopy(original)
+            value['revision']['commitSha']=hashlib.sha1(f'commit {len(commit)}\0'.encode()+commit).hexdigest()
+            value['revision']['commitObject']=base64.b64encode(commit).decode()
+            with self.assertRaises(runner.RunnerError): runner.validate_request(value)
+
+    async def test_verified_revision_echoed_without_changing_legacy_response(self):
+        sandbox=FakeSandbox({'controls':{key:True for key in runner.PROBE_CONTROLS}})
+        async def factory(): return sandbox
+        service=runner.Runner(factory,'image-fixture')
+        await service.verify()
+        sandbox.response={'results':[{'checkId':'value-check','status':'completed','result':'passed','exitCode':0,'executedTests':1}]}
+        value=exact_fixture()
+        self.assertEqual((await service.execute(value))['revision'],value['revision'])
+        self.assertNotIn('revision',await service.execute(fixture()))
+
     def test_exact_source_checks_and_caps(self):
         value=fixture()
         self.assertEqual(runner.validate_request(value), value)

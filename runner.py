@@ -4,6 +4,7 @@ The oracle is outside the candidate worker. A passing case establishes only that
 its isolated process returned the expected JSON for the supplied input.
 """
 import asyncio
+import base64
 import hashlib
 import json
 from pathlib import Path, PurePosixPath
@@ -98,9 +99,40 @@ def _json(value, depth=0):
     raise ValueError()
 
 
+def verified_revision(revision, identity, files):
+    if not re.fullmatch(r'[a-f0-9]{40}', identity['baseSha']): raise ValueError()
+    if not isinstance(revision, dict) or set(revision) != {'commitSha', 'treeSha', 'commitObject'}: raise ValueError()
+    if any(not isinstance(revision[k], str) or not re.fullmatch(r'[a-f0-9]{40}', revision[k]) for k in ('commitSha', 'treeSha')): raise ValueError()
+    if not isinstance(revision['commitObject'], str) or len(revision['commitObject']) > 21848: raise ValueError()
+    raw = base64.b64decode(revision['commitObject'], validate=True)
+    if not raw or len(raw) > 16384 or base64.b64encode(raw).decode() != revision['commitObject']: raise ValueError()
+    if hashlib.sha1(f'commit {len(raw)}\0'.encode() + raw).hexdigest() != revision['commitSha']: raise ValueError()
+    pattern = (rb'tree ' + revision['treeSha'].encode() + rb'\nparent ' + identity['baseSha'].encode()
+        + rb'\nauthor TripSit <tripsit@localhost> (-?[0-9]+) \+0000\ncommitter TripSit <tripsit@localhost> \1 \+0000\n\nStage candidate\n')
+    if not re.fullmatch(pattern, raw): raise ValueError()
+    root = {}
+    for file in files:
+        if file['mode'] not in ('100644', '100755') or '\0' in file['content']: raise ValueError()
+        directory = root
+        parts = file['path'].split('/')
+        for part in parts[:-1]: directory = directory.setdefault(part, {})
+        if not isinstance(directory, dict) or parts[-1] in directory: raise ValueError()
+        directory[parts[-1]] = (file['mode'], file['blobSha'])
+    def tree(directory):
+        rows = []
+        for name, item in directory.items():
+            nested = isinstance(item, dict)
+            mode, sha = ('40000', tree(item)) if nested else item
+            rows.append((name.encode() + (b'/' if nested else b''), mode.encode() + b' ' + name.encode() + b'\0' + bytes.fromhex(sha)))
+        data = b''.join(value for _name, value in sorted(rows))
+        return hashlib.sha1(f'tree {len(data)}\0'.encode() + data).hexdigest()
+    if tree(root) != revision['treeSha']: raise ValueError()
+
+
 def validate_request(value):
     try:
-        if not isinstance(value, dict) or set(value) != {'identity', 'files', 'checks', 'prId'}: raise ValueError()
+        if not isinstance(value, dict) or set(value) not in ({'identity', 'files', 'checks', 'prId'}, {'identity', 'files', 'checks', 'prId', 'revision'}): raise ValueError()
+        exact = 'revision' in value
         if len(json.dumps(value, ensure_ascii=False, allow_nan=False).encode()) > MAX_REQUEST: raise ValueError()
         identity = value['identity']
         expected = {'ownerId','itemId','candidateId','baseSha','candidateDigest','snapshotDigest','policyVersion'}
@@ -115,7 +147,7 @@ def validate_request(value):
         if not isinstance(files, list) or not 1 <= len(files) <= CONFIG['files']: raise ValueError()
         paths, portable, total = set(), set(), 0
         for row in files:
-            if not isinstance(row, dict) or set(row) != {'path', 'content', 'blobSha'}: raise ValueError()
+            if not isinstance(row, dict) or set(row) != ({'path', 'content', 'blobSha', 'mode'} if exact else {'path', 'content', 'blobSha'}): raise ValueError()
             path = row['path']
             if not _text(path, 1024) or len(path.encode()) > 1024 or path != str(PurePosixPath(path)) or path.startswith('/') or re.search(r'[\\:\x00-\x1f\x7f]', path): raise ValueError()
             if any(part in ('.', '..') or part.lower() == '.git' for part in path.split('/')): raise ValueError()
@@ -126,6 +158,7 @@ def validate_request(value):
             if not isinstance(row['content'], str): raise ValueError()
             data = row['content'].encode('utf-8', 'strict'); total += len(data)
             if total > CONFIG['source_bytes'] or hashlib.sha1(f'blob {len(data)}\0'.encode()+data).hexdigest() != row['blobSha']: raise ValueError()
+        if exact: verified_revision(value['revision'], identity, files)
         checks, ids, optional_time, optional_count = value['checks'], set(), 0, 0
         if not isinstance(checks, list) or not 1 <= len(checks) <= CONFIG['checks']: raise ValueError()
         for check in checks:
@@ -240,7 +273,9 @@ class Runner:
                     definitions.append(definition)
                     executions.append({**row, **{key:val for key,val in definition.items() if key!='id'}, 'id':str(uuid.uuid4()),
                                        'collector':'trusted_runner','runnerId':'modal-blackbox-v1','prId':value['prId']})
-                return {'identity':value['identity'],'admission':admission,'checks':definitions,'executions':executions}
+                result = {'identity':value['identity'],'admission':admission,'checks':definitions,'executions':executions}
+                if 'revision' in value: result['revision'] = value['revision']
+                return result
             except (Exception, asyncio.CancelledError):
                 raise RunnerError() from None
             finally:

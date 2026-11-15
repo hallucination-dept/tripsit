@@ -133,6 +133,7 @@ def stage(files):
         path.parent.mkdir(mode=0o755,parents=True,exist_ok=True)
         descriptor=os.open(path,os.O_WRONLY|os.O_CREAT|os.O_EXCL|os.O_NOFOLLOW,0o444)
         with os.fdopen(descriptor,'wb') as target: target.write(row['content'].encode('utf8'))
+        if row.get('mode') == '100755': os.chmod(path,0o555)
     for parent,dirs,_files in os.walk(workspace,topdown=False):
         os.chmod(parent,0o555)
 

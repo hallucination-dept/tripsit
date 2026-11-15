@@ -4,6 +4,7 @@ import { prioritizeChecks, type PriorityComparison, type SelectedTokenSignal } f
 import type { PacketIdentity, TrustedCheck, TrustedExecution } from './packet.ts';
 import type { GeneratedCandidate, GenerationObservations } from './generation.ts';
 import type { ImpactSource } from './impact.ts';
+import type { ExactFile, ExactRevision } from './exact-revision.ts';
 
 export type OracleCheck = { id: string; language: 'python' | 'javascript' | 'typescript'; path: string; export: string;
   cases: Array<{ args: unknown[]; expected: unknown }>; requirementIds: string[]; nodeIds: string[];
@@ -12,9 +13,10 @@ export type VerificationContext = { identity: PacketIdentity; repositoryId: numb
   files: Array<{ path: string; original: string | null; replacement: string }>;
   nodes: Array<{ id: string; path: string; kind?: string; source?: ImpactSource }>; requirements: Array<{ id: string; mandatory: boolean }>;
   tokenSignal?: { mapping: NonNullable<GeneratedCandidate['tokenByteMapping']>; observations: GenerationObservations };
-  comparison: PriorityComparison; impactUnknown?: boolean; disagreements: string[] };
+  comparison: PriorityComparison; impactUnknown?: boolean; disagreements: string[]; exact?: { revision: ExactRevision; files: ExactFile[] } };
 export type VerificationEvidence = { checks: TrustedCheck[]; executions: TrustedExecution[];
   dispatchPlan?: ReturnType<typeof prioritizeChecks>;
+  exactRevision?: ExactRevision; expectedCases?: Record<string, number>;
   admission: { status: 'passed'; configurationDigest: string; codeDigest: string; environmentDigest: string } };
 type Configuration = { url?: string; token?: string; manifest?: string; fetcher?: typeof fetch };
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -154,13 +156,13 @@ export function createVerification(configuration: Configuration) {
           signal: fileTokenSignal(check, context),
           reviewerDisagreement: check.requirementIds.some(id => context.disagreements.includes(id)) })), context.comparison);
         const ordered = [...plan.mandatory, ...plan.selected].map(row => checks.find(check => check.id === row.id)!);
-        const files = context.files.map(file => ({ path: file.path, content: file.replacement, blobSha: blob(file.replacement) }));
+        const files = context.exact?.files ?? context.files.map(file => ({ path: file.path, content: file.replacement, blobSha: blob(file.replacement) }));
         if (files.length > 24 || Buffer.byteLength(JSON.stringify(files)) > 1_048_576
           || files.reduce((size, file) => size + Buffer.byteLength(file.content), 0) > 262_144) fail(413);
         await whileActive(authorize, active);
-        const result = await call('/execute', { identity: context.identity, files, checks: ordered, prId: null });
+        const result = await call('/execute', { identity: context.identity, files, checks: ordered, prId: null, ...(context.exact ? { revision: context.exact.revision } : {}) });
         if (!object(result) || canonical(result.identity) !== canonical(context.identity) || !object(result.admission)
-          || canonical(result.admission) !== canonical(admission) || !Array.isArray(result.checks) || !Array.isArray(result.executions)
+          || canonical(result.admission) !== canonical(admission) || (context.exact ? canonical(result.revision) !== canonical(context.exact.revision) : result.revision !== undefined) || !Array.isArray(result.checks) || !Array.isArray(result.executions)
           || result.checks.length !== ordered.length || result.executions.length !== ordered.length) fail();
         const dependencyDigest = verificationDigest(files.map(({ path, blobSha }) => ({ path, blobSha })).sort((a, b) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
         const definitions = checks.map(check => {
@@ -186,7 +188,7 @@ export function createVerification(configuration: Configuration) {
           executionIds.add(execution.id);
         }
         return { checks: definitions.map(({ language: _language, path: _path, export: _export, ...definition }) => definition),
-          dispatchPlan: plan, executions: result.executions as TrustedExecution[], admission: admission as VerificationEvidence['admission'] };
+          dispatchPlan: plan, ...(context.exact ? { exactRevision: context.exact.revision, expectedCases: Object.fromEntries(ordered.map(check => [check.id, check.cases.length])) } : {}), executions: result.executions as TrustedExecution[], admission: admission as VerificationEvidence['admission'] };
       } catch (error) { if (error instanceof IntakeError) throw error; fail(active.aborted ? 504 : 503); }
     }
   };
