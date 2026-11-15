@@ -22,7 +22,7 @@ test('decisions are owner scoped, idempotent, and reject a concurrent evidence a
  const pool=new pg.Pool({connectionString:testDatabaseUrl(process.env.TRIPSIT_TEST_DATABASE_URL),connectionTimeoutMillis:5000});
  const client=await pool.connect();
  try {
-  for(const migration of ['001_work_items.sql','002_candidates.sql','003_candidate_staging.sql','004_revision_packets.sql','005_human_decisions.sql']) await client.query(await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8'));
+  for(const migration of ['001_work_items.sql','002_candidates.sql','003_candidate_staging.sql','004_revision_packets.sql','005_human_decisions.sql','007_owner_acceptance.sql']) await client.query(await readFile(new URL(`../migrations/${migration}`,import.meta.url),'utf8'));
   await client.query('INSERT INTO tripsit_work_items VALUES ($1,$2,$3,$4,$5,$6)',[itemId,'owner','digest','intake',item.createdAt,item.expiresAt]);
   await client.query('INSERT INTO tripsit_snapshots VALUES ($1,$2)',[itemId,JSON.stringify(snapshot)]);
   await client.query('INSERT INTO tripsit_candidates VALUES ($1,$2,$3,$4,$5)',[candidateId,'owner',identity.candidateDigest,item.createdAt,item.expiresAt]);

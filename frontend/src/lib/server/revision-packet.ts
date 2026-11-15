@@ -5,11 +5,13 @@ import { stageCandidate, type TreeEntry } from './candidate-staging.ts';
 import type { WorkItem } from './records.ts';
 import type { StoredCandidate } from './generation.ts';
 import type { IssueSnapshot } from './intake.ts';
+import type { TrustedRequiredManifest } from './trusted-required-manifest.ts';
 import type { Assessment } from './assessment.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> };
 type Dependencies = {
   database: Database;
+  requiredManifest?: (assessment: Assessment) => TrustedRequiredManifest;
   assessment: { load(owner: string, item: string, candidate: string, signal: AbortSignal): Promise<Assessment> };
   intake: { get(owner: string, item: string, signal: AbortSignal): Promise<WorkItem> };
   generation: { get(owner: string, item: string, candidate: string, signal: AbortSignal): Promise<StoredCandidate> };
@@ -21,7 +23,7 @@ const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => ent
   ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 
-export function createRevisionPacket({ database, assessment, github, intake, generation }: Dependencies) {
+export function createRevisionPacket({ database, assessment, github, intake, generation, requiredManifest }: Dependencies) {
   async function query(sql: string, values: unknown[]) {
     try { return await database.query(sql, values); }
     catch { throw new IntakeError(503, 'Revision packet storage is unavailable.'); }
@@ -71,7 +73,7 @@ export function createRevisionPacket({ database, assessment, github, intake, gen
       if (typeof await whileActive(() => github.reviewerVisibility(snapshot.repository as string, snapshot.repositoryId as number, signal), signal) !== 'boolean') throw unavailable();
       const original = assessmentView(owner, view, false).packet;
       const { packetDigest: _oldDigest, ...parts } = original;
-      const packet = { ...parts, candidateCommit: row.commit_sha, acceptanceReady: false as const };
+      const packet = { ...parts, candidateCommit: row.commit_sha, requiredManifest: requiredManifest?.(view) ?? { status: 'unavailable' as const }, acceptanceReady: false as const };
       const body = JSON.stringify(packet);
       if (Buffer.byteLength(body) > 2_097_152) throw new IntakeError(413, 'Revision packet exceeds its storage limit.');
       const packetDigest = digest(body);

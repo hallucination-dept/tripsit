@@ -98,7 +98,7 @@ test('assessment runtime shares candidate admission services and uses only confi
   bridge.assessmentReviewStore = reviewStore;
   const hooks = registerHooks({ resolve(specifier, context, next) {
     const mocks: Record<string, string> = {
-      '$app/env/private': 'export let REVIEWER_API_URL,REVIEWER_API_KEY,REVIEWER_MODEL,REVIEWER_RETENTION_DISCLOSURE,RUNNER_API_URL,RUNNER_API_KEY,TRUSTED_CHECKS_JSON;globalThis.configureAssessmentReviewer=enabled=>{REVIEWER_API_URL=enabled?"https://trusted.example":undefined;REVIEWER_API_KEY=enabled?"fixture-key":undefined;REVIEWER_MODEL=enabled?"trusted-model":undefined;REVIEWER_RETENTION_DISCLOSURE=enabled?"Configured retention.":undefined;};',
+      '$app/env/private': 'export let REVIEWER_API_URL,REVIEWER_API_KEY,REVIEWER_MODEL,REVIEWER_RETENTION_DISCLOSURE,RUNNER_API_URL,RUNNER_API_KEY,TRUSTED_CHECKS_JSON,REQUIRED_CHECK_MANIFEST_JSON;globalThis.configureAssessmentReviewer=enabled=>{REVIEWER_API_URL=enabled?"https://trusted.example":undefined;REVIEWER_API_KEY=enabled?"fixture-key":undefined;REVIEWER_MODEL=enabled?"trusted-model":undefined;REVIEWER_RETENTION_DISCLOSURE=enabled?"Configured retention.":undefined;};',
       '#lib/auth.js': 'export const database={};',
       './generation-runtime.ts': 'export const candidateServices=(...args)=>globalThis.assessmentServices(...args);',
       './assessment.ts': 'export const createAssessment=dependencies=>globalThis.assessmentFactory(dependencies);export const verificationContext=assessment=>assessment;',
