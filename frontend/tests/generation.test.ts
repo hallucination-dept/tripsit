@@ -201,7 +201,7 @@ test('autonomous generation can create a new file in an empty frozen repository'
   assert.equal(f.calls.store, 1);
 });
 
-test('autonomous tools reject unsafe, mixed, unknown or repeated reads and uninspected existing replacements', async () => {
+test('autonomous tools reject unsafe or mixed actions and uninspected edits while repeated reads stay bounded', async () => {
   for (const action of [{ read: ['../secret'] }, { read: ['missing.ts'] }, { read: [] }, { execute: 'bash' }, { read: ['a.ts'], files: [] }, { files: [{ path: 'a.ts', originalBlob: blob('export const value = 1;'), content: 'replace without reading' }] }]) {
     const f = agentFixture();
     f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify(action)), model: 'gemma', settings: {} });
