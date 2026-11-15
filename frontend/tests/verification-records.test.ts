@@ -92,3 +92,14 @@ test('execution history accepts graph-wide 2000-node references and rejects 2001
  expanded.checks[0].nodeIds.push('node2000');
  await assert.rejects(records.append('owner',identity,expanded),{status:400});
 });
+
+test('exact evidence requires revision and case count pair and passes revision to atomic stage predicate', async () => {
+ let query = '', values:unknown[]=[];
+ const records=createVerificationRecords({async query(sql, args=[]){ query=sql; values=args; return {rows:[{id:identity.candidateId}]}; }});
+ const exactRevision={commitSha:'a'.repeat(40),treeSha:'b'.repeat(40),commitObject:'YQ=='};
+ const exact={...result,exactRevision,expectedCases:{'check-1':1}};
+ await records.append('owner',identity,exact);
+ assert.match(query,/tripsit_candidate_stages/); assert.deepEqual(JSON.parse(values[7] as string),exactRevision);
+ await assert.rejects(records.append('owner',identity,{...result,exactRevision} as any),{status:400});
+ await assert.rejects(records.append('owner',identity,{...exact,expectedCases:{'check-1':0}}),{status:400});
+});

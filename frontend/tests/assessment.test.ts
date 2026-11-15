@@ -30,6 +30,7 @@ function fixture() {
       async append(_owner, identity, result) { calls.append++; const stored = { id: String(calls.append), identity, createdAt: new Date().toISOString(), result, digest: 'c'.repeat(64) }; artifacts.push(stored); return stored; },
       async list() { return structuredClone(artifacts); }
     },
+    exactRevision: async () => ({ revision: { commitSha:'a'.repeat(40), treeSha:'b'.repeat(40), commitObject:'fixture' }, files: [], recheck: async () => {} }),
     reviewer: { async review(input) { calls.reviewer++; assert(!JSON.stringify(input).includes('SECRET_CONFIDENCE')); assert.deepEqual(Object.keys(input).sort(), ['baseSha','candidateDigest','files','issue','nodes','private','requirements'].sort()); return { status: 'unavailable', reason: 'Not configured.' }; } }
   };
   return { item, candidate, sources, deps, calls, artifacts, service: createAssessment(deps), signal: new AbortController().signal };

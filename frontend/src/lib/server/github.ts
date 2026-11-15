@@ -93,16 +93,17 @@ export function createGitHub(options: Options) {
     return { rows, complete: false };
   }
 
-  async function authorize(repository: string, signal: AbortSignal, expectedId?: number) {
+  async function authorize(repository: string, signal: AbortSignal, expectedId?: number, write = false) {
     await verifyUser(signal);
     const repo = await request(`/repos/${repository}`, options.userToken, signal);
+    if (write && (!repo.permissions || typeof repo.permissions !== 'object' || (repo.permissions as ObjectValue).push !== true)) throw new IntakeError(403, 'Repository write access is unavailable.');
     const repositoryId = id(repo.id);
     if (expectedId !== undefined && repositoryId !== expectedId) throw new IntakeError(403, 'Repository identity has changed.');
     const appJwt = jwt(options.appId, options.privateKey);
     const installation = await request(`/repos/${repository}/installation`, appJwt, signal);
     if (String(id(installation.app_id)) !== options.appId || installation.suspended_at !== null) throw new IntakeError(403, 'The GitHub App installation is unavailable.');
     const access = await request(`/app/installations/${id(installation.id)}/access_tokens`, appJwt, signal,
-      { repository_ids: [repositoryId], permissions: { contents: 'read', issues: 'read' } });
+      { repository_ids: [repositoryId], permissions: write ? { contents: 'write', pull_requests: 'write', issues: 'read' } : { contents: 'read', issues: 'read' } });
     const token = text(access.token, 4096);
     const installedRepo = await request(`/repos/${repository}`, token, signal);
     if (id(installedRepo.id) !== repositoryId) throw new IntakeError(403, 'Repository authorization does not match.');
@@ -151,6 +152,7 @@ export function createGitHub(options: Options) {
   }
 
   return {
+    publicationAccess: async (repository: string, repositoryId: number, signal: AbortSignal) => authorize(repository, signal, repositoryId, true),
     stagingTree: async (snapshot: IssueSnapshot, signal: AbortSignal) => {
       const { repo, entries, treeSha } = await frozenTree(snapshot, signal);
       const commit = await request(`/repos/${repo.repository}/git/commits/${snapshot.baseSha}`, repo.token, signal);

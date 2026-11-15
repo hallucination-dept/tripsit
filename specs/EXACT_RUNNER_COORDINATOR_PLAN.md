@@ -1,0 +1,5 @@
+# Exact revision verification
+
+Reconstruct the staged commit from owner-scoped current candidate and immutable GitHub base tree, compare it to the stored stage, then acquire every unchanged regular file from GitHub, overlay the candidate and enforce runner size, encoding, and mode limits. Fail closed for unsupported trees, inaccessible blobs or stale records. Recheck stage and repository authorization immediately before dispatch. Send the full tree and exact commit object to the runner and persist exact revision and expected case counts only when the runner echoes the same revision and all other result checks pass. Legacy verification never gains exact-revision status. Persist only if the stage still matches atomically; preserve existing owner and candidate checks.
+
+Verification: `cd frontend && node --test --experimental-strip-types tests/exact-revision.test.ts tests/verification.test.ts tests/verification-records.test.ts`, `npm run check`, `npm run build`. Tests cover full-tree overlay, missing or unsupported objects, stale/foreign stage, changed authorization, mismatched echo, expected case counts and unchanged legacy evidence.
