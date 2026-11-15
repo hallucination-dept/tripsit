@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { untrack } from 'svelte';
+	import Spinner from '#lib/components/Spinner.svelte';
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { createCandidateWorkspace } from '#lib/candidate-workspace.ts';
 	import CandidateInspection from '#lib/CandidateInspection.svelte';
@@ -160,27 +161,27 @@
 			<div class="section-heading"><div><h2 id="issue-heading">GitHub issues</h2><p>Keep the problem and its code revision together.</p></div><a class="section-label" href="/api/github/connect">Install GitHub App</a></div>
 			<div class="intake-grid">
 				<div class="panel ticket-panel">
-					<div class="panel-heading"><p class="panel-title">Select an issue</p><span class="sync-state" aria-live="polite">{discovery.loading ? 'Refreshing…' : 'Refreshes every minute'}</span></div>
+					<div class="panel-heading"><p class="panel-title">Select an issue</p><span class="sync-state" aria-live="polite">{#if discovery.loading}<Spinner /> Refreshing…{:else}Refreshes every minute{/if}</span></div>
 					{#if discovery.owner === $session.data.user.id}
 						<form onsubmit={(event) => { event.preventDefault(); issueRequest('create'); }}>
-							<label for="repository">Repository</label>
+							<label for="repository">Repository{#if discovery.loading && !discovery.repositories.length} <Spinner />{/if}</label>
 							<select id="repository" value={discovery.repository} onchange={event => discoveryController.selectRepository(event.currentTarget.value)} required disabled={issueBusy || !discovery.repositories.length}>
 								<option value="" disabled>{discovery.loading ? 'Discovering repositories…' : 'No accessible repositories'}</option>
 								{#each discovery.repositories as repo (repo.id)}<option value={repo.fullName}>{repo.fullName}{repo.private ? ' (private)' : ''}</option>{/each}
 							</select>
-							<label for="issue-number">Open issue</label>
+							<label for="issue-number">Open issue{#if discovery.loading && discovery.repository && !discovery.issues.length} <Spinner />{/if}</label>
 							<select id="issue-number" value={discovery.issueNumber || ''} onchange={event => discoveryController.selectIssue(Number(event.currentTarget.value))} required disabled={issueBusy || !discovery.issues.length}>
 								<option value="" disabled>{discovery.loading ? 'Loading issues…' : 'No open issues'}</option>
 								{#each discovery.issues as issue (issue.id)}<option value={issue.number}>#{issue.number} — {issue.title}</option>{/each}
 							</select>
-							<button class="button-primary capture-button" type="submit" disabled={issueBusy || !discovery.repository || !discovery.issueNumber}>{issueBusy ? 'Loading…' : 'Snapshot issue'}</button>
+							<button class="button-primary capture-button" type="submit" disabled={issueBusy || !discovery.repository || !discovery.issueNumber}>{#if issueBusy}<Spinner /> Loading…{:else}Snapshot issue{/if}</button>
 						</form>
 						{#if discovery.error}<p class="error" role="alert">{discovery.error}</p>{/if}
 						{#if !discovery.loading && !discovery.error && !discovery.repositories.length}<p class="empty-note">No repositories found. Check the App installation and your repository access.</p>{/if}
 						{#if !discovery.loading && discovery.repository && !discovery.error && !discovery.issues.length}<p class="empty-note">No open issues in this repository.</p>{/if}
 						{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p class="notice">This is a partial list. Automatic refresh will check again.</p>{/if}
 						<div class="panel-footer"><span>No work starts automatically.</span><button class="button-quiet" type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button></div>
-					{:else}<p class="empty-note" aria-live="polite">Discovering repositories and issues…</p>{/if}
+					{:else}<p class="empty-note" aria-live="polite"><Spinner /> Discovering repositories and issues…</p>{/if}
 					<p class="privacy-note">Snapshots save issue text and its code revision for seven days.</p>
 				</div>
 				<div class="panel snapshot-panel">
@@ -209,7 +210,7 @@
 				<div class="intake-grid">
 					<div class="panel ticket-panel">
 						<h3>Requirements to verify</h3>
-						{#if candidateWorkspace.loading}<p class="empty-note" aria-live="polite">Loading requirements and repository files…</p>{/if}
+						{#if candidateWorkspace.loading}<p class="empty-note" aria-live="polite"><Spinner /> Loading requirements and repository files…</p>{/if}
 						{#if candidateWorkspace.policyError}<p class="error" role="alert">{candidateWorkspace.policyError}</p>{/if}
 						{#if candidateWorkspace.policy}
 							<p class="empty-note">{candidateWorkspace.policy.version} · Unverified</p>
@@ -225,7 +226,7 @@
 						<h3>Implement this issue</h3>
 						<p class="empty-note">Gemma chooses the files to inspect, requests more context when needed, and generates the implementation against the captured revision.</p>
 						{#if candidateWorkspace.generationError}<p class="error" role="alert">{candidateWorkspace.generationError}</p>{/if}
-						<button id="implement-issue" class="button-primary capture-button" type="submit" disabled={candidateWorkspace.loading || candidateWorkspace.generating}>{candidateWorkspace.generating ? 'Agent investigating and implementing…' : 'Implement issue'}</button>
+						<button id="implement-issue" class="button-primary capture-button" type="submit" disabled={candidateWorkspace.loading || candidateWorkspace.generating}>{#if candidateWorkspace.generating}<Spinner /> Agent investigating and implementing…{:else}Implement issue{/if}</button>
 						<p class="privacy-note">The resulting changes, impact graph and assessments guide your review. You can steer revisions before making a final decision.</p>
 					</form>
 				</div>
@@ -250,7 +251,7 @@
 			<form class="panel editor-panel" onsubmit={(event) => { event.preventDefault(); submitReview(); }}>
 				<label for="code">Code to review</label>
 				<textarea id="code" bind:value={code} required spellcheck="false" placeholder="Paste the code you want reviewed…"></textarea>
-				<div class="editor-footer"><span>Token likelihood is a model signal, not a correctness score.</span><button class="button-primary" type="submit" disabled={isLoading || !code.trim()}>{isLoading ? 'Reviewing…' : 'Review code'}</button></div>
+				<div class="editor-footer"><span>Token likelihood is a model signal, not a correctness score.</span><button class="button-primary" type="submit" disabled={isLoading || !code.trim()}>{#if isLoading}<Spinner /> Reviewing…{:else}Review code{/if}</button></div>
 			</form>
 			{#if message}<p class="error" role="alert">{message}</p>{/if}
 			{#if tokens.length || review}
@@ -265,13 +266,13 @@
 		<section class="auth-card" aria-labelledby="auth-heading">
 			<p class="eyebrow">Your review workspace</p><h1 id="auth-heading">{authMode === 'sign-in' ? 'Sign in to TripSit' : 'Create your account'}</h1>
 			<p class="auth-intro">Connect your repositories. Keep code reviews in context.</p>
-			<button class="github" onclick={signInWithGitHub} disabled={isAuthenticating}>Continue with GitHub</button>
+			<button class="github" onclick={signInWithGitHub} disabled={isAuthenticating}>{#if isAuthenticating}<Spinner /> {/if}Continue with GitHub</button>
 			<div class="divider"><span>or use email</span></div>
 			<form onsubmit={(event) => { event.preventDefault(); submitEmailAuth(); }}>
 				{#if authMode === 'sign-up'}<label for="name">Name</label><input id="name" bind:value={name} required autocomplete="name" />{/if}
 				<label for="email">Email</label><input id="email" bind:value={email} required type="email" autocomplete="email" />
 				<label for="password">Password</label><input id="password" bind:value={password} required type="password" minlength="8" autocomplete={authMode === 'sign-in' ? 'current-password' : 'new-password'} />
-				<button class="button-primary email-submit" type="submit" disabled={isAuthenticating}>{isAuthenticating ? 'Working…' : authMode === 'sign-in' ? 'Sign in with email' : 'Create account'}</button>
+				<button class="button-primary email-submit" type="submit" disabled={isAuthenticating}>{#if isAuthenticating}<Spinner /> Working…{:else}{authMode === 'sign-in' ? 'Sign in with email' : 'Create account'}{/if}</button>
 			</form>
 			{#if authError}<p class="error" role="alert">{authError}</p>{/if}
 			<button class="auth-switch" onclick={() => { authMode = authMode === 'sign-in' ? 'sign-up' : 'sign-in'; authError = ''; }}>{authMode === 'sign-in' ? 'Need an account? Sign up' : 'Already have an account? Sign in'}</button>

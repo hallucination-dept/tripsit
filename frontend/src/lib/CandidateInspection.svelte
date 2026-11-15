@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImpactGraph from '#lib/ImpactGraph.svelte';
+  import Spinner from '#lib/components/Spinner.svelte';
   import HumanDecision from '#lib/HumanDecision.svelte';
   import { untrack } from 'svelte';
   import { createCandidateInspection } from '#lib/candidate-inspection.ts';
@@ -35,9 +36,9 @@
   <p class="notice">The agent maps affected code and reviews the implementation. Findings and evidence gaps guide where your input is needed.</p>
   <p class="status" role="status" aria-live="polite">
     {#if !owner || !itemId || !candidateId || !baseSha || !candidateDigest}Select a candidate to inspect its frozen revision.
-    {:else if !matches || inspection.loading}Loading candidate assessment…
-    {:else if inspection.verifying}Running trusted checks in the admitted disposable runner…
-    {:else if inspection.reviewing}Requesting independent proposals and refreshing the packet…
+    {:else if !matches || inspection.loading}<Spinner /> Loading candidate assessment…
+    {:else if inspection.verifying}<Spinner /> Running trusted checks in the admitted disposable runner…
+    {:else if inspection.reviewing}<Spinner /> Requesting independent proposals and refreshing the packet…
     {:else if view}Assessment loaded for the selected candidate.{/if}
   </p>
   {#if matches && inspection.error}<p class="error" role="alert">{inspection.error}</p>{/if}
@@ -87,7 +88,7 @@
   <section class="panel" aria-label="Independent review">
     <header class="panel-heading"><div><p class="eyebrow">02 · Independent review</p><h3>Claims &amp; counterexamples</h3></div>
       <button data-action="refresh-assessment" type="button" onclick={() => void controller.review()} disabled={!view?.reviewerConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>
-        {matches && inspection.reviewing ? 'Reviewing…' : 'Refresh AI assessment'}
+        {#if matches && inspection.reviewing}<Spinner /> Reviewing…{:else}Refresh AI assessment{/if}
       </button>
     </header>
     <p class="muted">The agent assesses each new implementation automatically. Review its findings, steer revisions and focus your inspection on unresolved or sensitive changes.</p>
@@ -125,7 +126,7 @@
   </section>
 
   <section class="panel" aria-label="Review packet">
-    <header class="panel-heading"><div><p class="eyebrow">03 · Evidence packet</p><h3>Requirements &amp; remaining gaps</h3></div>{#if view?.verificationConfigured}<button type="button" onclick={() => void controller.verify()} disabled={!view?.verificationConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>{matches && inspection.verifying ? 'Running checks…' : 'Run trusted checks'}</button>{/if}</header>
+    <header class="panel-heading"><div><p class="eyebrow">03 · Evidence packet</p><h3>Requirements &amp; remaining gaps</h3></div>{#if view?.verificationConfigured}<button type="button" onclick={() => void controller.verify()} disabled={!view?.verificationConfigured || !matches || inspection.loading || inspection.reviewing || inspection.verifying}>{#if matches && inspection.verifying}<Spinner /> Running checks…{:else}Run trusted checks{/if}</button>{/if}</header>
     {#if view}
       <p class="muted">{view.packet.impact.summary}</p>
       <p class="notice">{view.packet.tokenSignal.reason} · {view.packet.tokenSignal.observedTokens} observed tokens. Token observations are not correctness evidence.</p>

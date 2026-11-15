@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy } from 'svelte';
+  import Spinner from '#lib/components/Spinner.svelte';
   let { itemId, candidateId, baseSha, candidateDigest }: { itemId: string; candidateId: string; baseSha: string; candidateDigest: string } = $props();
   let packet = $state<{ id: string; packetDigest: string; packet: { candidateCommit: string; acceptanceReady: boolean; identity: { baseSha: string; candidateDigest: string }; gaps: Array<{kind:string;reference:string}>; requirementCoverage: Array<{id:string;criterion:string;status:string}> } } | null>(null);
   let history = $state<Array<{id:string;decision:string;inspection:string;uncheckedScope:string;residualRisk:string;createdAt:string}>>([]);
@@ -8,6 +9,7 @@
   let regressionFollowup = $state('');
   let decision = $state<'accept' | 'revise' | 'escalate'>('revise');
   let error = $state(''), success = $state(''), busy = $state(false);
+  let action = $state<'prepare' | 'decide' | 'publish' | ''>('');
   let publicationUrl = $state('');
   let requestId = $state(crypto.randomUUID());
   const controller = new AbortController();
@@ -27,7 +29,7 @@
     history = data.decisions;
   }
   async function prepare() {
-    busy = true; error = ''; success = ''; packet = null;
+    busy = true; action = 'prepare'; error = ''; success = ''; packet = null;
     try {
       const stage = await post(`${path}/stage`, {});
       const result = await post(`${path}/packet`, {});
@@ -37,11 +39,11 @@
       await loadHistory(result.id);
       packet = result; requestId = crypto.randomUUID();
     } catch (cause) { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'The packet is unavailable.'; }
-    finally { busy = false; }
+    finally { busy = false; action = ''; }
   }
   async function submit(event: SubmitEvent) {
     event.preventDefault(); if (!packet) return;
-    busy = true; error = ''; success = '';
+    busy = true; action = 'decide'; error = ''; success = '';
     try {
       const result = await post(`${path}/packet/${encodeURIComponent(packet.id)}/decisions`, { requestId, decision, inspection, uncheckedScope, residualRisk, deepInspection, regressionFollowup });
       if (result?.decision?.packetDigest !== packet.packetDigest || result?.decision?.candidateCommit !== packet.packet.candidateCommit
@@ -49,24 +51,24 @@
       await loadHistory(packet.id);
       success = `Recorded ${decision} for this frozen revision.`; requestId = crypto.randomUUID(); inspection = ''; uncheckedScope = ''; residualRisk = ''; deepInspection = false; regressionFollowup = '';
     } catch (cause) { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'The decision is unavailable.'; }
-    finally { busy = false; }
+    finally { busy = false; action = ''; }
   }
   async function publish() {
     if (!packet) return;
-    busy = true; error = ''; publicationUrl = '';
+    busy = true; action = 'publish'; error = ''; publicationUrl = '';
     try {
       const result = await post(`${path}/packet/${encodeURIComponent(packet.id)}/publish`, {});
       if (result?.publication?.commit !== packet.packet.candidateCommit || !/^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9]\d*$/.test(result?.publication?.url)) throw new Error('Publication did not match the frozen revision.');
       publicationUrl = result.publication.url;
     } catch (cause) { if (!controller.signal.aborted) error = cause instanceof Error ? cause.message : 'Publication is unavailable.'; }
-    finally { busy = false; }
+    finally { busy = false; action = ''; }
   }
 </script>
 
 <section class="human-decision" aria-label="Record human decision">
   <h3>Record a human decision</h3>
   <p>Acceptance requires current mandatory checks and inspection of this exact revision. It does not merge the change.</p>
-  <button type="button" onclick={prepare} disabled={busy}>Prepare frozen packet</button>
+  <button type="button" onclick={prepare} disabled={busy}>{#if action === 'prepare'}<Spinner /> {/if}Prepare frozen packet</button>
   {#if error}<p role="alert">{error}</p>{/if}
   {#if success}<p role="status">{success}</p>{/if}
   {#if packet}
@@ -80,7 +82,7 @@
     {#if history.length}<details><summary>Recorded decisions ({history.length})</summary><ul>{#each history as entry}
       <li><strong>{entry.decision}</strong> — {entry.createdAt}<p>Inspection: {entry.inspection}</p><p>Unchecked: {entry.uncheckedScope}</p><p>Residual risk: {entry.residualRisk}</p></li>
     {/each}</ul></details>{/if}
-    <button type="button" onclick={publish} disabled={busy || !history.some(entry => entry.decision === 'accept')}>Publish implementation PR</button>
+    <button type="button" onclick={publish} disabled={busy || !history.some(entry => entry.decision === 'accept')}>{#if action === 'publish'}<Spinner /> {/if}Publish implementation PR</button>
     {#if publicationUrl}<p>Pull request: <a href={publicationUrl} target="_blank" rel="noreferrer">Open on GitHub</a>. Merge protection remains unverified.</p>{/if}
     <form onsubmit={submit}>
       <label>Decision <select bind:value={decision}><option value="revise">Request revision</option><option value="escalate">Escalate</option><option value="accept">Accept revision</option></select></label>
@@ -89,7 +91,7 @@
       {#if decision === 'accept'}<label>Regression follow-up for reported escapes <textarea bind:value={regressionFollowup} maxlength="4096"></textarea></label>{/if}
       <label>Unchecked scope and why <textarea bind:value={uncheckedScope} required maxlength="4096"></textarea></label>
       <label>Residual risk <textarea bind:value={residualRisk} required maxlength="4096"></textarea></label>
-      <button type="submit" disabled={busy}>Record decision</button>
+      <button type="submit" disabled={busy}>{#if action === 'decide'}<Spinner /> {/if}Record decision</button>
     </form>
   {/if}
 </section>
