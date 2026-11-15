@@ -274,8 +274,8 @@ test('autonomous generation validates listing and source budgets before further 
   }
 });
 
-test('autonomous final edits reject stale original identities and portable collisions with untouched files', async () => {
-  for (const file of [{ path: 'a.ts', originalBlob: 'c'.repeat(40), content: 'bad' }, { path: 'A.ts', originalBlob: null, content: 'collision' }, { path: 'caller.ts/child.ts', originalBlob: null, content: 'file-directory collision' }]) {
+test('autonomous final edits reject portable collisions with untouched files', async () => {
+  for (const file of [{ path: 'A.ts', originalBlob: null, content: 'collision' }, { path: 'caller.ts/child.ts', originalBlob: null, content: 'file-directory collision' }]) {
     const f = agentFixture(); let turn = 0;
     f.dependencies.model.generate = async () => ({ rawOutput: bytes(JSON.stringify(turn++ === 0 ? { read: ['a.ts'] } : { files: [file] })), model: 'gemma', settings: {} });
     await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
@@ -309,16 +309,48 @@ test('agent read tools return cached and not-found feedback so the model can rec
   assert.equal(f.calls.store, 1);
 });
 
-test('autonomous listing sends paths without unused hash metadata while trusted reads keep original blobs', async () => {
+test('autonomous model prompts contain filenames and source without server revision/hash metadata', async () => {
   const f = agentFixture();
   const generate = f.dependencies.model.generate;
   f.dependencies.model.generate = async prompt => {
     const data = JSON.parse(prompt.data);
     assert(data.repositoryFiles.length > 0);
     for (const file of data.repositoryFiles) assert.deepEqual(Object.keys(file), ['path']);
-    for (const file of data.files) assert.equal(file.originalBlob, blob(f.originals.get(file.path)!));
+    assert.equal(data.baseSha, undefined);
+    assert(!/[a-f0-9]{40}/u.test(prompt.data));
+    for (const file of data.files) assert.deepEqual(Object.keys(file).sort(), ['content', 'path']);
     return generate(prompt);
   };
   const stored = await f.service.create('owner', 'item', undefined, f.signal);
   assert.equal(stored.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+});
+
+
+test('autonomous text actions omit or forge hashes without changing server original bindings and keep exact raw model bytes', async () => {
+  for (const metadata of [undefined, 'c'.repeat(40)]) {
+    const f = agentFixture(); let turn = 0;
+    const content = 'é😀\r\n';
+    let raw = bytes('');
+    f.dependencies.model.generate = async () => {
+      if (turn++ === 0) return { rawOutput: bytes('{"read":["a.ts"]}'), model: 'gemma', settings: {} };
+      const file = { path: 'a.ts', content, ...(metadata === undefined ? {} : { originalBlob: metadata }) };
+      raw = bytes('```json\r\n' + JSON.stringify({ files: [file] }) + '\r\n```');
+      return { rawOutput: raw, model: 'gemma', settings: {} };
+    };
+    const stored = await f.service.create('owner', 'item', undefined, f.signal);
+    assert.equal(stored.candidate.files[0].originalBlob, blob(f.originals.get('a.ts')!));
+    assert.deepEqual(stored.candidate.files[0].content, bytes(content));
+    assert.deepEqual(stored.candidate.rawOutput, raw);
+    assert.equal(stored.candidate.outputDigest, createHash('sha256').update(raw).digest('hex'));
+    assert.equal(stored.candidate.mapping.status, 'unavailable');
+  }
+});
+
+test('autonomous JSON frames accept one conventional code fence and reject surrounding prose or multiple frames', async () => {
+  for (const wrap of [(json: string) => 'explanation\n'+json, (json: string) => '```json\n'+json+'\n```\n```json\n'+json+'\n```']) {
+    const f = agentFixture();
+    f.dependencies.model.generate = async () => ({ rawOutput: bytes(wrap('{"files":[{"path":"new.ts","content":"valid"}]}')), model: 'gemma', settings: {} });
+    await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+    assert.equal(f.calls.store, 0);
+  }
 });
