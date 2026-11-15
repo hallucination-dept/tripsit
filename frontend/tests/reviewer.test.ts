@@ -86,9 +86,9 @@ test('strict proposal schema rejects fake results, malformed references and over
   }
 });
 
-test('provider failures, truncation and oversized transport return safe unavailable results', async () => {
-  const cases = [() => response({ secret: 'provider dump' }, 500), () => response(body(schema(), { model: 'wrong' })),
-    () => response(body(schema(), { choices: [] })), () => response(body(schema(), { choices: [{ finish_reason: 'length', message: { content: JSON.stringify(schema()) } }] })),
+test('provider failures, missing text and oversized transport return safe unavailable results', async () => {
+  const cases = [() => response({ secret: 'provider dump' }, 500),
+    () => response(body(schema(), { choices: [] })), () => response(body(schema(), { choices: [{ message: { content: null } }] })),
     () => new Response('x'.repeat(1_048_577)), () => new Response(new Uint8Array([255])),
     () => { throw new Error('secret provider error'); }];
   for (const create of cases) {
@@ -202,4 +202,48 @@ test('authorized private source uses the configured reviewer without an addition
  let calls=0;
  const result=await createReviewer({...configuration,fetcher:async(_url,options)=>{calls++;assert.equal(JSON.parse(JSON.parse(String(options!.body)).messages[1].content).private,true);return response(body());}}).review({...input(),private:true},new AbortController().signal);
  assert.equal(result.status,'completed');assert.equal(calls,1);
+});
+
+
+test('linked critic preserves validated graph findings alongside explicit or derived human advice', async () => {
+ for (const structured of [schema(), { ...schema(), advice: 'Inspect owner.ts N1 and exercise R1 with a second owner. 雪\r\n' }]) {
+  const result = await createReviewer({ ...configuration, fetcher: async () => response(body(structured)) }).review(input(), new AbortController().signal);
+  assert.equal(result.status, 'completed'); if(result.status !== 'completed') continue;
+  assert.deepEqual(result.claims, schema().claims); assert.deepEqual(result.checks, schema().checks);
+  if ('advice' in structured) assert.equal(result.advice, structured.advice);
+  else { assert.match(result.advice ?? '', /Owner check remains/); assert.match(result.advice ?? '', /Try another owner/); assert.match(result.advice ?? '', /Exercise a second owner/); }
+ }
+});
+
+test('plain advice is useful fallback without fabricated graph links and malformed structured claims remain invalid', async () => {
+ const prose = 'Review owner.ts (N1): try another owner and inspect the unchanged caller before merging.';
+ const result = await createReviewer({ ...configuration, fetcher: async () => response(body(prose)) }).review(input(), new AbortController().signal);
+ assert.equal(result.status, 'completed'); if(result.status !== 'completed') return;
+ assert.equal(result.advice, prose); assert.deepEqual(result.claims, []); assert.deepEqual(result.checks, []);
+ for (const content of ['{not valid JSON', JSON.stringify({ ...schema(), advice: 'x'.repeat(32769) }), JSON.stringify({ ...schema(), advice: '' }),
+  JSON.stringify({ ...schema(), advice: 'Helpful but unknown node.', claims: [{ ...schema().claims[0], nodeIds: ['invented'] }] }),
+  JSON.stringify({ ...schema(), advice: 'Advice', executedChecks: ['passed'] }), 'x'.repeat(32769)]) {
+  assert.equal((await createReviewer({ ...configuration, fetcher: async () => response(body(content)) }).review(input(), new AbortController().signal)).status, 'unavailable');
+ }
+});
+
+test('linked assessment reads only first message content and ignores provider model, finish reason and probabilities', async () => {
+ const text = JSON.stringify({ ...schema(), advice: 'Review the linked findings and downstream caller.' });
+ const result = await createReviewer({ ...configuration, fetcher: async (_url, options) => {
+  const request = JSON.parse(String(options?.body)); assert.match(request.messages[0].content, /"advice"/);
+  return response({ model: { ignored: 'provider model junk' }, token_probabilities: 'probability junk', choices: [
+   { finish_reason: 'length', logprobs: 'token junk', message: { content: text } }, { message: { content: 'ignored second choice' } }
+  ] });
+ } }).review({ ...input(), private: true }, new AbortController().signal);
+ assert.equal(result.status, 'completed'); if(result.status !== 'completed') return;
+ assert.equal(result.model, configuration.model); assert.deepEqual(result.claims, schema().claims); assert.deepEqual(result.checks, schema().checks);
+ assert.equal(result.responseDigest, createHash('sha256').update(text).digest('hex'));
+ for(const ignored of ['provider model junk','probability junk','token junk','ignored second choice'])assert(!JSON.stringify(result).includes(ignored));
+});
+
+test('derived advice remains bounded while all validated linked records are retained', async () => {
+ const claims = Array.from({length:32},(_,index)=>({...schema().claims[0],id:`C${index}`,statement:'雪'.repeat(2700),counterexample:'雪'.repeat(2700)}));
+ const result = await createReviewer({ ...configuration, fetcher: async () => response(body({claims,checks:[]})) }).review(input(),new AbortController().signal);
+ assert.equal(result.status,'completed'); if(result.status !== 'completed')return;
+ assert.equal(result.claims.length,32); assert(Buffer.byteLength(result.advice!)<=32768); assert.match(result.advice!,/linked findings/);
 });
