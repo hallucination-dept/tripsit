@@ -44,8 +44,11 @@
 	const statusLabel: Record<RunStatus, string> = { preparing: 'Preparing', running: 'Agent working', analyzing: 'Building graph', publishing: 'Opening PR', done: 'Done', failed: 'Failed', cancelled: 'Cancelled' };
 	const time = (value: string) => new Date(value).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
 
+	// Better Auth refetches the session whenever the tab regains focus, and every refetch emits a new store value.
+	// Deriving the id keeps the reset below to real sign-in changes instead of every return to the tab.
+	const userId = $derived($session.data?.user.id ?? '');
 	$effect(() => {
-		const current = $session.data?.user.id ?? '';
+		const current = userId;
 		untrack(() => {
 			owner = current;
 			clearTimeout(pollTimer);
