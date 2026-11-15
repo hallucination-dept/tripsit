@@ -525,4 +525,10 @@ vision_alignment:
   current_increment: No new service deployment; use existing Gemma proxy. Keep unrun verification explicit, rather than scope away planned verification.
   delivery: Release verified functional slices immediately as ready PRs with actual checks and review; do not merge without human approval.
   release_now: Private snapshot/source fix c49c747+db925a2 independently based on current main; graph/agent implementation remains parallel.
+discovery_refresh_fix:
+  user_report: Minute polling resets whole UI; issue loading blocks repository switching.
+  plan: specs/bugs/BUG-discovery-refresh-state.md
+  scope: Preserve existing issue/candidate/graph/assessment during background refresh and transient errors; repository switch cancels/discards prior issue request without global UI lock.
+  dispatch: Isolated worktree, discovery controller/tests and minimal selector/state-filter page hunks; publish independent ready PR after verification.
+  verify: cd frontend && node --experimental-strip-types tests/issue-discovery.test.ts && npm run check && npm run build
 
