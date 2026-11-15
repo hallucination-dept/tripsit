@@ -18,6 +18,42 @@ const canonical = (value: unknown) => JSON.stringify(value, (_key, entry) => ent
   ? Object.fromEntries(Object.keys(entry).sort().map(key => [key, entry[key]])) : entry);
 const digest = (value: string) => createHash('sha256').update(value).digest('hex');
 
+export function assertAcceptanceEvidence(packet: any, row: Record<string, unknown>, item: WorkItem, current: { assessment: Assessment; manifest: TrustedRequiredManifest; checks: OracleCheck[] }) {
+ const policy = snapshotPolicy(item);
+    const manifest = current.manifest;
+    if (manifest.status !== 'operator_asserted' || canonical(manifest) !== canonical(packet.requiredManifest)
+      || manifest.repositoryId !== item.snapshot.repositoryId || manifest.baseSha !== row.base_sha
+      || manifest.policyVersion !== policy.policy.version || canonical(current.assessment.identity) !== canonical(packet.identity)) throw stale();
+    const controls = manifest.controls.filter(control => control.applicability === 'applicable');
+    const required = new Set(controls.flatMap(control => control.checks.map(check => check.id)));
+    if (!controls.length || !required.size) throw stale();
+    if (current.assessment.verifications?.some(record => canonical(record.identity) === canonical(packet.identity)
+      && record.result.executions.some(execution => required.has(execution.checkId) && execution.result === 'failed'))) throw stale();
+    const latest = current.assessment.verifications?.at(-1);
+    const result = latest?.result as unknown as { exactRevision?: {commitSha?:string;treeSha?:string;commitObject?:string}; expectedCases?: Record<string,number>; checks?: Array<Record<string,unknown>>; executions?: Array<Record<string,unknown>>; admission?: {status?:string;environmentDigest?:string} } | undefined;
+    const objects = Array.isArray(row.objects) ? row.objects : [];
+    const commit = objects.find(object => object?.type === 'commit' && object.sha === row.commit_sha);
+    if (!latest || canonical(latest.identity) !== canonical(packet.identity) || !result?.exactRevision
+      || result.exactRevision.commitSha !== row.commit_sha || result.exactRevision.treeSha !== row.tree_sha
+      || !commit || result.exactRevision.commitObject !== commit.content || result.admission?.status !== 'passed'
+      || !Array.isArray(result.checks) || !Array.isArray(result.executions) || !result.expectedCases) throw stale();
+    for (const id of required) {
+      const definitions = current.checks.filter(check => check.id === id && check.mandatory);
+      const observations = result.executions.filter(execution => execution.checkId === id);
+      const recorded = result.checks.filter(check => check.id === id);
+      if (definitions.length !== 1 || observations.length !== 1 || recorded.length !== 1) throw stale();
+      const check = definitions[0], execution = observations[0], definition = recorded[0];
+      const {cases, ...withoutCases} = check;
+      const {nodeIds: _nodes, ...assertedDefinition} = check;
+      if (!controls.some(control => control.checks.some(entry => entry.id === id && entry.digest === verificationDigest(assertedDefinition)))
+        || !cases.length || result.expectedCases[id] !== cases.length || execution.executedTests !== cases.length
+        || execution.collector !== 'trusted_runner' || execution.status !== 'completed' || execution.result !== 'passed' || execution.exitCode !== 0
+        || definition.definitionDigest !== verificationDigest(withoutCases) || definition.oracleDigest !== verificationDigest(cases)
+        || definition.environmentDigest !== result.admission.environmentDigest
+        || ['definitionDigest','oracleDigest','environmentDigest','dependencyDigest'].some(key => execution[key] !== definition[key])) throw stale();
+    }
+}
+
 export function createHumanDecision({ database, intake, acceptance }: Dependencies) {
  async function query(sql: string, values: unknown[]) {
   try { return await database.query(sql, values); } catch { throw new IntakeError(503, 'Decision storage is unavailable.'); }
@@ -69,38 +105,7 @@ export function createHumanDecision({ database, intake, acceptance }: Dependenci
     if (value.deepInspection !== true) throw stale();
     if (!acceptance) throw stale();
     const current = await whileActive(() => acceptance(owner,itemId,candidateId,signal),signal);
-    const manifest = current.manifest;
-    if (manifest.status !== 'operator_asserted' || canonical(manifest) !== canonical(packet.requiredManifest)
-      || manifest.repositoryId !== item.snapshot.repositoryId || manifest.baseSha !== row.base_sha
-      || manifest.policyVersion !== policy.policy.version || canonical(current.assessment.identity) !== canonical(packet.identity)) throw stale();
-    const controls = manifest.controls.filter(control => control.applicability === 'applicable');
-    const required = new Set(controls.flatMap(control => control.checks.map(check => check.id)));
-    if (!controls.length || !required.size) throw stale();
-    if (current.assessment.verifications?.some(record => canonical(record.identity) === canonical(packet.identity)
-      && record.result.executions.some(execution => required.has(execution.checkId) && execution.result === 'failed'))) throw stale();
-    const latest = current.assessment.verifications?.at(-1);
-    const result = latest?.result as unknown as { exactRevision?: {commitSha?:string;treeSha?:string;commitObject?:string}; expectedCases?: Record<string,number>; checks?: Array<Record<string,unknown>>; executions?: Array<Record<string,unknown>>; admission?: {status?:string;environmentDigest?:string} } | undefined;
-    const objects = Array.isArray(row.objects) ? row.objects : [];
-    const commit = objects.find(object => object?.type === 'commit' && object.sha === row.commit_sha);
-    if (!latest || canonical(latest.identity) !== canonical(packet.identity) || !result?.exactRevision
-      || result.exactRevision.commitSha !== row.commit_sha || result.exactRevision.treeSha !== row.tree_sha
-      || !commit || result.exactRevision.commitObject !== commit.content || result.admission?.status !== 'passed'
-      || !Array.isArray(result.checks) || !Array.isArray(result.executions) || !result.expectedCases) throw stale();
-    for (const id of required) {
-      const definitions = current.checks.filter(check => check.id === id && check.mandatory);
-      const observations = result.executions.filter(execution => execution.checkId === id);
-      const recorded = result.checks.filter(check => check.id === id);
-      if (definitions.length !== 1 || observations.length !== 1 || recorded.length !== 1) throw stale();
-      const check = definitions[0], execution = observations[0], definition = recorded[0];
-      const {cases, ...withoutCases} = check;
-      const {nodeIds: _nodes, ...assertedDefinition} = check;
-      if (!controls.some(control => control.checks.some(entry => entry.id === id && entry.digest === verificationDigest(assertedDefinition)))
-        || !cases.length || result.expectedCases[id] !== cases.length || execution.executedTests !== cases.length
-        || execution.collector !== 'trusted_runner' || execution.status !== 'completed' || execution.result !== 'passed' || execution.exitCode !== 0
-        || definition.definitionDigest !== verificationDigest(withoutCases) || definition.oracleDigest !== verificationDigest(cases)
-        || definition.environmentDigest !== result.admission.environmentDigest
-        || ['definitionDigest','oracleDigest','environmentDigest','dependencyDigest'].some(key => execution[key] !== definition[key])) throw stale();
-    }
+    assertAcceptanceEvidence(packet,row,item,current);
    }
    await whileActive(() => intake.get(owner,itemId,signal),signal);
    const now=new Date(), id=randomUUID();
