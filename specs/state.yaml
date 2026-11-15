@@ -12,16 +12,9 @@ project_cycle:
     to_phase: 4
     status: authorized
 handoff:
-  next_skill: release-branch
-  last_step_completed: Assembled impact/review API, component UI, storage, historical provenance and gap-bound
-    regressions verified.
-  summary: Current feature source6a21f65 in /tmp/tripsit-e01s01 on feat/impact-review-workflow is ready
-    for human review in PR9; do not merge without human approval. Public JS/TS file impact, manual independently
-    configured review, expiring review history and revision-bound packets are wired into candidate previews.
-    Reviewer is not configured, so live independent review remains unavailable. No execution, decisions,
-    publication, exact token mapping or private admission claims. Next implementation can parallelize
-    controlled-runner admission/collection, authenticated human decisions and independently labeled evaluation
-    fixtures, with separate worktrees and a central state plan committed before dispatch.
+  next_skill: develop-tdd
+  last_step_completed: Private snapshot/source access fix verified; agentic issue loop and graphical assessment implementation dispatched in isolated worktrees.
+  summary: Follow product/VISION_LATEST.yaml and existing story acceptance. Agent drives issue implementation, impact analysis, assessments and evidence; human participates for guidance/escalation/final decisions. Current work removes manual file selection, adds visual graph and keeps requirement/node-linked assessments. Existing Gemma proxy is used without new deployment. Snapshot fix is being released as a small ready PR independently; broader PR9 remains work in progress. Never mark full stories done from unit or presentation checks alone.
 integration:
   hands_free: Open a PR and obtain human approval before merging.
   interactive: No blanket human-approval requirement; follow explicit user authorization.
@@ -42,8 +35,8 @@ user_constraints:
   database_testing: User explicitly authorized testing in configured production database and manually
     approved exact app-owned 001_work_items.sql migration; applied transactionally, auth tables unchanged.
     Keep test fixtures isolated and clean up.
-active_epic: e02
-active_story: e02s01
+active_epic: e01
+active_story: e01s02
 epic_cycle:
   step: 4
   story_bcps: 5
@@ -74,7 +67,7 @@ vcs:
   branch: feat/impact-review-workflow
   worktree: /tmp/tripsit-e01s01
   primary_root: /home/u786288/projects/ohjunction/tripsit
-  checkpoint: 6a21f65
+  checkpoint: eb90f4f
 verification:
   tooling_review:
     round: 2
@@ -524,4 +517,12 @@ agentic_implementation_plan:
   orchestration: Existing typed coordinator for issue/revision, candidate, graph and review artifacts; exact artifact identities invalidate stale assessments. Model advice and graph inform optional revision requests; human remains decision owner.
   harness_decision: Evaluate Pi/OpenCode SDK support but avoid a new general execution/runtime dependency for the current read/edit-only tools. LangGraph becomes useful for durable resumed multi-worker runs, not required for this bounded SvelteKit flow.
   verify: Native multi-round agent fixtures including stale/private/owner/cancellation, actual Gemma synthetic text probe, graphical desktop/mobile review flow and frontend check/build.
+vision_alignment:
+  priority: User explicitly says skills guidance and VISION are supreme. Product vision is unchanged; skill build/verify/audit/release gates govern delivery.
+  workflow: Autonomous issue implementation -> change-impact graph -> independent requirement/node-linked critique -> evidence/priority assessment -> agent-guided human inspection, revision or final decision.
+  correction: Do not reduce the product to a manual review tool or erase structured graph-linked assessments. Plain advice is a human-readable view, not a replacement for claims/proposed checks/evidence.
+  generation: Returned text drives implementation; optional generation uncertainty stays separate and cannot block valid implementation. Reviewer probabilities are ignored, including temporary Gemma reviewer.
+  current_increment: No new service deployment; use existing Gemma proxy. Keep unrun verification explicit, rather than scope away planned verification.
+  delivery: Release verified functional slices immediately as ready PRs with actual checks and review; do not merge without human approval.
+  release_now: Private snapshot/source fix c49c747+db925a2 independently based on current main; graph/agent implementation remains parallel.
 
