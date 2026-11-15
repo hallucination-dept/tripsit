@@ -198,10 +198,11 @@ test('requests JSON object output and ignores provider token probabilities', asy
   if (result.status === 'completed') assert.deepEqual(result.claims, schema().claims);
 });
 
-test('private source is refused without dispatch', async () => {
+test('authorized private source uses the configured reviewer and retains disclosure', async () => {
  let calls = 0;
  const result = await createReviewer({ ...configuration, fetcher: async () => { calls++; return response(body()); } }).review({ ...input(), private: true }, new AbortController().signal);
- assert.equal(result.status, 'unavailable'); assert.equal(calls, 0);
+ assert.equal(result.status, 'completed'); assert.equal(calls, 1);
+ if (result.status === 'completed') assert.equal(result.retentionDisclosure, configuration.retentionDisclosure);
 });
 
 test('linked critic preserves validated graph findings alongside explicit or derived human advice', async () => {

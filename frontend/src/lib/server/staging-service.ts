@@ -15,7 +15,7 @@ export function createStaging({ intake, generation, github, database }: Dependen
     async stage(owner: string, itemId: string, candidateId: string, signal: AbortSignal) {
       if (!owner) throw new IntakeError(401, 'Sign in before staging a candidate.');
       const item = await whileActive(() => intake.get(owner, itemId, signal), signal);
-      if (item.snapshot.private !== false) throw new IntakeError(403, 'Private candidate staging is unavailable.');
+      if (typeof item.snapshot.private !== 'boolean') throw new IntakeError(403, 'Repository access is unavailable or invalid.');
       const stored = await whileActive(() => generation.get(owner, itemId, candidateId, signal), signal);
       const tree = await whileActive(() => github.stagingTree(item.snapshot, signal), signal);
       const stage = stageCandidate(tree.baseSha, tree.treeSha, tree.entries, stored.candidate, item.createdAt);

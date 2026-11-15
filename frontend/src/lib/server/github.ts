@@ -153,7 +153,6 @@ export function createGitHub(options: Options) {
   return {
     stagingTree: async (snapshot: IssueSnapshot, signal: AbortSignal) => {
       const { repo, entries, treeSha } = await frozenTree(snapshot, signal);
-      if (snapshot.private !== false || repo.private !== false) throw new IntakeError(403, 'Private candidate staging is unavailable.');
       const commit = await request(`/repos/${repo.repository}/git/commits/${snapshot.baseSha}`, repo.token, signal);
       const tree = object(commit.tree);
       if (commit.sha !== snapshot.baseSha || typeof treeSha !== 'string' || !/^[a-f0-9]{40}$/.test(treeSha) || tree.sha !== treeSha)

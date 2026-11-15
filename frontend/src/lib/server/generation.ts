@@ -103,8 +103,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
     return item;
   }
   async function allowDispatch(item: WorkItem, signal: AbortSignal) {
-    if (item.snapshot.private !== false || await whileActive(() => dependencies.github.reviewerVisibility(item.snapshot.repository, item.snapshot.repositoryId, signal), signal) !== false)
-      throw new GenerationError(403, 'Private-source generation requires owner authorization and is unavailable.');
+    if (typeof await whileActive(() => dependencies.github.reviewerVisibility(item.snapshot.repository, item.snapshot.repositoryId, signal), signal) !== 'boolean')
+      throw new GenerationError(403, 'Repository access is unavailable or invalid.');
   }
   async function autonomous(owner: string, itemId: string, item: WorkItem, signal: AbortSignal): Promise<StoredCandidate> {
     const identity = JSON.stringify(item);
