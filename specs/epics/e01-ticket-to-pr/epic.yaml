@@ -2,8 +2,8 @@ id: e01
 title: Issue to Gemma implementation PR
 type: feat
 context: domain
-wsjf: 1.208
-total_bcps: 24
+wsjf: 1.381
+total_bcps: 21
 status: in_progress
 stories:
 - id: e01s01
@@ -27,12 +27,6 @@ stories:
 - id: e01s03
   title: Publish an issue-linked implementation PR safely
   bcps: 5
-  delta: MODIFIED
+  delta: ADDED
   spec: e01s03-publish-pr.md
   tasks: e01s03-tasks.yaml
-- id: e01s05
-  title: Publish a draft PR with linked review evidence
-  bcps: 3
-  delta: ADDED
-  spec: e01s05-draft-review-pr.md
-  tasks: e01s05-tasks.yaml

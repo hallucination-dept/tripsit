@@ -27,14 +27,6 @@ Recheck access, base/head and installation before writes; reconcile retries to a
 ### ADDED
 Publish generated exact blobs and revision-bound review packet as a branch/PR linked to the originating issue using repository-scoped short-lived write authority in the trusted path only.
 
-### MODIFIED — GitHub and TripSit interaction
-
-**Before:** Publication described a PR with revision-bound evidence and depended on the human-decision story, without defining draft-first review or GitHub conversation actions.
-
-**After:** Explicitly publish a draft after packet availability, with one idempotent App-owned evidence summary and authenticated deep links. Reconcile acceptance/readiness separately after e04s02. Only bounded owner-authored explain/revise commands launch work; revision creates an immutable candidate and a separate owner action publishes it after expected-head checks.
-
-Contract: [GitHub and TripSit review interaction](../e04-accountability/github-review-interaction.md).
-
 ## 6. Inputs
 
 Frozen work item, authenticated owner and trusted policy; repository/model content is untrusted data.
@@ -45,7 +37,7 @@ Publish generated exact blobs and revision-bound review packet as a branch/PR li
 
 ## 8. Dependencies
 
-e01s05 creates the draft before e04s02 records PR-bound human inspection. This story reconciles later candidate publication updates and readiness after both prerequisites. No prior accepted decision is required for e01s05 draft publication.
+e04s02
 
 ## 9. Architecture
 
@@ -79,13 +71,6 @@ Preserve existing authenticated review route and review/tokens response and fall
 4. Implement the named fail-closed live gate in specs/experiments/live_gates.py; configured real service must pass before dependent live behavior. Missing credentials/control checks fail rather than skip. Record evidence without secrets. Ref: ADR 0003. → verify: `python3 specs/experiments/live_gates.py e01s03 --require-configured`
 5. Save revision-bound UAT evidence with fixture identifiers, actual commands, statuses and limitations; reject an empty evidence record. → verify: `test -s specs/verifications/e01s03.md`
 
-Draft creation and the initial evidence surface are owned by e01s05; this story owns commands, explicit updates and final readiness.
-
-### GitHub interaction implementation additions
-
-6. Admit signed newly created owner explain/revise commands; validate identity/current packet, deduplicate before costs, enforce bounds and reuse existing inference admission. Return evidence-linked explanation or new inert candidate, with separate publication. Include no new security findings in affected paths. → verify: `cd frontend && node --experimental-strip-types tests/github-commands.test.ts`
-7. Integrate event/review invalidation and summary/status synchronization; exercise authorized real draft, signed command redelivery, dashboard login/deep links, human-head conflict and stale-decision refusal. Include no new security findings in affected paths; configured checks must not skip missing controls. → verify: `cd frontend && node --experimental-strip-types tests/github-packet.test.ts && node --experimental-strip-types tests/github-commands.test.ts && node --experimental-strip-types tests/decision-sync.test.ts && npm run check && npm run build`
-
 ## 16. Test fixtures
 
 SC-e01s03-P0-01: A real GitHub issue produces one linked implementation PR containing exact candidate blobs and an evidence summary; publication does not imply acceptance-ready.
@@ -106,23 +91,6 @@ Scenario: Edge or denial
   Given adversarial or unavailable inputs
   When the operation is attempted
   Then Permission denial, lost response/retry, changed base/head, stale decision and bypass-capable branch rules produce refusal or protection-unverified, never a protected-ready claim.
-```
-
-```gherkin
-Scenario: Draft before human acceptance
-  Given an authorized owner has a packet with visible missing evidence and no accepted decision
-  When the owner explicitly publishes a draft
-  Then exact candidate blobs, issue link, one App-owned evidence summary and packet deep links appear without an acceptance-ready claim
-
-Scenario: Authorized conversation action
-  Given a current packet finding and fresh owner repository access exist
-  When a signed created comment requests explain or revise using the packet digest and finding ID
-  Then one bounded action produces an evidence-linked reply or new candidate; no automatic publication, approval or merge occurs
-
-Scenario: Replay, stale command and human head change
-  Given a command was delivered before or its packet/head is no longer current
-  When a retry, bot event, edited command, unauthorized actor or stale worker is received
-  Then no duplicate model dispatch or summary occurs, no human changes are overwritten and synchronization remains explicitly stale or pending
 ```
 
 ## 18. Verification script

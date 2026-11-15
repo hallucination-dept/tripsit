@@ -16,7 +16,7 @@ in_scope:
   - id: e01s04
     outcome: Review intent, functional expectations, and relevant non-functional constraints against applicable versioned public security/quality controls, exposing applicability and evidence gaps.
   - id: e01s03
-    outcome: TripSit opens an implementation PR linked to the originating GitHub issue, with the generated change, a concise revision-bound evidence summary and authenticated links into the interactive TripSit packet. Explicit owner explain/revise PR commands produce bounded replies or new candidates; a named human retains publication and merge decisions.
+    outcome: TripSit opens an implementation PR linked to the originating GitHub issue, with the generated change and revision-bound review evidence; a named human retains the merge decision.
   - id: e02s01
     outcome: A change-impact graph connects changed code to supported callers, affected behavior, requirements, and checks, exposing unsupported relationships.
   - id: e02s02
@@ -26,15 +26,13 @@ in_scope:
   - id: e03s02
     outcome: Controlled execution produces revision-bound evidence for existing checks and independently proposed checks without production secrets or merge authority.
   - id: e04s01
-    outcome: A review packet distinguishes impact, uncertainty, verified claims, failures, missing evidence, and required human inspection, with exact-revision GitHub deep links and interactive graph plus keyboard trace navigation through requirements, claims, checks, executions and downstream source.
+    outcome: A review packet distinguishes impact, uncertainty, verified claims, failures, missing evidence, and required human inspection.
   - id: e04s02
-    outcome: A named owner records acceptance, revision, or escalation with inspection outcomes, unchecked scope, residual risk, and timestamp; GitHub review observations synchronize without replacing the required named-human inspection, and decision status synchronizes back to the PR; AI cannot approve or merge.
+    outcome: A named owner records acceptance, revision, or escalation with inspection outcomes, unchecked scope, residual risk, and timestamp; AI cannot approve or merge.
   - id: e05s01
     outcome: A repeatable evaluation compares graph-only, uncertainty-only, and combined verification prioritization under an equal budget.
   - id: e05s02
     outcome: Owners can record spot-check findings and escaped defects by code area, with increased scrutiny after an escape.
-  - id: e01s05
-    outcome: An authorized owner publishes one draft implementation PR before acceptance, with exact candidate blobs, a safe evidence summary and authenticated revision-bound dashboard links. Draft publication never implies acceptance/readiness.
 out_of_scope:
   - item: Guaranteed complete analysis of every language, framework, and GitHub repository
     reason: Target common languages where the techniques can be validated; report unsupported graph relationships and unavailable checks explicitly.
