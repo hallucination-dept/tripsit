@@ -15,6 +15,10 @@ export interface CandidateOutput {
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const encoder = new TextEncoder();
 
+export function generationSettingsDigest(settings: Record<string, string | number | boolean | null>): string {
+  return createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(settings).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)))).digest('hex');
+}
+
 function invalid(): never {
   throw new Error('Invalid candidate output');
 }

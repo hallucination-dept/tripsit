@@ -45,6 +45,15 @@ test('loads real unchanged caller impact, policy, scoped reviews and exact sourc
   assert.deepEqual(assessment.generation, { model: 'SECRET_CONFIDENCE', settingsDigest: createHash('sha256').update(JSON.stringify(f.candidate.candidate.settings)).digest('hex'), mapping: f.candidate.candidate.mapping, observedTokens: 1 });
 });
 
+test('settings identity is stable across JSONB key order', async () => {
+  const f = fixture();
+  f.candidate.candidate.settings = { z: 1, a: true };
+  const first = await f.service.load('owner', itemId, candidateId, f.signal);
+  f.candidate.candidate.settings = { a: true, z: 1 };
+  const second = await f.service.load('owner', itemId, candidateId, f.signal);
+  assert.equal(first.generation.settingsDigest, second.generation.settingsDigest);
+});
+
 test('denies invalid IDs, unauthorized owners, malformed and expired snapshots before context/reviewer', async () => {
   for (const mode of ['id', 'owner', 'malformed', 'expired']) {
     const f = fixture(); if (mode === 'malformed') f.item.snapshot.private = undefined as unknown as boolean; if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();

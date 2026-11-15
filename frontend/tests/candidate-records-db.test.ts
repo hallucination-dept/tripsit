@@ -5,6 +5,7 @@ import test from 'node:test';
 import { Pool } from 'pg';
 import { createRecords, testDatabaseUrl } from '../src/lib/server/records.ts';
 import { createCandidateRecords } from '../src/lib/server/candidate-records.ts';
+import { generationSettingsDigest, mapCandidateTokenBytes } from '../src/lib/server/candidate-output.ts';
 
 test('disposable PostgreSQL retains exact candidate bytes and cascades expired source references', async () => {
   const connectionString = testDatabaseUrl(process.env.TRIPSIT_TEST_DATABASE_URL);
@@ -40,6 +41,19 @@ test('disposable PostgreSQL retains exact candidate bytes and cascades expired s
       const created = await store.create('owner-a', item.id, candidate);
       assert.deepEqual(created.candidate, candidate);
       assert.deepEqual(await store.get('owner-a', item.id, created.id), created);
+      const exactRaw = new TextEncoder().encode(JSON.stringify({ files: [{ path: 'snow.ts', originalBlob: null, content: new TextDecoder().decode(content) }] }));
+      const observations = { status: 'observed' as const, tokens: [{ token: 'fixture', bytes: Array.from(exactRaw), logprob: -1 }] };
+      const settings = { z: 1, a: true };
+      const mapped = mapCandidateTokenBytes(exactRaw, new Map([['snow.ts', null]]), observations.tokens, candidate.model, generationSettingsDigest(settings));
+      assert.equal(mapped.status, 'exact'); if (mapped.status !== 'exact') throw Error('fixture mapping unavailable');
+      const exact = { ...candidate, rawOutput: exactRaw, outputDigest: createHash('sha256').update(exactRaw).digest('hex'),
+        settings, observations, files: [{ ...candidate.files[0], path: 'snow.ts' }],
+        tokenByteMapping: { ...mapped, mode: 'direct' as const, observationsDigest: createHash('sha256').update(JSON.stringify(observations)).digest('hex') } };
+      const exactCreated = await store.create('owner-a', item.id, exact);
+      assert.deepEqual((await store.get('owner-a', item.id, exactCreated.id))?.candidate.tokenByteMapping, exact.tokenByteMapping);
+      await client.query(`UPDATE tripsit_candidate_payloads SET payload = jsonb_set(payload, '{tokenByteMapping,files,0,segments,0,fileEnd}', '999') WHERE candidate_id = $1`, [exactCreated.id]);
+      await assert.rejects(() => store.get('owner-a', item.id, exactCreated.id), { status: 503 });
+      await client.query('DELETE FROM tripsit_candidates WHERE id = $1', [exactCreated.id]);
       assert.equal(await store.get('owner-b', item.id, created.id), null);
       assert.equal(await store.get('owner-a', otherItem.id, created.id), null);
       for (const [owner, selected, changed] of [

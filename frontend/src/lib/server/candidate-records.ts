@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { IntakeError } from './intake.ts';
 import { generationObservations } from './generation.ts';
-import { mapCandidateTokenBytes } from './candidate-output.ts';
+import { generationSettingsDigest, mapCandidateTokenBytes } from './candidate-output.ts';
 import type { GeneratedCandidate, StoredCandidate } from './generation.ts';
 
 type Database = { query(sql: string, values?: unknown[]): Promise<{ rows: Record<string, unknown>[] }> };
@@ -40,7 +40,7 @@ function serialize(candidate: GeneratedCandidate): string {
     if (!stored || Buffer.byteLength(JSON.stringify(stored)) > 262_500 || !['direct', 'agent'].includes(stored.mode) || observations?.status !== 'observed')
       throw new IntakeError(400, 'Candidate token mapping is invalid.');
     const mapped = mapCandidateTokenBytes(candidate.rawOutput, new Map(candidate.files.map(file => [file.path, file.originalBlob])),
-      observations.tokens, candidate.model, sha(new TextEncoder().encode(JSON.stringify(Object.fromEntries(Object.entries(candidate.settings).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0))))), stored.mode);
+      observations.tokens, candidate.model, generationSettingsDigest(candidate.settings), stored.mode);
     if (mapped.status !== 'exact' || !isDeepStrictEqual(stored, { ...mapped, mode: stored.mode,
       observationsDigest: sha(new TextEncoder().encode(JSON.stringify(observations))) })
       || mapped.files.some((file, index) => file.path !== files[index]?.path || file.blobSha !== files[index]?.blobSha))

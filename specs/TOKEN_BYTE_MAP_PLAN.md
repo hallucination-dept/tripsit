@@ -27,3 +27,9 @@ Verification: `cd frontend && node --experimental-strip-types tests/candidate-ou
    `cd frontend && node --experimental-strip-types tests/candidate-output.test.ts && node --experimental-strip-types tests/model-generation.test.ts && npm run check && npm run build`.
    The database integration test requires an explicitly disposable local
    `TRIPSIT_TEST_DATABASE_URL`; no production or live service is used.
+4. Share canonical settings hashing with assessment so insertion order and
+   PostgreSQL JSONB key ordering cannot make the same revision incomparable.
+   Verify: `cd frontend && node --experimental-strip-types tests/assessment.test.ts && node --experimental-strip-types tests/candidate-records.test.ts`.
+   Add an exact-mapping round-trip and tamper check to the disposable PostgreSQL
+   candidate test; verify with `TRIPSIT_TEST_DATABASE_URL` set to a disposable
+   local database and `cd frontend && node --experimental-strip-types tests/candidate-records-db.test.ts`.

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { decodeCandidateOutput, mapCandidateTokenBytes, type CandidateOutput, type TokenByteMapping } from './candidate-output.ts';
+import { decodeCandidateOutput, generationSettingsDigest, mapCandidateTokenBytes, type CandidateOutput, type TokenByteMapping } from './candidate-output.ts';
 import { IntakeError, whileActive, type IssueSnapshot } from './intake.ts';
 import type { WorkItem } from './records.ts';
 
@@ -80,7 +80,7 @@ export function generationObservations(value: unknown): GenerationObservations {
 function tokenMapping(candidate: GeneratedCandidate, mode: 'direct' | 'agent'): GeneratedCandidate['tokenByteMapping'] {
   if (candidate.observations?.status !== 'observed') return undefined;
   const mapping = mapCandidateTokenBytes(candidate.rawOutput, new Map(candidate.files.map(file => [file.path, file.originalBlob])),
-    candidate.observations.tokens, candidate.model, createHash('sha256').update(JSON.stringify(Object.fromEntries(Object.entries(candidate.settings).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)))).digest('hex'), mode);
+    candidate.observations.tokens, candidate.model, generationSettingsDigest(candidate.settings), mode);
   // shortcut: mappings above 256 KiB stay unavailable, upgrade when larger payloads are supported.
   if (mapping.status !== 'exact' || encoder.encode(JSON.stringify(mapping)).length > 262_144) return undefined;
   return { ...mapping, mode, observationsDigest: createHash('sha256').update(JSON.stringify(candidate.observations)).digest('hex') };
