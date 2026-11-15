@@ -70,3 +70,33 @@ test('authoritative issue access denial removes only that repository while a ses
  assert.deepEqual(discovery.state.repositories,[repositories[1]]);assert.equal(discovery.state.repository,'');assert.deepEqual(discovery.state.issues,[]);
  sessionDenied=true;await discovery.refresh();assert.deepEqual(discovery.state.repositories,[]);assert.equal(discovery.state.repository,'');discovery.stop();
 });
+
+test('repository and issue requests each receive a full deadline', async () => {
+ const original = AbortSignal.timeout;
+ AbortSignal.timeout = delay => original([70_000, 110_000].includes(delay) ? 150 : delay);
+ const delay = (signal: AbortSignal) => new Promise<void>((resolve, reject) => {
+  const timer = setTimeout(resolve, 100);
+  signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('Timed out', 'TimeoutError')); }, { once: true });
+ });
+ try {
+  const discovery = createIssueDiscovery({ fetcher: async (url, options) => {
+   await delay(options!.signal as AbortSignal);
+   return response(String(url).includes('repositories') ? { repositories, complete: true } : { issues: [issue(1)], complete: true });
+  }, schedule: () => () => {} });
+  await discovery.start('owner');
+  assert.equal(discovery.state.error, ''); assert.equal(discovery.state.issueNumber, 1);
+  discovery.stop();
+ } finally { AbortSignal.timeout = original; }
+});
+
+test('a late response from a transport that ignores a request deadline is discarded', async () => {
+ const original = AbortSignal.timeout;
+ AbortSignal.timeout = delay => original([70_000, 110_000].includes(delay) ? 30 : delay);
+ let requests = 0;
+ try {
+  const discovery = createIssueDiscovery({ fetcher: async () => { requests++; await new Promise(resolve => setTimeout(resolve, 60)); return response({ repositories, complete: true }); }, schedule: () => () => {} });
+  await discovery.start('owner');
+  assert.equal(requests, 1); assert.deepEqual(discovery.state.repositories, []); assert(discovery.state.error);
+  discovery.stop();
+ } finally { AbortSignal.timeout = original; }
+});

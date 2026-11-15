@@ -407,3 +407,28 @@ test('autonomous rechecks access before each model turn', async () => {
   await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
   assert.equal(f.calls.model, 1); assert.equal(f.calls.store, 0);
 });
+
+test('candidate model timeout retains a safe stage-specific message', async () => {
+ const f = fixture();
+ f.dependencies.model.generate = async () => { throw new IntakeError(504, 'secret upstream detail'); };
+ await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal), (error: IntakeError) =>
+  error.status === 504 && error.message === 'Candidate model exceeded its response deadline.');
+ assert.equal(f.calls.store, 0);
+});
+
+test('overall candidate deadline is reported separately from the model deadline', async () => {
+ const original = AbortSignal.timeout;
+ let timer: ReturnType<typeof setTimeout> | undefined;
+ AbortSignal.timeout = delay => {
+  if (delay !== 300_000) return original(delay);
+  const controller = new AbortController();
+  timer = setTimeout(() => controller.abort(new DOMException('Expired', 'TimeoutError')), 20);
+  return controller.signal;
+ };
+ try {
+  const f = agentFixture(); f.dependencies.model.generate = async () => new Promise(() => {});
+  await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal), (error: IntakeError) =>
+   error.status === 504 && error.message === 'Candidate generation exceeded its overall time limit.');
+  assert.equal(f.calls.store, 0);
+ } finally { AbortSignal.timeout = original; if (timer) clearTimeout(timer); }
+});

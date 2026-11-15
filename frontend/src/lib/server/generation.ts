@@ -93,6 +93,7 @@ export function createGeneration(dependencies: GenerationDependencies) {
     try { return await whileActive(() => action(active), active); }
     catch (error) {
       if (error instanceof GenerationError) throw error;
+      if (active.aborted && active.reason?.name === 'TimeoutError') throw new GenerationError(504, 'Candidate generation exceeded its overall time limit.');
       const status = error instanceof IntakeError && [400, 401, 403, 404, 409, 410, 413, 429, 503, 504].includes(error.status) ? error.status : 502;
       deny(status);
     }
@@ -105,6 +106,14 @@ export function createGeneration(dependencies: GenerationDependencies) {
   async function allowDispatch(item: WorkItem, signal: AbortSignal) {
     if (typeof await whileActive(() => dependencies.github.reviewerVisibility(item.snapshot.repository, item.snapshot.repositoryId, signal), signal) !== 'boolean')
       throw new GenerationError(403, 'Repository access is unavailable or invalid.');
+  }
+  async function generate(prompt: GenerationPrompt, signal: AbortSignal): Promise<ModelGeneration> {
+    try { return await whileActive(() => dependencies.model.generate(prompt, signal), signal); }
+    catch (error) {
+      if (!signal.aborted && error instanceof IntakeError && error.status === 504)
+        throw new GenerationError(504, 'Candidate model exceeded its response deadline.');
+      throw error;
+    }
   }
   async function autonomous(owner: string, itemId: string, item: WorkItem, signal: AbortSignal): Promise<StoredCandidate> {
     const identity = JSON.stringify(item);
@@ -135,7 +144,7 @@ export function createGeneration(dependencies: GenerationDependencies) {
       if (encoder.encode(data).byteLength > 786_432) deny(413);
       await fresh();
       await allowDispatch(item, signal);
-      const observation = await whileActive(() => dependencies.model.generate({ instruction: agentInstruction, data }, signal), signal);
+      const observation = await generate({ instruction: agentInstruction, data }, signal);
       await fresh();
       validateObservation(observation);
       if (observation.rawOutput.byteLength === 0 || observation.rawOutput.byteLength > 1_048_576) deny();
@@ -222,7 +231,7 @@ export function createGeneration(dependencies: GenerationDependencies) {
         const admitted = await readItem(owner, itemId, active);
         if (JSON.stringify(admitted) !== identity) deny(409);
         await allowDispatch(admitted, active);
-        const observation = await whileActive(() => dependencies.model.generate({ instruction, data }, active), active);
+        const observation = await generate({ instruction, data }, active);
         validateObservation(observation);
         const decoded = decodeCandidateOutput(observation.rawOutput, expected);
         const candidate: GeneratedCandidate = {

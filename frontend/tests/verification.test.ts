@@ -1,12 +1,24 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { configuredChecks, createVerification, fileTokenSignal } from '../src/lib/server/verification.ts';
+import { configuredChecks, createVerification, fileTokenSignal, mandatoryInventory } from '../src/lib/server/verification.ts';
 import { mapCandidateTokenBytes } from '../src/lib/server/candidate-output.ts';
 import { prioritizeChecks } from '../src/lib/server/priorities.ts';
 import { createHash } from 'node:crypto';
 const revision = { ownerId: 'owner', itemId: '11111111-1111-1111-1111-111111111111', candidateId: '22222222-2222-2222-2222-222222222222', baseSha: 'a'.repeat(40), candidateDigest: 'b'.repeat(64), snapshotDigest: 'c'.repeat(64), policyVersion: 'v1' };
 const manifest = JSON.stringify([{ repositoryId: 123, baseSha: revision.baseSha, checks: [{ id: 'caller-regression', language: 'python', path: 'caller.py', export: 'call', cases: [{ args: [2], expected: 4 }], requirementIds: ['R1'], mandatory: true, impact: 'high', timeoutMs: 1000 }] }]);
 const context = { identity: revision, repositoryId: 123, files: [{ path: 'caller.py', original: 'def call(x): return x*2', replacement: 'def call(x): return x*3' }], nodes: [{ id: 'node1', path: 'caller.py' }], requirements: [{ id: 'R1', mandatory: false }], comparison: { model: 'gemma', settingsDigest: 'd'.repeat(64), revision: revision.candidateDigest }, disagreements: [] as string[] };
+test('mandatory inventory distinguishes configured checks from missing policy and runner evidence', () => {
+ const policy = [{id:'R1',mandatory:true,applicability:'unresolved' as const}, {id:'R2',mandatory:true,applicability:'applicable' as const}, {id:'R3',mandatory:true,applicability:'not_applicable' as const}];
+ const inventory = mandatoryInventory({manifest},context,policy);
+ assert.equal(inventory.configurationStatus,'available'); assert.equal(inventory.runnerAvailable,false);
+ assert.deepEqual(inventory.checks,[{id:'caller-regression',requirementIds:['R1']}]);
+ assert.deepEqual(inventory.missingRequirements,['R2']); assert.deepEqual(inventory.unresolvedRequirements,['R1']);
+ for (const bad of [undefined,'{',JSON.stringify([])]) {
+  const unavailable = mandatoryInventory({manifest:bad},context,policy);
+  assert.equal(unavailable.configurationStatus,'unavailable'); assert.deepEqual(unavailable.checks,[]);
+  assert.deepEqual(unavailable.missingRequirements,['R1','R2']); assert.equal(unavailable.runnerAvailable,false);
+ }
+});
 test('file signals require exact candidate revision, full file node and contained token bytes', () => {
  const content = context.files[0].replacement;
  const raw = new TextEncoder().encode(JSON.stringify({files:[{path:'caller.py',originalBlob:null,content}]}));

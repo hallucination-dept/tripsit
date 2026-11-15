@@ -36,6 +36,18 @@ test('view binds actual policy/model/token identity and omits raw files with hon
   assert(!Object.hasOwn(result, 'files'));
 });
 
+test('configured mandatory inventory never fabricates executions or requirement success', () => {
+  const input = fixture();
+  const id = input.policy.requirements.find(row => row.mandatory)!.id;
+  const inventory = {configurationStatus:'available' as const,runnerAvailable:false,checks:[{id:'auth-check',requirementIds:[id]}],missingRequirements:[],unresolvedRequirements:[id]};
+  const view = assessmentView('owner',input,false,false,inventory);
+  assert.deepEqual(view.mandatoryInventory,inventory);
+  assert.equal(view.packet.executions.length,0);
+  assert.equal(view.packet.verification.status,'unavailable');
+  assert.equal(view.packet.requirementCoverage.find(row => row.id === id)?.status,'unavailable');
+  assert(view.packet.gaps.some(gap => gap.kind === 'missing_check' && gap.reference === id));
+});
+
 test('exact token mapping is reported only for matching current model, settings, revision and observations', () => {
   const input = fixture();
   const observations = {status:'observed' as const,tokens:[{token:'private fixture text',bytes:[65],logprob:-1}]};
