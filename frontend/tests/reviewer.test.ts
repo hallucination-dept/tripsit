@@ -198,12 +198,11 @@ test('requests JSON object output and ignores provider token probabilities', asy
   if (result.status === 'completed') assert.deepEqual(result.claims, schema().claims);
 });
 
-test('authorized private source uses the configured reviewer without an additional consent gate', async () => {
- let calls=0;
- const result=await createReviewer({...configuration,fetcher:async(_url,options)=>{calls++;assert.equal(JSON.parse(JSON.parse(String(options!.body)).messages[1].content).private,true);return response(body());}}).review({...input(),private:true},new AbortController().signal);
- assert.equal(result.status,'completed');assert.equal(calls,1);
+test('private source is refused without dispatch', async () => {
+ let calls = 0;
+ const result = await createReviewer({ ...configuration, fetcher: async () => { calls++; return response(body()); } }).review({ ...input(), private: true }, new AbortController().signal);
+ assert.equal(result.status, 'unavailable'); assert.equal(calls, 0);
 });
-
 
 test('linked critic preserves validated graph findings alongside explicit or derived human advice', async () => {
  for (const structured of [schema(), { ...schema(), advice: 'Inspect owner.ts N1 and exercise R1 with a second owner. 雪\r\n' }]) {
@@ -234,7 +233,7 @@ test('linked assessment reads only first message content and ignores provider mo
   return response({ model: { ignored: 'provider model junk' }, token_probabilities: 'probability junk', choices: [
    { finish_reason: 'length', logprobs: 'token junk', message: { content: text } }, { message: { content: 'ignored second choice' } }
   ] });
- } }).review({ ...input(), private: true }, new AbortController().signal);
+ } }).review(input(), new AbortController().signal);
  assert.equal(result.status, 'completed'); if(result.status !== 'completed') return;
  assert.equal(result.model, configuration.model); assert.deepEqual(result.claims, schema().claims); assert.deepEqual(result.checks, schema().checks);
  assert.equal(result.responseDigest, createHash('sha256').update(text).digest('hex'));

@@ -36,6 +36,17 @@ function fixture(overrides: Record<string, unknown> = {}) {
   return { calls, github: createGitHub({ appId: '9', privateKey, accountId: '42', userToken: 'user-token', fetcher }) };
 }
 
+test('review visibility is current, reauthorized, and fails closed on invalid metadata', async () => {
+  for (const visibility of [false, true]) {
+    const { github, calls } = fixture({ '/repos/team/repo': { ...repository, private: visibility } });
+    assert.equal(await github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), visibility);
+    assert(calls.some(call => call.path === '/user'));
+    assert(calls.some(call => call.path === '/repos/team/repo/installation'));
+  }
+  await assert.rejects(() => fixture({ '/repos/team/repo': { ...repository, private: null } }).github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), IntakeError);
+  await assert.rejects(() => fixture({ '/user': { id: 99 } }).github.reviewerVisibility(snapshot.repository, snapshot.repositoryId, signal()), IntakeError);
+});
+
 test('files and context reauthorize public identity and read only exact frozen tree/blob identities', async () => {
   const { github, calls } = fixture();
   assert.deepEqual(await github.files(snapshot, signal()), [{ path: entry.path, blobSha: sha }]);

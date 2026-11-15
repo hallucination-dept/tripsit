@@ -21,6 +21,7 @@ function fixture() {
     intake: { async get(owner) { calls.intake++; if (owner !== 'owner') throw new IntakeError(404, 'secret owner data'); return structuredClone(item); } },
     generation: { async get(owner) { calls.generation++; if (owner !== 'owner') throw new IntakeError(404, 'secret candidate data'); return structuredClone(candidate); } },
     github: {
+      async reviewerVisibility() { return false; },
       async files() { return [...sources].map(([path, content]) => ({ path, blobSha: sha(content) })); },
       async context(_snapshot, paths) { calls.context++; assert(paths.length <= 8); return paths.map(path => ({ path, originalBlob: sources.has(path) ? sha(sources.get(path)!) : null, content: sources.get(path) ?? '' })); }
     },
@@ -141,9 +142,15 @@ test('verification rechecks revision after remote execution and never persists s
  await assert.rejects(f.service.verify('other',itemId,candidateId,f.signal),{status:404});assert.equal(ran,1);
 });
 
-test('authorized private assessment preserves visibility in separately prompted reviewer input', async () => {
- const f=fixture();f.item.snapshot.private=true;
- f.deps.reviewer.review=async input=>{assert.equal(input.private,true);return{status:'unavailable',reason:'Fixture only.'};};
- const assessment=await f.service.load('owner',itemId,candidateId,f.signal);assert.equal(assessment.repositoryPrivate,true);
- await f.service.review('owner',itemId,candidateId,f.signal);assert.equal(f.calls.append,1);
+test('review refuses private snapshots, current private or malformed visibility, and revoked access', async () => {
+ for (const mode of ['snapshot-private', 'current-private', 'malformed', 'revoked']) {
+  const f = fixture();
+  if (mode === 'snapshot-private') f.item.snapshot.private = true;
+  f.deps.github.reviewerVisibility = async () => {
+   if (mode === 'revoked') throw new IntakeError(403, 'Access revoked.');
+   return mode === 'malformed' ? undefined as unknown as boolean : mode === 'current-private';
+  };
+  await assert.rejects(() => f.service.review('owner', itemId, candidateId, f.signal));
+  assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
+ }
 });

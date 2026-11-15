@@ -25,6 +25,7 @@ export type AssessmentDependencies = {
   intake: { get(owner: string, itemId: string, signal: AbortSignal): Promise<WorkItem> };
   generation: { get(owner: string, itemId: string, candidateId: string, signal: AbortSignal): Promise<StoredCandidate> };
   github: {
+    reviewerVisibility(repository: string, repositoryId: number, signal: AbortSignal): Promise<boolean>;
     files(snapshot: IssueSnapshot, signal: AbortSignal): Promise<Array<{ path: string; blobSha: string }>>;
     context(snapshot: IssueSnapshot, paths: string[], signal: AbortSignal): Promise<GenerationContext[]>;
   };
@@ -167,7 +168,11 @@ export function createAssessment(dependencies: AssessmentDependencies) {
       return bounded(owner, itemId, candidateId, signal, async active => {
         const { assessment, stamp, issue } = await load(owner, itemId, candidateId, active);
         if (assessment.reviews.length >= 8) fail(429);
-        await fresh(owner, itemId, candidateId, stamp, active);
+        const current = await admit(owner, itemId, candidateId, active);
+        if (current.stamp !== stamp) fail(409);
+        if (assessment.repositoryPrivate !== false || current.item.snapshot.private !== false) throw new AssessmentError(403, 'Private-source review requires owner authorization and is unavailable.');
+        if (await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== false)
+          throw new AssessmentError(403, 'Private-source review requires owner authorization and is unavailable.');
         const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: assessment.repositoryPrivate ?? false,
           requirements: assessment.policy.requirements.map(row => ({ id: row.id, criterion: row.criterion, provenance: row.provenance, mandatory: row.mandatory })),
           nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })), files: assessment.files,

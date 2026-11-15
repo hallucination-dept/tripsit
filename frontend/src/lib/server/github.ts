@@ -237,6 +237,8 @@ export function createGitHub(options: Options) {
     authorize: async (repository: string, repositoryId: number, signal: AbortSignal) => {
       await authorize(repository, signal, repositoryId);
     },
+    reviewerVisibility: async (repository: string, repositoryId: number, signal: AbortSignal) =>
+      (await authorize(repository, signal, repositoryId)).private,
     snapshot: async (repository: string, number: number, signal: AbortSignal): Promise<IssueSnapshot> => {
       const repo = await authorize(repository, signal);
       const issue = await request(`/repos/${repo.repository}/issues/${number}`, repo.token, signal);
