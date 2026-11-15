@@ -6,6 +6,7 @@ import { IntakeError } from '../src/lib/server/intake.ts';
 import type { WorkItem } from '../src/lib/server/records.ts';
 import type { StoredCandidate } from '../src/lib/server/generation.ts';
 import type { StoredReview } from '../src/lib/server/review-records.ts';
+import { mapCandidateTokenBytes, generationSettingsDigest } from '../src/lib/server/candidate-output.ts';
 const itemId = '11111111-1111-4111-8111-111111111111';
 const candidateId = '22222222-2222-4222-8222-222222222222';
 const encode = (content: string) => new TextEncoder().encode(content);
@@ -149,6 +150,20 @@ test('verification rechecks revision after remote execution and never persists s
  f.deps.verification={async run(context){ran++;assert.equal(context.repositoryId,1);assert(context.files.some(file=>file.path==='b.ts'));f.candidate.candidate.outputDigest='e'.repeat(64);return{checks:[],executions:[],admission:{status:'passed',configurationDigest:'1'.repeat(64),codeDigest:'2'.repeat(64),environmentDigest:'3'.repeat(64)}};}};
  await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal),{status:409});assert.equal(ran,1);assert.equal(saved,0);
  await assert.rejects(f.service.verify('other',itemId,candidateId,f.signal),{status:404});assert.equal(ran,1);
+});
+
+test('verification context carries revision-bound token mapping and candidate node sources', async () => {
+ const f = fixture(); const candidate = f.candidate.candidate;
+ const raw = encode(JSON.stringify({files:[{path:'a.ts',originalBlob:candidate.files[0].originalBlob,content:new TextDecoder().decode(candidate.files[0].content)}]}));
+ const tokens = Array.from(raw, byte => ({token:'x',bytes:[byte],logprob:-1}));
+ const observations = {status:'observed' as const,tokens};
+ const mapped = mapCandidateTokenBytes(raw,new Map([['a.ts',candidate.files[0].originalBlob]]),tokens,candidate.model,generationSettingsDigest(candidate.settings));
+ assert.equal(mapped.status,'exact'); if(mapped.status !== 'exact') return;
+ candidate.rawOutput=raw; candidate.outputDigest=mapped.outputDigest; candidate.observations=observations;
+ candidate.tokenByteMapping={...mapped,mode:'direct',observationsDigest:createHash('sha256').update(JSON.stringify(observations)).digest('hex')};
+ f.deps.verificationRecords={async list(){return[];},async append(){throw new Error('fixture stop');}};
+ f.deps.verification={async run(context){assert.equal(context.tokenSignal?.mapping.outputDigest,context.identity.candidateDigest);assert(context.nodes.some(node=>node.kind==='file' && node.source?.revision==='candidate' && node.source.blobSha===mapped.files[0].blobSha));throw new Error('fixture stop');}};
+ await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal));
 });
 
 test('review refuses private snapshots, current private or malformed visibility, and revoked access', async () => {

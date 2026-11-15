@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { posix } from 'node:path';
 import { IntakeError, whileActive, type IssueSnapshot } from './intake.ts';
 import type { WorkItem } from './records.ts';
-import type { StoredCandidate, GenerationContext } from './generation.ts';
+import type { StoredCandidate, GenerationContext, GeneratedCandidate, GenerationObservations } from './generation.ts';
 import { generationSettingsDigest } from './candidate-output.ts';
 import { buildImpact, type ImpactFile } from './impact-extractor.ts';
 import { snapshotPolicy } from './snapshot-policy.ts';
@@ -16,7 +16,8 @@ export type Assessment = {
   repositoryId: number;
   repositoryPrivate?: boolean;
   verifications?: StoredVerification[];
-  generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number };
+  generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number;
+    tokenSignal?: { mapping: NonNullable<GeneratedCandidate['tokenByteMapping']>; observations: GenerationObservations } };
   policy: ReturnType<typeof snapshotPolicy>['policy'];
   impact: ReturnType<typeof buildImpact>;
   reviews: StoredReview[];
@@ -82,7 +83,8 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     }
     const identity: ReviewIdentity = { ownerId: owner, itemId, candidateId, baseSha: item.snapshot.baseSha,
       candidateDigest: stored.candidate.outputDigest, snapshotDigest: policy.snapshotDigest, policyVersion: policy.policy.version };
-    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: generationSettingsDigest(stored.candidate.settings), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0 };
+    const generation: Assessment['generation'] = { model: stored.candidate.model, settingsDigest: generationSettingsDigest(stored.candidate.settings), mapping: { ...stored.candidate.mapping }, observedTokens: stored.candidate.observations?.tokens.length ?? 0,
+      ...(stored.candidate.tokenByteMapping && stored.candidate.observations ? { tokenSignal: { mapping: stored.candidate.tokenByteMapping, observations: stored.candidate.observations } } : {}) };
     const stamp = JSON.stringify([identity, generation, item.expiresAt, stored.candidate.files.map(file => [file.path, file.originalBlob, file.blobSha])]);
     return { item, stored, identity, generation, stamp, policy: policy.policy };
   }
@@ -201,7 +203,8 @@ export function verificationContext(assessment: Assessment): VerificationContext
   const current = assessment.reviews.filter(review => Object.entries(assessment.identity).every(([key, value]) => review.identity[key as keyof ReviewIdentity] === value));
   const claims = current.flatMap(review => review.result.status === 'completed' ? review.result.claims : []);
   return { identity: assessment.identity, repositoryId: assessment.repositoryId, files: assessment.files,
-    nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })),
+    nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path, kind: node.kind, source: node.source })),
+    tokenSignal: assessment.generation.tokenSignal,
     requirements: assessment.policy.requirements, comparison: { model: assessment.generation.model, settingsDigest: assessment.generation.settingsDigest, revision: assessment.identity.candidateDigest },
     impactUnknown: true, disagreements: assessment.policy.requirements.filter(requirement =>
       claims.some(claim => claim.requirementIds.includes(requirement.id) && claim.stance === 'supports')
