@@ -86,3 +86,19 @@ test('rejects sparse changed IDs and unsupported-language arrays', () => {
   const unsupported = graph(); unsupported.unsupportedLanguages = new Array(1);
   assert.throws(() => analyzeImpact(unsupported), /Invalid impact graph/);
 });
+
+test('artifact revisions use an explicit digest without inventing a Git head', () => {
+  const input = graph();
+  input.revision = { baseSha: revision.baseSha, headSha: null, candidateDigest: 'd'.repeat(64) } as never;
+  assert.deepEqual(analyzeImpact(input).revision, input.revision);
+  input.revision = { ...input.revision, candidateDigest: 'not-a-digest' } as never;
+  assert.throws(() => analyzeImpact(input), /Invalid impact graph/);
+});
+
+test('a genuine no-op has no affected nodes and retains incomplete coverage', () => {
+  const input = graph(); input.changed = [];
+  const result = analyzeImpact(input);
+  assert.deepEqual(result.affected, []);
+  assert(result.gaps.some(gap => gap.kind === 'graph_completeness_unverified'));
+  assert.equal(result.requiresInspection, true);
+});

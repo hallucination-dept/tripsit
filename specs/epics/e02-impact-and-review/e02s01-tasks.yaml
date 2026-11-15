@@ -61,15 +61,3 @@ tasks:
     categories:
     - Security Review
     - e02s01
-
-preparatory_subtasks:
-- id: reverse-impact-core
-  status: passing
-  scope: Pure supplied-graph validation and reverse traversal only; no extraction or live integration.
-  files:
-  - frontend/src/lib/server/impact.ts
-  - frontend/tests/impact.test.ts
-  plan: Validate revision identities and bounded provenance-bearing graphs; reverse-traverse dependencies from changed base/candidate nodes with deterministic cycle-safe ordering and depth caps. Preserve inferred/unresolved/missing edges and file-fallback/unsupported-language coverage gaps; never infer low risk or executed evidence.
-  verify: cd frontend && node --experimental-strip-types tests/impact.test.ts
-  limitations: No parser, semantic resolution, graph completeness, executable verification or full-story acceptance.
-  verification_results: Five native focused tests passed; npm run check && npm run build exited 0 with zero Svelte diagnostics. Full e02s01 tasks remain failing; source byte spans are checked structurally against supplied byte lengths, not against repository text.
