@@ -118,6 +118,7 @@ export function createPublication({database,intake,generation,github,fetcher,acc
   if (await remote.ref(branch,signal)!==stage.commitSha || await remote.ref(access.branch,signal)!==item.snapshot.baseSha) throw stale();
   if (initial.manifest.status!=='operator_asserted') throw stale();
   const required = initial.manifest.controls.map(row=>`${row.id}: ${row.applicability === 'not_applicable' ? 'not applicable' : 'passed exercised checks'}`).join('\n');
+  await guard();
   try { await remote.createPull(branch,access.branch,`TripSit: issue #${item.snapshot.issueNumber}`,`${marker}\n\nCloses #${item.snapshot.issueNumber}\n\nRevision: ${stage.commitSha}\nPacket: ${initial.packet_digest}\n\nMandatory policy evidence:\n${required}\n\nEvidence and merge protection remain subject to human review.`,signal); } catch { /* A lost response is reconciled by reading GitHub. */ }
   const found=await findPull(); if (!found) throw new IntakeError(409,'Publication is pending reconciliation; no duplicate was created.');
   return finish(found);
