@@ -3,6 +3,7 @@
 	import { createIssueDiscovery } from '#lib/issue-discovery.ts';
 	import { createCandidateWorkspace } from '#lib/candidate-workspace.ts';
 	import CandidateInspection from '#lib/CandidateInspection.svelte';
+	import OutcomeFeedback from '#lib/OutcomeFeedback.svelte';
 	import { authClient } from '#lib/auth-client.js';
 	import { selectedAfterReload } from '#lib/issue-selection.ts';
 
@@ -236,6 +237,9 @@
 					<CandidateInspection owner={$session.data.user.id} itemId={selectedIssue.id}
 						candidateId={candidateWorkspace.candidate.id} baseSha={selectedIssue.snapshot.baseSha}
 						candidateDigest={candidateWorkspace.candidate.candidate.outputDigest} />
+					{#key `${$session.data.user.id}:${selectedIssue.id}:${candidateWorkspace.candidate.id}`}
+						<OutcomeFeedback itemId={selectedIssue.id} candidateId={candidateWorkspace.candidate.id} files={candidateWorkspace.candidate.candidate.files} repository={selectedIssue.snapshot.repository} />
+					{/key}
 				{/if}
 			</section>
 		{/if}
