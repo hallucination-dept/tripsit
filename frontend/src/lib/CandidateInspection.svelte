@@ -1,5 +1,6 @@
 <script lang="ts">
   import ImpactGraph from '#lib/ImpactGraph.svelte';
+  import HumanDecision from '#lib/HumanDecision.svelte';
   import { untrack } from 'svelte';
   import { createCandidateInspection } from '#lib/candidate-inspection.ts';
 
@@ -156,6 +157,11 @@
       <details><summary>Frozen packet identity</summary><dl><dt>Base</dt><dd><code>{view.identity.baseSha}</code></dd><dt>Candidate digest</dt><dd><code>{view.identity.candidateDigest}</code></dd><dt>Snapshot digest</dt><dd><code>{view.identity.snapshotDigest}</code></dd><dt>Policy</dt><dd>{view.identity.policyVersion}</dd><dt>Packet digest</dt><dd><code>{view.packet.packetDigest}</code></dd></dl></details>
     {:else}<p class="empty">The packet appears after this candidate’s assessment loads.</p>{/if}
   </section>
+{#if view}
+    {#key `${owner}:${itemId}:${candidateId}:${baseSha}:${candidateDigest}`}
+      <HumanDecision {itemId} {candidateId} {baseSha} {candidateDigest} />
+    {/key}
+  {/if}
 </section>
 
 <style>
