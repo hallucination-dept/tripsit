@@ -282,3 +282,29 @@ test('autonomous final edits reject stale original identities and portable colli
     assert.equal(f.calls.store, 0);
   }
 });
+
+test('agent read tools return cached and not-found feedback so the model can recover and finish', async () => {
+  const f = agentFixture();
+  let turn = 0;
+  f.dependencies.model.generate = async prompt => {
+    f.calls.model++;
+    const data = JSON.parse(prompt.data);
+    if (turn === 0) { turn++; return { rawOutput: bytes('{"read":["a.ts"]}'), model: 'gemma', settings: {} }; }
+    if (turn === 1) { turn++; return { rawOutput: bytes('{"read":["a.ts","new.ts"]}'), model: 'gemma', settings: {} }; }
+    assert.deepEqual(data.loadedPaths, ['a.ts']);
+    assert.deepEqual(data.toolHistory.map((row: { results: unknown }) => row.results), [
+      [{ path: 'a.ts', status: 'loaded' }],
+      [{ path: 'a.ts', status: 'cached' }, { path: 'new.ts', status: 'not_found' }]
+    ]);
+    assert.equal(data.turnsRemaining, 4);
+    return { rawOutput: bytes(JSON.stringify({ files: [
+      { path: 'a.ts', originalBlob: blob(f.originals.get('a.ts')!), content: 'export const value = 2;' },
+      { path: 'new.ts', originalBlob: null, content: 'export const added = true;' }
+    ] })), model: 'gemma', settings: {} };
+  };
+  const stored = await f.service.create('owner', 'item', undefined, f.signal);
+  assert.deepEqual(f.reads, [['a.ts']]);
+  assert.equal(f.calls.model, 3);
+  assert.equal(stored.candidate.files.length, 2);
+  assert.equal(f.calls.store, 1);
+});
