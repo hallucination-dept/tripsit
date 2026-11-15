@@ -13,7 +13,7 @@ function fixture() {
   let stored: StoredCandidate | null = null;
   const dependencies = {
     intake: { async get(owner: string) { calls.intake++; if (owner !== 'owner') throw new IntakeError(404, 'secret upstream text'); return structuredClone(item); } },
-    github: { async context() { calls.github++; return [{ path: 'a.ts', originalBlob: blob('original'), content: 'original' }]; } },
+    github: { async reviewerVisibility() { return false; }, async context() { calls.github++; return [{ path: 'a.ts', originalBlob: blob('original'), content: 'original' }]; } },
     model: { async generate(prompt: { instruction: string; data: string }) { calls.model++; assert.ok(prompt.instruction.includes('untrusted')); assert.equal(JSON.parse(prompt.data).issue.body, item.snapshot.supplied.body); return { rawOutput: bytes(JSON.stringify({ files: [{ path: 'a.ts', originalBlob: blob('original'), content: 'é😀\r\n' }] })), model: 'gemma-test', settings: { temperature: 0 } }; } },
     store: { async create(_owner: string, _id: string, candidate: GeneratedCandidate) { calls.store++; stored = { id: 'candidate', candidate }; return stored; }, async get() { return stored; } }
   };
@@ -142,11 +142,17 @@ test('keeps actionable dependency status while sanitizing its error message', as
   }
 });
 
-test('authorized private candidates use the same bounded generation and owner-scoped retrieval', async () => {
- const f=fixture();f.item.snapshot.private=true;
- const candidate=await f.service.create('owner','item',['a.ts'],f.signal);
- assert.equal(f.calls.model,1);assert.equal((await f.service.get('owner','item',candidate.id,f.signal)).id,candidate.id);
- await assert.rejects(f.service.get('other','item',candidate.id,f.signal));
+test('private and newly private repositories never reach the model', async () => {
+  for (const autonomous of [false, true]) for (const mode of ['private', 'changed', 'denied', 'invalid']) {
+    const f = autonomous ? agentFixture() : fixture();
+    if (mode === 'private') f.item.snapshot.private = true;
+    f.dependencies.github.reviewerVisibility = async () => {
+      if (mode === 'denied') throw new IntakeError(403, 'revoked');
+      return mode === 'changed' ? true : mode === 'invalid' ? undefined as unknown as boolean : false;
+    };
+    await assert.rejects(() => f.service.create('owner', 'item', autonomous ? undefined : ['a.ts'], f.signal));
+    assert.equal(f.calls.model, 0); assert.equal(f.calls.store, 0);
+  }
 });
 
 function agentFixture(privateRepository = false) {
@@ -159,6 +165,7 @@ function agentFixture(privateRepository = false) {
   const dependencies = {
     ...f.dependencies,
     github: {
+      async reviewerVisibility() { return false; },
       async files() { return [...originals].map(([path, content]) => ({ path, blobSha: blob(content) })); },
       async context(_snapshot: unknown, paths: string[]) { reads.push([...paths]); return paths.map(path => ({ path, originalBlob: blob(originals.get(path)!), content: originals.get(path)! })); }
     },
@@ -176,7 +183,7 @@ function agentFixture(privateRepository = false) {
 }
 
 test('autonomously reads additional frozen source then implements a change without human file selection', async () => {
-  for (const privateRepository of [false, true]) {
+  for (const privateRepository of [false]) {
     const f = agentFixture(privateRepository);
     const candidate = await f.service.create('owner', 'item', undefined, f.signal);
     assert.deepEqual(f.reads, [['a.ts'], ['caller.ts']]);
@@ -362,4 +369,11 @@ test('server-bound autonomous replacements still reject malformed code values an
     await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
     assert.equal(f.calls.store, 0);
   }
+});
+
+test('autonomous rechecks visibility before each model turn', async () => {
+  const f = agentFixture(); let checks = 0;
+  f.dependencies.github.reviewerVisibility = async () => ++checks === 1 ? false : true;
+  await assert.rejects(() => f.service.create('owner', 'item', undefined, f.signal));
+  assert.equal(f.calls.model, 1); assert.equal(f.calls.store, 0);
 });

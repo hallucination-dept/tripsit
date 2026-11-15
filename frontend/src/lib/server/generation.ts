@@ -21,6 +21,7 @@ export type StoredCandidate = { id: string; candidate: GeneratedCandidate };
 export type GenerationDependencies = {
   intake: { get(owner: string, itemId: string, signal: AbortSignal): Promise<WorkItem> };
   github: {
+    reviewerVisibility(repository: string, repositoryId: number, signal: AbortSignal): Promise<boolean>;
     context(snapshot: IssueSnapshot, paths: string[], signal: AbortSignal): Promise<GenerationContext[]>;
     files?(snapshot: IssueSnapshot, signal: AbortSignal): Promise<Array<{ path: string; blobSha: string }>>;
   };
@@ -91,6 +92,10 @@ export function createGeneration(dependencies: GenerationDependencies) {
     activeItem(item, itemId);
     return item;
   }
+  async function allowDispatch(item: WorkItem, signal: AbortSignal) {
+    if (item.snapshot.private !== false || await whileActive(() => dependencies.github.reviewerVisibility(item.snapshot.repository, item.snapshot.repositoryId, signal), signal) !== false)
+      throw new GenerationError(403, 'Private-source generation requires owner authorization and is unavailable.');
+  }
   async function autonomous(owner: string, itemId: string, item: WorkItem, signal: AbortSignal): Promise<StoredCandidate> {
     const identity = JSON.stringify(item);
     const fresh = async () => { if (JSON.stringify(await readItem(owner, itemId, signal)) !== identity) deny(409); };
@@ -118,6 +123,8 @@ export function createGeneration(dependencies: GenerationDependencies) {
         nextAction: context.size === repository.size ? 'All listed source files have been read. Implement the requested change with the files action now.' : 'Choose unread source you need, or finish with the files action if the supplied context is sufficient.',
         turnsRemaining: 6 - turn });
       if (encoder.encode(data).byteLength > 786_432) deny(413);
+      await fresh();
+      await allowDispatch(item, signal);
       const observation = await whileActive(() => dependencies.model.generate({ instruction: agentInstruction, data }, signal), signal);
       await fresh();
       validateObservation(observation);
@@ -203,6 +210,7 @@ export function createGeneration(dependencies: GenerationDependencies) {
         if (encoder.encode(data).byteLength > 131_072) deny(413);
         const admitted = await readItem(owner, itemId, active);
         if (JSON.stringify(admitted) !== identity) deny(409);
+        await allowDispatch(admitted, active);
         const observation = await whileActive(() => dependencies.model.generate({ instruction, data }, active), active);
         validateObservation(observation);
         const decoded = decodeCandidateOutput(observation.rawOutput, expected);

@@ -80,7 +80,7 @@ export function verificationConfigured(configuration: Configuration, context: Ve
 }
 export function createVerification(configuration: Configuration) {
   return {
-    async run(context: VerificationContext, signal: AbortSignal): Promise<VerificationEvidence> {
+    async run(context: VerificationContext, signal: AbortSignal, authorize: () => Promise<void>): Promise<VerificationEvidence> {
       const url = endpoint(configuration), checks = configuredChecks(configuration.manifest, context);
       if (!checks.length || !sha(context.identity.baseSha) || !hash(context.identity.candidateDigest)) fail();
       const active = AbortSignal.any([signal, AbortSignal.timeout(1_200_000)]);
@@ -105,6 +105,7 @@ export function createVerification(configuration: Configuration) {
         const files = context.files.map(file => ({ path: file.path, content: file.replacement, blobSha: blob(file.replacement) }));
         if (files.length > 24 || Buffer.byteLength(JSON.stringify(files)) > 1_048_576
           || files.reduce((size, file) => size + Buffer.byteLength(file.content), 0) > 262_144) fail(413);
+        await whileActive(authorize, active);
         const result = await call('/execute', { identity: context.identity, files, checks: ordered, prId: null });
         if (!object(result) || canonical(result.identity) !== canonical(context.identity) || !object(result.admission)
           || canonical(result.admission) !== canonical(admission) || !Array.isArray(result.checks) || !Array.isArray(result.executions)

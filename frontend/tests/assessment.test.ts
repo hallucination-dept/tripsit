@@ -154,3 +154,18 @@ test('review refuses private snapshots, current private or malformed visibility,
   assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
  }
 });
+
+test('private or newly private repositories never reach the runner', async () => {
+  for (const mode of ['private', 'changed', 'denied', 'invalid']) {
+    const f = fixture(); let ran = 0;
+    if (mode === 'private') f.item.snapshot.private = true;
+    f.deps.github.reviewerVisibility = async () => {
+      if (mode === 'denied') throw new IntakeError(403, 'revoked');
+      return mode === 'changed' ? true : mode === 'invalid' ? undefined as unknown as boolean : false;
+    };
+    f.deps.verification = { async run() { ran++; throw new Error('unexpected'); } };
+    f.deps.verificationRecords = { async list() { return []; }, async append() { throw new Error('unexpected'); } };
+    await assert.rejects(() => f.service.verify('owner', itemId, candidateId, f.signal));
+    assert.equal(ran, 0);
+  }
+});

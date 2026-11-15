@@ -16,9 +16,9 @@ test('only server definitions pinned to repository/base can become behavioral or
 test('unconfigured or failed admission dispatches no candidate source', async () => {
  let calls = 0;
  const runner = createVerification({ url: 'https://runner.example', token: 'secret', manifest, fetcher: async (_url, options) => { calls++; assert.equal(options?.method, 'GET'); return Response.json({ status: 'unverified' }); } });
- await assert.rejects(runner.run(context, new AbortController().signal));
+ await assert.rejects(runner.run(context, new AbortController().signal, async () => {}));
  assert.equal(calls, 1);
- await assert.rejects(createVerification({}).run(context, new AbortController().signal));
+ await assert.rejects(createVerification({}).run(context, new AbortController().signal, async () => {}));
 });
 test('oracle JSON is bounded and canonical digests match Python lexical key order', async () => {
  const { canonical, verificationDigest } = await import('../src/lib/server/verification.ts');
@@ -45,9 +45,19 @@ test('trusted failed executions bind all oracle/source identities and preserve d
    dependencyDigest: verificationDigest(request.files.map(({path,blobSha}: {path:string;blobSha:string}) => ({path,blobSha}))), environmentDigest: admission.environmentDigest };
   return Response.json({identity:request.identity,admission,checks:[binding],executions:[{...binding,id:'execution1',checkId:check.id,collector:'trusted_runner',runnerId:'sandbox1',prId:null,status:'completed',result:'failed',exitCode:1,executedTests:1,...(tamper?{oracleDigest:'f'.repeat(64)}:{})}]});
  } });
- const evidence = await runner.run(context, new AbortController().signal);
+ const evidence = await runner.run(context, new AbortController().signal, async () => {});
  assert.equal(evidence.executions[0].result, 'failed'); assert.equal(evidence.checks[0].provenance, 'trusted_repository');
  assert.equal(evidence.dispatchPlan!.mandatory[0].id, 'caller-regression'); assert.equal(posts, 1);
  assert(!JSON.stringify(evidence).includes('expected'));
- tamper = true; await assert.rejects(runner.run(context, new AbortController().signal));
+ tamper = true; await assert.rejects(runner.run(context, new AbortController().signal, async () => {}));
+});
+
+test('authorization revoked after admission sends no source to runner', async () => {
+ let posts = 0;
+ const runner = createVerification({ url: 'https://runner.example', token: 'secret', manifest, fetcher: async (_url, options) => {
+  if (options?.method === 'POST') posts++;
+  return Response.json({ status: 'passed', configurationDigest: '1'.repeat(64), codeDigest: '2'.repeat(64), environmentDigest: '3'.repeat(64) });
+ } });
+ await assert.rejects(runner.run(context, new AbortController().signal, async () => { throw new Error('revoked'); }));
+ assert.equal(posts, 0);
 });

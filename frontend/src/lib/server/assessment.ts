@@ -34,7 +34,7 @@ export type AssessmentDependencies = {
     append(owner: string, identity: ReviewIdentity, result: ReviewerResult): Promise<StoredReview>;
   };
   reviewer: { review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> };
-  verification?: { run(input: VerificationContext, signal: AbortSignal): Promise<VerificationEvidence> };
+  verification?: { run(input: VerificationContext, signal: AbortSignal, authorize: () => Promise<void>): Promise<VerificationEvidence> };
   verificationRecords?: { list(owner: string, identity: ReviewIdentity): Promise<StoredVerification[]>; append(owner: string, identity: ReviewIdentity, result: VerificationEvidence): Promise<StoredVerification> };
 };
 class AssessmentError extends IntakeError {}
@@ -156,8 +156,15 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         if (!dependencies.verification || !dependencies.verificationRecords) fail(503);
         const { assessment, stamp } = await load(owner, itemId, candidateId, active);
         if ((assessment.verifications?.length ?? 0) >= 4) fail(429);
-        await fresh(owner, itemId, candidateId, stamp, active);
-        const result = await whileActive(() => dependencies.verification!.run(verificationContext(assessment), active), active);
+        const authorize = async () => {
+          const current = await admit(owner, itemId, candidateId, active);
+          if (current.stamp !== stamp) fail(409);
+          if (assessment.repositoryPrivate !== false || current.item.snapshot.private !== false ||
+            await whileActive(() => dependencies.github.reviewerVisibility(current.item.snapshot.repository, current.item.snapshot.repositoryId, active), active) !== false)
+            throw new AssessmentError(403, 'Private-source verification requires owner authorization and is unavailable.');
+        };
+        await authorize();
+        const result = await whileActive(() => dependencies.verification!.run(verificationContext(assessment), active, authorize), active);
         await fresh(owner, itemId, candidateId, stamp, active);
         const stored = await whileActive(() => dependencies.verificationRecords!.append(owner, assessment.identity, result), active);
         await fresh(owner, itemId, candidateId, stamp, active);
