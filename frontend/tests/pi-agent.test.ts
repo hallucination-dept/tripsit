@@ -128,3 +128,29 @@ test('the flag tool records valid review flags and tells the model about invalid
     await rm(root, { recursive: true, force: true });
   }
 });
+
+test('edit and write calls record the file before and after with their call id; bash writes are not recorded', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'tripsit-pi-edits-'));
+  const workspace = join(root, 'repo'), home = join(root, 'home'), agentDir = join(root, 'agent');
+  await Promise.all([mkdir(workspace), mkdir(home), mkdir(agentDir)]);
+  const model = await fakeModel([
+    toolCall('call_w', 'write', { path: 'notes/a.txt', content: 'one\n' }),
+    toolCall('call_e', 'edit', { path: 'notes/a.txt', edits: [{ oldText: 'one', newText: 'two' }] }),
+    toolCall('call_b', 'bash', { command: 'echo three >> notes/a.txt' }),
+    reply('Done'),
+    reply('No flags.')
+  ]);
+  try {
+    const outcome = await runPiAgent({ workspace, agentDir, home, repository: 'team/app', instruction: 'Write notes',
+      model: { baseUrl: model.url, apiKey: 'test-key', model: 'fake-model', contextWindow: 32_000, maxTokens: 2_000 },
+      signal: AbortSignal.timeout(20_000), onEvent: () => {} });
+    assert.deepEqual(outcome.edits, [
+      { toolCallId: 'call_w', tool: 'write', path: 'notes/a.txt', before: null, after: 'one\n', parts: [{ oldText: null, newText: 'one\n' }] },
+      { toolCallId: 'call_e', tool: 'edit', path: 'notes/a.txt', before: 'one\n', after: 'two\n', parts: [{ oldText: 'one', newText: 'two' }] }
+    ]);
+    assert.equal(await readFile(join(workspace, 'notes/a.txt'), 'utf8'), 'two\nthree\n');
+  } finally {
+    model.close();
+    await rm(root, { recursive: true, force: true });
+  }
+});

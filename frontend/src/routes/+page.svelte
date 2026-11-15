@@ -82,6 +82,32 @@
 		if (result.error) { linkError = result.error.message ?? 'Could not start GitHub linking.'; linking = false; }
 	}
 
+	// Opens the GitHub App installation in a popup over the workspace. When the popup returns to
+	// Tripsit (the setup callback) or is closed, it is dismissed and repositories are reloaded.
+	// If the browser blocks the popup, the link navigates normally.
+	let installPopupTimer: ReturnType<typeof setInterval> | undefined;
+	function installInPopup(event: MouseEvent) {
+		if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+		const width = 1020, height = 760;
+		const left = Math.max(0, window.screenX + (window.outerWidth - width) / 2);
+		const top = Math.max(0, window.screenY + (window.outerHeight - height) / 2);
+		const popup = window.open('/api/github/connect', 'tripsit-github-install', `popup,width=${width},height=${height},left=${left},top=${top}`);
+		if (!popup) return;
+		event.preventDefault();
+		popup.focus();
+		clearInterval(installPopupTimer);
+		installPopupTimer = setInterval(() => {
+			let returned = false;
+			// Reading the location throws while the popup is on github.com.
+			try { returned = popup.location.origin === window.location.origin && popup.location.pathname === '/'; } catch { /* still on GitHub */ }
+			if (!popup.closed && !returned) return;
+			clearInterval(installPopupTimer);
+			if (!popup.closed) popup.close();
+			void discoveryController.refresh();
+		}, 500);
+	}
+	$effect(() => () => clearInterval(installPopupTimer));
+
 	async function loadRuns() {
 		const requester = owner;
 		runsLoading = true;
@@ -177,7 +203,7 @@
 				</select>
 				<ChevronDown class="chevron" size={14} aria-hidden="true" />
 			</div>
-			<a class="add-repos" href="/api/github/connect" title="Install the Tripsit agent on more repositories or organizations"><Plus size={13} aria-hidden="true" /> Add repos</a>
+			<a class="add-repos" href="/api/github/connect" onclick={installInPopup} title="Install the Tripsit agent on more repositories or organizations"><Plus size={13} aria-hidden="true" /> Add repos</a>
 		</div>{/if}
 		<div class="account-bar"><strong title={$session.data.user.email}>{$session.data.user.name || $session.data.user.email}</strong><button class="button-quiet" onclick={() => authClient.signOut()}>Sign out</button></div>
 	{:else if !$session.isPending}<span class="appbar-caption">Coding ticket agent</span>{/if}
@@ -334,10 +360,11 @@
 						{run.result.files.length} changed file{run.result.files.length === 1 ? '' : 's'} ·
 						{run.result.graph.stats.files} files in the repository ·
 						{run.result.graph.stats.symbols} symbols shown{run.result.graph.stats.hiddenNeighbors ? ` · ${run.result.graph.stats.hiddenNeighbors} more neighbors collapsed` : ''}
+						{#if run.result.confidence?.status === 'scored'} · edit confidence from {run.result.confidence.tokens} tokens{/if}
 						{#if run.result.truncated} · some diffs were truncated{/if}
 					</p>
 					{#if run.result.files.length}
-						{#key run.id}<ChangeGraphView graph={run.result.graph} files={run.result.files} flags={run.result.flags ?? []} />{/key}
+						{#key run.id}<ChangeGraphView graph={run.result.graph} files={run.result.files} flags={run.result.flags ?? []} confidence={run.result.confidence ?? null} />{/key}
 					{:else}
 						<p class="note">The agent did not change any files.</p>
 					{/if}

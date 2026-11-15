@@ -1,0 +1,10 @@
+data: {"id": "chatcmpl-a6c834970bd5c5b8", "object": "chat.completion.chunk", "created": 1794719955, "model": "google/gemma-4-31B-it", "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": null}]}
+
+data: {"id": "chatcmpl-a6c834970bd5c5b8", "object": "chat.completion.chunk", "created": 1794719955, "model": "google/gemma-4-31B-it", "choices": [{"index": 0, "finish_reason": null, "delta": {"tool_calls": [{"index": 0, "id": "chatcmpl-tool-852fb1ae04983dd0", "type": "function", "function": {"name": "edit", "arguments": "{\"edits\": [{\"newText\": \"def total(items, discount=0):\\n    amount = sum(item.price for item in items if item.price is not None)\\n    return amount * (1 - discount / 100)\", \"oldText\": \"def total(items):\\n    return sum(item.price for item in items)\"}], \"path\": \"cart.py\"}"}}]}}]}
+
+data: {"id": "chatcmpl-a6c834970bd5c5b8", "object": "chat.completion.chunk", "created": 1794719955, "model": "google/gemma-4-31B-it", "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}]}
+
+data: {"id": "chatcmpl-a6c834970bd5c5b8", "object": "chat.completion.chunk", "created": 1794719955, "model": "google/gemma-4-31B-it", "choices": [], "usage": {"prompt_tokens": 196, "total_tokens": 290, "completion_tokens": 94, "prompt_tokens_details": null}}
+
+data: [DONE]
+
