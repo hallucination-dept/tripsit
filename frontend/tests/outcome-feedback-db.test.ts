@@ -23,6 +23,11 @@ test('outcomes persist idempotently and match only the same owner and area',asyn
   const input={packetId:packet,decisionId:decision,requestId,area:'a.ts',kind:'escape',severity:'high',evidenceIssue:7};
   const first=await service.record('owner',item,candidate,input,signal);assert.deepEqual(await service.record('owner',item,candidate,input,signal),first);
   assert.equal((await service.list('owner',item,candidate,signal)).findings.length,1);
+  await client.query(`INSERT INTO tripsit_owner_outcomes(id,owner_id,request_id,repository_id,area,packet_digest,commit_sha,decision_id,kind,severity,evidence_issue,created_at)
+   SELECT md5('outcome'||i)::uuid,'owner',md5('request'||i)::uuid,123,'a.ts',$1,$2,$3,'spot_check','low',7,now()+interval '1 second' FROM generate_series(1,101) i`,['e'.repeat(64),commit,decision]);
+  const later=await service.list('owner',item,candidate,signal);
+  assert.equal(later.findings.length,100);assert.equal(later.historyTruncated,true);
+  assert.equal(later.scrutiny.length,1);assert.equal(later.scrutiny[0].kind,'escape');
   await assert.rejects(service.record('other',item,candidate,input,signal));await assert.rejects(service.record('owner',item,candidate,{...input,area:'other.ts'},signal));
  }finally{client.release();await pool.end();}
 });

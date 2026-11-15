@@ -30,8 +30,11 @@ export function createOutcomeFeedback({database,intake,generation}:Dependencies)
    const findings=await query(`SELECT area,kind,severity,evidence_issue,commit_sha,packet_digest,decision_id,created_at
     FROM tripsit_owner_outcomes WHERE owner_id=$1 AND repository_id=$2 AND area=ANY($3::text[])
     ORDER BY created_at DESC,id DESC LIMIT 100`,[owner,work.snapshot.repositoryId,paths]);
+   const scrutiny=await query(`SELECT DISTINCT ON (area) area,kind,severity,evidence_issue,commit_sha,packet_digest,decision_id,created_at
+    FROM tripsit_owner_outcomes WHERE owner_id=$1 AND repository_id=$2 AND area=ANY($3::text[]) AND kind='escape'
+    ORDER BY area,created_at DESC,id DESC`,[owner,work.snapshot.repositoryId,paths]);
    await whileActive(()=>intake.get(owner,item,signal),signal);
-   return {decisions:decisions.rows,findings:findings.rows,areaCoverage:'partial' as const};
+   return {decisions:decisions.rows,findings:findings.rows,scrutiny:scrutiny.rows,historyTruncated:findings.rows.length===100,areaCoverage:'partial' as const};
   },
   async record(owner:string,item:string,candidate:string,input:unknown,signal:AbortSignal) {
    const {work,stored}=await current(owner,item,candidate,signal);

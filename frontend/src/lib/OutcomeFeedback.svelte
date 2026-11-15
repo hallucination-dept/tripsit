@@ -1,6 +1,6 @@
 <script lang="ts">
  let {itemId,candidateId,files,repository}:{itemId:string;candidateId:string;files:Array<{path:string}>;repository:string}=$props();
- let data=$state<{decisions:Array<{id:string;packet_id:string;commit_sha:string;decision:string}>;findings:Array<{area:string;kind:string;severity:string;evidence_issue:number;commit_sha:string}>;areaCoverage:string}|null>(null);
+ let data=$state<{decisions:Array<{id:string;packet_id:string;commit_sha:string;decision:string}>;findings:Array<{area:string;kind:string;severity:string;evidence_issue:number;commit_sha:string}>;scrutiny:Array<{area:string;severity:string;evidence_issue:number;commit_sha:string}>;historyTruncated:boolean;areaCoverage:string}|null>(null);
  let decision=$state(''),area=$state(''),kind=$state('escape'),severity=$state('medium'),evidenceIssue=$state(1),error=$state(''),busy=$state(false);
  let requestId=$state('');
  const path=$derived(`/api/work-items/${encodeURIComponent(itemId)}/candidates/${encodeURIComponent(candidateId)}/outcomes`);
@@ -13,7 +13,8 @@
  <h3>Owner outcome feedback</h3>
  <p>Findings are owner reported. Matching is limited to exact changed file paths; other affected areas remain unresolved.</p>
  {#if error}<p role="alert">{error}</p>{/if}
- {#if data?.findings.length}<ul>{#each data.findings as finding}<li><strong>{finding.kind==='escape'?'Increased inspection and regression follow-up required':'Spot-check reported'}</strong>: {finding.area}, {finding.severity} · <a href={`https://github.com/${repository}/issues/${finding.evidence_issue}`}>owner-reported issue #{finding.evidence_issue}</a> · revision <code>{finding.commit_sha}</code></li>{/each}</ul>{:else}<p>No matching owner-reported outcomes were found. Unmatched areas still require inspection.</p>{/if}
+ {#if data?.scrutiny.length}<ul>{#each data.scrutiny as finding}<li><strong>Increased inspection and regression follow-up required</strong>: {finding.area}, {finding.severity} · <a href={`https://github.com/${repository}/issues/${finding.evidence_issue}`}>owner-reported issue #{finding.evidence_issue}</a> · revision <code>{finding.commit_sha}</code></li>{/each}</ul>{:else}<p>No matching escaped defects were found. Unmatched areas still require inspection.</p>{/if}
+ {#if data?.historyTruncated}<p>Recent outcome history is limited to 100 entries; escape alerts include older records.</p>{/if}
  {#if data?.decisions.length}<form onsubmit={submit}>
   <label>Prior decision <select bind:value={decision} required><option value="">Choose a decision</option>{#each data.decisions as entry}<option value={entry.id}>{entry.decision} · {entry.commit_sha}</option>{/each}</select></label>
   <label>Changed file <select bind:value={area} required><option value="">Choose an area</option>{#each files as file}<option value={file.path}>{file.path}</option>{/each}</select></label>
