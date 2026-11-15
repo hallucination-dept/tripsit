@@ -79,7 +79,7 @@ export function createVerificationRecords(database: Database, clock = () => new 
         FROM tripsit_candidates c,tripsit_work_items w,tripsit_snapshots s
         WHERE p.candidate_id=c.id AND p.work_item_id=w.id AND s.work_item_id=w.id
           AND c.owner_id=$1 AND w.owner_id=$1 AND w.id=$2 AND c.id=$3
-          AND c.expires_at>$6 AND w.expires_at>$6 AND c.expires_at=w.expires_at AND s.payload->'private'='false'::jsonb
+          AND c.expires_at>$6 AND w.expires_at>$6 AND c.expires_at=w.expires_at AND jsonb_typeof(s.payload->'private')='boolean'
           AND p.payload->>'baseSha'=$4 AND s.payload->>'baseSha'=$4 AND p.payload->>'outputDigest'=$5 AND c.output_digest=$5
           AND jsonb_typeof(COALESCE(p.payload->'verifications','[]'::jsonb))='array'
           AND jsonb_array_length(COALESCE(p.payload->'verifications','[]'::jsonb))<4
@@ -93,7 +93,7 @@ export function createVerificationRecords(database: Database, clock = () => new 
       const rows = await query(`SELECT p.payload->'verifications' AS verifications FROM tripsit_candidate_payloads p
         JOIN tripsit_candidates c ON c.id=p.candidate_id JOIN tripsit_work_items w ON w.id=p.work_item_id
         JOIN tripsit_snapshots s ON s.work_item_id=w.id WHERE c.owner_id=$1 AND w.owner_id=$1 AND w.id=$2 AND c.id=$3
-          AND c.expires_at>$6 AND w.expires_at>$6 AND c.expires_at=w.expires_at AND s.payload->'private'='false'::jsonb
+          AND c.expires_at>$6 AND w.expires_at>$6 AND c.expires_at=w.expires_at AND jsonb_typeof(s.payload->'private')='boolean'
           AND p.payload->>'baseSha'=$4 AND s.payload->>'baseSha'=$4 AND p.payload->>'outputDigest'=$5 AND c.output_digest=$5`,
       [owner, identity.itemId, identity.candidateId, identity.baseSha, identity.candidateDigest, clock()]);
       if (!rows.rows.length) throw missing();

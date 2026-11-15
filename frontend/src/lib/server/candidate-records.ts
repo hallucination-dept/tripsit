@@ -83,7 +83,7 @@ export function createCandidateRecords(database: Database, clock = () => new Dat
       const result = await query(`WITH authorized AS (
         SELECT w.id FROM tripsit_work_items w JOIN tripsit_snapshots s ON s.work_item_id=w.id
         WHERE w.owner_id=$1 AND w.id=$2 AND w.expires_at=$5::timestamptz AND w.expires_at>$6
-          AND s.payload->>'baseSha'=$4 AND s.payload->'private'='false'::jsonb
+          AND s.payload->>'baseSha'=$4 AND jsonb_typeof(s.payload->'private')='boolean'
         FOR SHARE OF w,s
       ), inserted AS (
         INSERT INTO tripsit_candidates(id,owner_id,output_digest,created_at,expires_at)
@@ -102,7 +102,7 @@ export function createCandidateRecords(database: Database, clock = () => new Dat
         JOIN tripsit_snapshots s ON s.work_item_id=w.id
         WHERE c.owner_id=$1 AND w.owner_id=$1 AND w.id=$2 AND c.id=$3
           AND c.expires_at>$4 AND w.expires_at>$4 AND c.expires_at=w.expires_at
-          AND s.payload->'private'='false'::jsonb AND s.payload->>'baseSha'=p.payload->>'baseSha'`,
+          AND jsonb_typeof(s.payload->'private')='boolean' AND s.payload->>'baseSha'=p.payload->>'baseSha'`,
       [owner, itemId, id, clock()]);
       if (!result.rows[0]) return null;
       const candidate = deserialize(result.rows[0].payload);

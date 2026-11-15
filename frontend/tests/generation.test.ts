@@ -34,10 +34,10 @@ test('generates inert exact bytes, blob identity and unavailable mapping, then r
   assert.deepEqual(f.calls, { intake: 5, github: 1, model: 1, store: 1 });
 });
 
-test('denies unauthorized, private, expired and invalid selection before any model or storage', async () => {
-  for (const mode of ['owner', 'private', 'expired', 'empty', 'too-many', 'unsafe', 'duplicate']) {
+test('denies unauthorized, malformed, expired and invalid selection before any model or storage', async () => {
+  for (const mode of ['owner', 'malformed', 'expired', 'empty', 'too-many', 'unsafe', 'duplicate']) {
     const f = fixture();
-    if (mode === 'private') f.item.snapshot.private = true;
+    if (mode === 'malformed') f.item.snapshot.private = undefined as unknown as boolean;
     if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();
     const paths = mode === 'empty' ? [] : mode === 'too-many' ? Array.from({ length: 9 }, (_, i) => `f${i}`) : mode === 'unsafe' ? ['../a'] : mode === 'duplicate' ? ['a.ts', 'a.ts'] : ['a.ts'];
     await assert.rejects(() => f.service.create(mode === 'owner' ? 'other' : 'owner', 'item', paths, f.signal), (error: Error) => !error.message.includes('secret'));
@@ -140,4 +140,11 @@ test('keeps actionable dependency status while sanitizing its error message', as
     await assert.rejects(() => f.service.create('owner', 'item', ['a.ts'], f.signal), (error: IntakeError) => error.status === status && !error.message.includes('secret'));
     assert.equal(f.calls.store, 0);
   }
+});
+
+test('authorized private candidates use the same bounded generation and owner-scoped retrieval', async () => {
+ const f=fixture();f.item.snapshot.private=true;
+ const candidate=await f.service.create('owner','item',['a.ts'],f.signal);
+ assert.equal(f.calls.model,1);assert.equal((await f.service.get('owner','item',candidate.id,f.signal)).id,candidate.id);
+ await assert.rejects(f.service.get('other','item',candidate.id,f.signal));
 });

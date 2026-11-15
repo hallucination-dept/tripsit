@@ -34,7 +34,7 @@ function text(value: unknown, limit: number, empty = false): value is string {
 function unique(values: string[]) { return new Set(values).size === values.length; }
 function frozenInput(input: ReviewerInput): ReviewerInput {
   valid(record(input, ['baseSha', 'candidateDigest', 'private', 'requirements', 'nodes', 'files', 'issue']));
-  valid(input.private === false && typeof input.baseSha === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.baseSha)
+  valid(typeof input.private === 'boolean' && typeof input.baseSha === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(input.baseSha)
     && typeof input.candidateDigest === 'string' && /^[a-f0-9]{64}$/.test(input.candidateDigest));
   valid(Array.isArray(input.requirements) && input.requirements.length > 0 && input.requirements.length <= 128
     && Array.from(input.requirements).every(requirement => record(requirement, ['id', 'criterion', 'provenance', 'mandatory'])
@@ -82,7 +82,7 @@ function reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher }: R
     const fixture = fetcher && ['localhost', '127.0.0.1', '[::1]'].includes(endpoint.hostname);
     valid((endpoint.protocol === 'https:' || endpoint.protocol === 'http:' && fixture)
       && !endpoint.username && !endpoint.password && !endpoint.search && !endpoint.hash
-      && text(token, 8192) && text(model, 128) && text(retentionDisclosure, 2048));
+      && text(token, 8192) && text(model, 128) && (retentionDisclosure === undefined || text(retentionDisclosure, 2048)));
     endpoint.pathname = endpoint.pathname.replace(/\/$/u, '') + '/v1/chat/completions';
     return endpoint;
   } catch { return null; }
@@ -97,9 +97,8 @@ export function createReviewer(configuration: ReviewerConfiguration) {
   const { url, token, model, retentionDisclosure, fetcher } = configuration;
   return {
     async review(input: ReviewerInput, signal: AbortSignal): Promise<ReviewerResult> {
-      if (input?.private === true) return { status: 'unavailable', reason: 'Private-source review awaits consent and admission controls.' };
       const endpoint = reviewerEndpoint({ url, token, model, retentionDisclosure, fetcher });
-      if (!endpoint) return { status: 'unavailable', reason: 'Reviewer configuration and retention disclosure are required.' };
+      if (!endpoint) return { status: 'unavailable', reason: 'Reviewer URL, key and model are required.' };
       let frozen: ReviewerInput;
       let body: string;
       try {
@@ -123,7 +122,7 @@ export function createReviewer(configuration: ReviewerConfiguration) {
           const content = choice.message.content as string;
           const proposed = proposals(content, frozen);
           return { status: 'completed', baseSha: frozen.baseSha, candidateDigest: frozen.candidateDigest,
-            model: model!, destination: endpoint.origin + endpoint.pathname, retentionDisclosure: retentionDisclosure!,
+            model: model!, destination: endpoint.origin + endpoint.pathname, retentionDisclosure: retentionDisclosure ?? 'Provider retention not specified.',
             promptDigest: digest(body), responseDigest: digest(content), ...proposed };
         }, active);
       } catch {

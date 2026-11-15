@@ -10,7 +10,7 @@
 
 	const session = authClient.useSession();
 	type IssueItem = { id: string; createdAt: string; expiresAt: string; snapshot: {
-		repositoryId: number; repository: string; issueNumber: number; baseSha: string;
+		repositoryId: number; repository: string; private: boolean; issueNumber: number; baseSha: string;
 		supplied: { title: string; body: string }; inferred: string[]; ownerConfirmed: string[];
 	} };
 	let issueItems = $state<IssueItem[]>([]);
@@ -180,7 +180,7 @@
 						{#if !discovery.repositoriesComplete || !discovery.issuesComplete}<p class="notice">This is a partial list. Automatic refresh will check again.</p>{/if}
 						<div class="panel-footer"><span>No work starts automatically.</span><button class="button-quiet" type="button" onclick={() => discoveryController.refresh()} disabled={discovery.loading}>Refresh tickets now</button></div>
 					{:else}<p class="empty-note" aria-live="polite">Discovering repositories and issues…</p>{/if}
-					<p class="privacy-note">Private issue snapshots are currently unavailable.</p>
+					<p class="privacy-note">Snapshots save issue text and its code revision for seven days.</p>
 				</div>
 				<div class="panel snapshot-panel">
 					<div class="panel-heading"><p class="panel-title">Snapshots</p><button class="button-quiet" type="button" onclick={() => issueRequest('list')} disabled={issueBusy}>Reload my snapshots</button></div>
@@ -195,7 +195,7 @@
 							<div class="commit-reference"><span>Base commit</span><code>{selectedIssue.snapshot.baseSha}</code></div>
 							<h4>Supplied issue text (unconfirmed)</h4>
 							<p class="issue-body">{selectedIssue.snapshot.supplied.body || 'No issue body supplied.'}</p>
-							<details class="snapshot-details"><summary>Provenance & retention</summary><p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p><p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Scheduled deletion is not yet verified.</p></details>
+							<details class="snapshot-details"><summary>Provenance & retention</summary><p>Inferred expectations: {selectedIssue.snapshot.inferred.length}. Owner-confirmed criteria: {selectedIssue.snapshot.ownerConfirmed.length}. Formal criteria are not required for intake.</p><p>Snapshot expires {new Date(selectedIssue.expiresAt).toLocaleString()}. Expired source is unavailable.</p></details>
 						</div>
 					{:else}<div class="snapshot-empty"><p class="empty-title">No snapshot selected</p><p>Choose an issue and capture its current code revision, or reload your saved snapshots.</p></div>{/if}
 				</div>

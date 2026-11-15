@@ -82,8 +82,8 @@
       </button>
     </header>
     <p class="muted">A review is requested only when you press the button. Claims and suggested checks are model proposals, not execution evidence.</p>
-    {#if view && !view.reviewerConfigured}<p class="empty">Independent reviewer unavailable. A provider, model and retention disclosure must be configured on the server.</p>
-    {:else if view}<p class="meta">Reviewer configured. A request sends this public candidate’s context to the configured provider.</p>{/if}
+    {#if view && !view.reviewerConfigured}<p class="empty">Independent reviewer unavailable. A provider and model must be configured on the server.</p>
+    {:else if view}<p class="meta">Reviewer configured. A request sends this candidate’s context to the configured provider.</p>{/if}
     {#if matches && inspection.reviewError}<p class="error" role="alert">{inspection.reviewError}</p>{/if}
     {#if view?.reviews.length}
       <div class="review-history">

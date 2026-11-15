@@ -44,9 +44,9 @@ test('loads real unchanged caller impact, policy, scoped reviews and exact sourc
   assert.deepEqual(assessment.generation, { model: 'SECRET_CONFIDENCE', settingsDigest: createHash('sha256').update(JSON.stringify(f.candidate.candidate.settings)).digest('hex'), mapping: f.candidate.candidate.mapping, observedTokens: 1 });
 });
 
-test('denies invalid IDs, unauthorized owners, private and expired snapshots before context/reviewer', async () => {
-  for (const mode of ['id', 'owner', 'private', 'expired']) {
-    const f = fixture(); if (mode === 'private') f.item.snapshot.private = true; if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();
+test('denies invalid IDs, unauthorized owners, malformed and expired snapshots before context/reviewer', async () => {
+  for (const mode of ['id', 'owner', 'malformed', 'expired']) {
+    const f = fixture(); if (mode === 'malformed') f.item.snapshot.private = undefined as unknown as boolean; if (mode === 'expired') f.item.expiresAt = new Date(0).toISOString();
     await assert.rejects(() => f.service.review(mode === 'owner' ? 'other' : 'owner', mode === 'id' ? 'bad' : itemId, candidateId, f.signal), (error: Error) => !error.message.includes('secret'));
     assert.equal(f.calls.context, 0); assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
   }
@@ -133,11 +133,17 @@ test('full immutable artifact capacity refuses reviewer cost before dispatch', a
   assert.equal(f.calls.reviewer, 0); assert.equal(f.calls.append, 0);
 });
 
-test('verification rechecks revision after remote execution and never persists stale or private results', async () => {
+test('verification rechecks revision after remote execution and never persists stale or unauthorized results', async () => {
  const f=fixture(); let ran=0; let saved=0;
  f.deps.verificationRecords={async list(){return[];},async append(){saved++;throw new Error('must not append');}};
  f.deps.verification={async run(context){ran++;assert.equal(context.repositoryId,1);assert(context.files.some(file=>file.path==='b.ts'));f.candidate.candidate.outputDigest='e'.repeat(64);return{checks:[],executions:[],admission:{status:'passed',configurationDigest:'1'.repeat(64),codeDigest:'2'.repeat(64),environmentDigest:'3'.repeat(64)}};}};
  await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal),{status:409});assert.equal(ran,1);assert.equal(saved,0);
- f.item.snapshot.private=true;
- await assert.rejects(f.service.verify('owner',itemId,candidateId,f.signal),{status:403});assert.equal(ran,1);
+ await assert.rejects(f.service.verify('other',itemId,candidateId,f.signal),{status:404});assert.equal(ran,1);
+});
+
+test('authorized private assessment preserves visibility in separately prompted reviewer input', async () => {
+ const f=fixture();f.item.snapshot.private=true;
+ f.deps.reviewer.review=async input=>{assert.equal(input.private,true);return{status:'unavailable',reason:'Fixture only.'};};
+ const assessment=await f.service.load('owner',itemId,candidateId,f.signal);assert.equal(assessment.repositoryPrivate,true);
+ await f.service.review('owner',itemId,candidateId,f.signal);assert.equal(f.calls.append,1);
 });

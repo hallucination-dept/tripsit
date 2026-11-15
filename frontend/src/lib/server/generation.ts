@@ -36,7 +36,7 @@ function gitBlob(bytes: Uint8Array): string {
   return createHash('sha1').update(`blob ${bytes.byteLength}\0`).update(bytes).digest('hex');
 }
 function activeItem(item: WorkItem, itemId: string): void {
-  if (item.id !== itemId || item.snapshot.private !== false) deny(403);
+  if (item.id !== itemId || typeof item.snapshot.private !== 'boolean') deny(403);
   if (!Number.isFinite(Date.parse(item.expiresAt)) || Date.parse(item.expiresAt) <= Date.now()) deny(410);
   if (!/^[a-f0-9]{40}$/u.test(item.snapshot.baseSha)) deny();
 }

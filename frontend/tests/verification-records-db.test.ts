@@ -44,10 +44,10 @@ test('real PostgreSQL scopes execution evidence, atomically caps count and bytes
       await assert.rejects(() => verifications.list('other', { ...identity, ownerId: 'other' }), { status: 404 });
       await assert.rejects(() => verifications.append('other', { ...identity, ownerId: 'other' }, result), { status: 404 });
       await assert.rejects(() => verifications.append('owner', { ...identity, candidateDigest: 'd'.repeat(64) }, result), { status: 404 });
-      await client.query("UPDATE tripsit_snapshots SET payload=jsonb_set(payload,'{private}','true'::jsonb) WHERE work_item_id=$1", [item.id]);
+      await client.query("UPDATE tripsit_snapshots SET payload=jsonb_set(payload,'{private}','null'::jsonb) WHERE work_item_id=$1", [item.id]);
       await assert.rejects(() => verifications.list('owner', identity), { status: 404 });
       await assert.rejects(() => verifications.append('owner', identity, result), { status: 404 });
-      await client.query("UPDATE tripsit_snapshots SET payload=jsonb_set(payload,'{private}','false'::jsonb) WHERE work_item_id=$1", [item.id]);
+      await client.query("UPDATE tripsit_snapshots SET payload=jsonb_set(payload,'{private}','true'::jsonb) WHERE work_item_id=$1", [item.id]);
       const attempts = await Promise.allSettled(Array.from({ length: 5 }, () => verifications.append('owner', identity, result)));
       assert.equal(attempts.filter(row => row.status === 'fulfilled').length, 3);
       assert.equal((await verifications.list('owner', identity)).length, 4);

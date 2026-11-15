@@ -22,7 +22,7 @@ test('real PostgreSQL scopes immutable reviews, caps history and purges all raw 
       const records = createRecords(client, () => now);
       const candidates = createCandidateRecords(client, () => now);
       const reviews = createReviewRecords(client, () => now);
-      const item = await records.create('owner', { repository: 'test/source', repositoryId: 1, private: false, issueId: 1, issueNumber: 1, baseSha: 'a'.repeat(40), supplied: { title: 'Review fixture', body: '', provenance: 'supplied' }, inferred: [], ownerConfirmed: [] });
+      const item = await records.create('owner', { repository: 'test/source', repositoryId: 1, private: true, issueId: 1, issueNumber: 1, baseSha: 'a'.repeat(40), supplied: { title: 'Review fixture', body: '', provenance: 'supplied' }, inferred: [], ownerConfirmed: [] });
       const rawOutput = new TextEncoder().encode('{}');
       const content = new TextEncoder().encode('export const snow = "雪";\r\n');
       const candidate = await candidates.create('owner', item.id, { baseSha: item.snapshot.baseSha, expiresAt: item.expiresAt, rawOutput, outputDigest: createHash('sha256').update(rawOutput).digest('hex'), model: 'fixture', settings: {}, mapping: { status: 'unavailable', reason: 'No mapping.' }, files: [{ path: 'source.ts', originalBlob: null, content, blobSha: createHash('sha1').update(`blob ${content.length}\0`).update(content).digest('hex') }] });

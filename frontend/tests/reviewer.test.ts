@@ -50,15 +50,15 @@ test('independently prompts frozen data, preserves conflicting proposals and rec
   assert(!('verdict' in result));
 });
 
-test('private, unconfigured and invalid inputs dispatch zero requests', async () => {
+test('unconfigured and invalid inputs dispatch zero requests', async () => {
   let calls = 0;
   const fetcher = async () => { calls++; return response(body()); };
-  for (const change of [{ url: undefined }, { token: undefined }, { model: undefined }, { retentionDisclosure: undefined },
+  for (const change of [{ url: undefined }, { token: undefined }, { model: undefined },
     { url: 'http://review.example' }, { url: 'https://user:pass@review.example' }, { url: 'https://review.example/?key=secret' }]) {
     assert.equal((await createReviewer({ ...configuration, ...change, fetcher }).review(input(), new AbortController().signal)).status, 'unavailable');
   }
   const reviewer = createReviewer({ ...configuration, fetcher });
-  for (const changed of [{ ...input(), private: true }, { ...input(), verdict: 'passed' }, { ...input(), authorProbabilities: [0.9] },
+  for (const changed of [{ ...input(), private: undefined as unknown as boolean }, { ...input(), verdict: 'passed' }, { ...input(), authorProbabilities: [0.9] },
     { ...input(), candidateDigest: 'bad' }, { ...input(), baseSha: [input().baseSha] }, { ...input(), candidateDigest: [input().candidateDigest] },
     { ...input(), files: [{ ...input().files[0], replacement: '\ud800' }] },
     { ...input(), requirements: [input().requirements[0], input().requirements[0]] },
@@ -140,7 +140,7 @@ test('configuration readiness matches the dispatch gate without contacting the p
   let calls = 0;
   const fetcher = async () => { calls++; return response(body()); };
   for (const change of [{}, { url: 'http://localhost:1234', fetcher },
-    { url: undefined }, { token: undefined }, { model: undefined }, { retentionDisclosure: undefined },
+    { url: undefined }, { token: undefined }, { model: undefined },
     { token: ' ' }, { model: '\ud800' }, { retentionDisclosure: 'x'.repeat(2049) },
     { url: 'http://review.example' }, { url: 'http://localhost:1234' },
     { url: 'https://user:pass@review.example' }, { url: 'https://review.example/?key=secret' },
@@ -196,4 +196,10 @@ test('requests JSON object output and ignores provider token probabilities', asy
   assert.equal(calls, 1);
   assert(!JSON.stringify(result).includes('probability must not become evidence'));
   if (result.status === 'completed') assert.deepEqual(result.claims, schema().claims);
+});
+
+test('authorized private source uses the configured reviewer without an additional consent gate', async () => {
+ let calls=0;
+ const result=await createReviewer({...configuration,fetcher:async(_url,options)=>{calls++;assert.equal(JSON.parse(JSON.parse(String(options!.body)).messages[1].content).private,true);return response(body());}}).review({...input(),private:true},new AbortController().signal);
+ assert.equal(result.status,'completed');assert.equal(calls,1);
 });

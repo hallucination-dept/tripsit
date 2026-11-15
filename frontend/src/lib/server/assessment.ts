@@ -13,6 +13,7 @@ import type { StoredVerification } from './verification-records.ts';
 export type Assessment = {
   identity: ReviewIdentity;
   repositoryId: number;
+  repositoryPrivate?: boolean;
   verifications?: StoredVerification[];
   generation: { model: string; settingsDigest: string; mapping: { status: 'unavailable'; reason: string }; observedTokens: number };
   policy: ReturnType<typeof snapshotPolicy>['policy'];
@@ -63,7 +64,7 @@ export function createAssessment(dependencies: AssessmentDependencies) {
   }
   async function admit(owner: string, itemId: string, candidateId: string, signal: AbortSignal) {
     const item = structuredClone(await whileActive(() => dependencies.intake.get(owner, itemId, signal), signal));
-    if (item.id !== itemId || item.snapshot.private !== false) fail(403);
+    if (item.id !== itemId || typeof item.snapshot.private !== 'boolean') fail(403);
     if (!Number.isFinite(Date.parse(item.expiresAt)) || Date.parse(item.expiresAt) <= Date.now()) fail(410);
     const stored = structuredClone(await whileActive(() => dependencies.generation.get(owner, itemId, candidateId, signal), signal));
     if (stored.id !== candidateId || stored.candidate.baseSha !== item.snapshot.baseSha || stored.candidate.expiresAt !== item.expiresAt) fail(409);
@@ -142,7 +143,7 @@ export function createAssessment(dependencies: AssessmentDependencies) {
     const reviews = await whileActive(() => dependencies.reviews.list(owner, initial.identity), signal);
     const verifications = dependencies.verificationRecords ? await whileActive(() => dependencies.verificationRecords!.list(owner, initial.identity), signal) : [];
     await fresh(owner, itemId, candidateId, initial.stamp, signal);
-    return { stamp: initial.stamp, issue: { title: initial.item.snapshot.supplied.title, body: initial.item.snapshot.supplied.body }, assessment: { identity: initial.identity, repositoryId: initial.item.snapshot.repositoryId, verifications, generation: initial.generation, policy: initial.policy, impact, reviews,
+    return { stamp: initial.stamp, issue: { title: initial.item.snapshot.supplied.title, body: initial.item.snapshot.supplied.body }, assessment: { identity: initial.identity, repositoryId: initial.item.snapshot.repositoryId, repositoryPrivate: initial.item.snapshot.private, verifications, generation: initial.generation, policy: initial.policy, impact, reviews,
       files: files.map(file => ({ path: file.path, original: file.base?.content ?? null, replacement: file.candidate!.content })) } };
   }
   return {
@@ -167,7 +168,7 @@ export function createAssessment(dependencies: AssessmentDependencies) {
         const { assessment, stamp, issue } = await load(owner, itemId, candidateId, active);
         if (assessment.reviews.length >= 8) fail(429);
         await fresh(owner, itemId, candidateId, stamp, active);
-        const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: false,
+        const input: ReviewerInput = { baseSha: assessment.identity.baseSha, candidateDigest: assessment.identity.candidateDigest, private: assessment.repositoryPrivate ?? false,
           requirements: assessment.policy.requirements.map(row => ({ id: row.id, criterion: row.criterion, provenance: row.provenance, mandatory: row.mandatory })),
           nodes: assessment.impact.graph.nodes.map(node => ({ id: node.id, path: node.source!.path })), files: assessment.files,
           issue };

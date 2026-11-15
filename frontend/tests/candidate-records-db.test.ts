@@ -48,8 +48,10 @@ test('disposable PostgreSQL retains exact candidate bytes and cascades expired s
         ['owner-a', item.id, { ...candidate, expiresAt: '2026-01-07T00:00:00.000Z' }]
       ] as const) await assert.rejects(() => store.create(owner, selected, changed), error => error.status === 404);
       const privateItem = await records.create('owner-a', { ...snapshot, private: true });
-      await assert.rejects(() => store.create('owner-a', privateItem.id, candidate), error => error.status === 404);
-      assert.equal((await client.query('SELECT count(*)::int AS count FROM tripsit_candidates')).rows[0].count, 1);
+      const privateCandidate = await store.create('owner-a', privateItem.id, candidate);
+      assert.deepEqual(await store.get('owner-a', privateItem.id, privateCandidate.id), privateCandidate);
+      assert.equal(await store.get('owner-b', privateItem.id, privateCandidate.id), null);
+      assert.equal((await client.query('SELECT count(*)::int AS count FROM tripsit_candidates')).rows[0].count, 2);
       now = new Date(item.expiresAt);
       assert.equal(await store.get('owner-a', item.id, created.id), null);
       await assert.rejects(() => store.create('owner-a', item.id, candidate), error => error.status === 404);
@@ -57,7 +59,7 @@ test('disposable PostgreSQL retains exact candidate bytes and cascades expired s
       assert.equal((await client.query('SELECT count(*)::int AS count FROM tripsit_candidate_payloads')).rows[0].count, 0);
       assert.equal((await client.query('SELECT count(*)::int AS count FROM tripsit_snapshots')).rows[0].count, 0);
       const metadata = await client.query('SELECT * FROM tripsit_candidates');
-      assert.equal(metadata.rowCount, 1);
+      assert.equal(metadata.rowCount, 2);
       assert.equal(metadata.rows[0].output_digest, candidate.outputDigest);
       assert.deepEqual(Object.keys(metadata.rows[0]).sort(), ['id', 'owner_id', 'output_digest', 'created_at', 'expires_at'].sort());
       for (const source of [snapshot.repository, snapshot.supplied.body, candidate.model, candidate.files[0].path]) {
